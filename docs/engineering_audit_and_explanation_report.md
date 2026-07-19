@@ -17,9 +17,9 @@ Trong các định chế tài chính quant trading hàng đầu thế giới (nh
 1. **Trụ Cột 1 — Lớp Kiểm Soát Dữ Liệu & Hợp Đồng Giao Dịch (`Data Gatekeeper — schemas.py / Task B-1-10`)**:  
    Sử dụng mô hình kiểm duyệt kép (`TypedDict` trên RAM cho từng lệnh lẻ và `Pandera DataFrameSchema` cho lô lớn), kết hợp cơ chế Tem Niêm Phong `dataset_manifest_hash` (SHA-256). Trụ cột này đảm bảo 100% dữ liệu đầu vào sạch tuyệt đối, ngăn chặn triệt để các lỗi vi cấu trúc số học trước khi bước vào tính toán.
 2. **Trụ Cột 2 — Lớp Phân Loại Chế Độ & Khóa Cổng An Toàn (`Regime Gate — trade_mode.py / Task B-1-2`)**:  
-   Là hàm định tuyến duy nhất (`Single Source of Truth`) phân chia thị trường thành 3 nhánh: `Follow` (khi xu hướng mạnh $p_i \ge 0.50$), `Fade` (khi xu hướng yếu $p_i < 0.20$ VÀ thị trường đi ngang $p_{\text{chop}} > 0.60$), và `none` (vùng Deadzone $[0.20, 0.50)$ hoặc khi thị trường hỗn mang). Trụ cột này giúp lọc bỏ $>40\%$ lệnh rác, bảo toàn lực lượng cho quỹ.
+   Là hàm định tuyến duy nhất (`Single Source of Truth`) phân chia thị trường thành 3 nhánh: `Follow` (khi xu hướng mạnh $p\_i \ge 0.50$), `Fade` (khi xu hướng yếu $p\_i < 0.20$ VÀ thị trường đi ngang $p\_{\text{chop}} > 0.60$), và `none` (vùng Deadzone $[0.20, 0.50)$ hoặc khi thị trường hỗn mang). Trụ cột này giúp lọc bỏ $>40\%$ lệnh rác, bảo toàn lực lượng cho quỹ.
 3. **Trụ Cột 3 — Lớp Quản Trị Vốn Động Phi Tuyến (`Non-Linear Kelly Sizing — kelly_empirical.py / Task B-1-1`)**:  
-   Động cơ giải tích phi tuyến (`brentq`) giải trực tiếp bài toán cực đại hóa tốc độ tăng trưởng log kỳ vọng $E[\ln(1 + f \cdot r)] \to \max$ trên phân phối thực nghiệm của chiến lược, tích hợp phanh khẩn cấp `Singularity Guard` ngăn rủi ro cháy tài khoản ($1 + f \cdot r_i \le 0$).
+   Động cơ giải tích phi tuyến (`brentq`) giải trực tiếp bài toán cực đại hóa tốc độ tăng trưởng log kỳ vọng $E[\ln(1 + f \cdot r)] \to \max$ trên phân phối thực nghiệm của chiến lược, tích hợp phanh khẩn cấp `Singularity Guard` ngăn rủi ro cháy tài khoản ($1 + f \cdot r\_i \le 0$).
 
 ### Sơ Đồ Kiến Trúc Tổng Thể Hệ Thống (`Master System Architecture Pipeline`)
 ```mermaid
@@ -164,9 +164,9 @@ Trong kiến trúc Master Blueprint v11.8, `solve_empirical_kelly_fraction` đ�
 1. **Máy Tính Đạo Hàm & Dò Nghiệm Tối Ưu (`Non-linear Solver`):**  
    Thay vì sử dụng các công thức tĩnh hay phán đoán cảm tính, hàm thực thi chính xác toán học cực đại hóa $E[\ln(1 + f \cdot r)] \to \max$ bằng thuật toán Brent's Method (`brentq`).
 2. **Khối Lõi Phục Vụ Xây Bảng Tra Cứu Kelly 2D (`Kelly 2D Lookup Table Engine`):**  
-   Để phục vụ giao dịch thực chiến tốc độ cao, hệ thống chia không gian xác suất $[0, 1] \times [0, 1]$ thành lưới 10x10 (`100 buckets`). Với mỗi ô lưới, hệ thống gom mẫu giao dịch tương ứng và gọi trực tiếp hàm `solve_empirical_kelly_fraction` (Task B-1-1) 100 lần để tính tỷ lệ tối ưu $f_{ij}^*$ điền vào bảng tra cứu.
+   Để phục vụ giao dịch thực chiến tốc độ cao, hệ thống chia không gian xác suất $[0, 1] \times [0, 1]$ thành lưới 10x10 (`100 buckets`). Với mỗi ô lưới, hệ thống gom mẫu giao dịch tương ứng và gọi trực tiếp hàm `solve_empirical_kelly_fraction` (Task B-1-1) 100 lần để tính tỷ lệ tối ưu $f\_{ij}^*$ điền vào bảng tra cứu.
 3. **Cơ Chế Phanh Khẩn Cấp (`Severe Drawdown Prevention Guard`):**  
-   Nhờ dòng kiểm tra `if np.any(denom <= 1e-6): return -1e6`, Task B-1-1 đóng vai trò như một bộ phanh an toàn tự động: Ngăn chặn triệt để các mức tỷ lệ đặt cược gây suy kiệt vốn ($1 + f \cdot r_i \le 0$) ngay trong bước dò nghiệm.
+   Nhờ dòng kiểm tra `if np.any(denom <= 1e-6): return -1e6`, Task B-1-1 đóng vai trò như một bộ phanh an toàn tự động: Ngăn chặn triệt để các mức tỷ lệ đặt cược gây suy kiệt vốn ($1 + f \cdot r\_i \le 0$) ngay trong bước dò nghiệm.
 
 ### 2. Giải Phẫu Hàm Lõi `solve_empirical_kelly_fraction`
 ```python
@@ -195,7 +195,7 @@ def growth\_derivative(f):
 - **Nền tảng Toán học:**  
   Mục tiêu là cực đại hóa hàm tăng trưởng: $G(f) = E\left[ \ln(1 + f \cdot r) \right]$. Đạo hàm bậc nhất theo $f$ là $G'(f) = E\left[ \frac{r}{1 + f \cdot r} \right] = 0$.
 - **Cơ chế bảo vệ thâm hụt vốn (`if np.any(denom <= 1e-6): return -1e6`):**  
-  Đây là chốt chặn quan trọng! Nếu thử nghiệm một tỷ lệ `f` quá lớn khiến lệnh thua ($r_i < 0$) làm số dư $1 + f \cdot r_i \le 0$ (Suy kiệt vốn), code trả về `-1e6` để báo hiệu thuật toán dò nghiệm `brentq` cần lùi về vùng tỷ lệ an toàn hơn.
+  Đây là chốt chặn quan trọng! Nếu thử nghiệm một tỷ lệ `f` quá lớn khiến lệnh thua ($r\_i < 0$) làm số dư $1 + f \cdot r\_i \le 0$ (Suy kiệt vốn), code trả về `-1e6` để báo hiệu thuật toán dò nghiệm `brentq` cần lùi về vùng tỷ lệ an toàn hơn.
 
 #### C. Chốt Chặn Hai Đầu Mút & Thuật Toán Brent's Method (`brentq`)
 ```python
@@ -204,8 +204,8 @@ if growth\_derivative(f\_max) > 0: return f\_max
 return brentq(growth\_derivative, 0.0, f\_max, xtol=1e-6)
 ```
 - **Chốt 1 ($f = 0.0$):** Tại $f=0$, $G'(0) = E[r]$. Nếu trung bình lợi suất của chiến lược $E[r] \le 0$ (chiến lược không có kỳ vọng dương), hệ thống khóa nghiệm tại `0.0` (Không cược tiền).
-- **Chốt 2 ($f = f_{\max}$):** Nếu tại mức cược tối đa (ví dụ $100\%$ hoặc $25\%$), đường cong tăng trưởng vẫn dốc lên ($G'(f_{\max}) > 0$), khóa nghiệm tại trần $f_{\max}$ để tuân thủ giới hạn quản trị rủi ro.
-- **Chốt 3 (`brentq`):** Nếu $G'(0) > 0$ và $G'(f_{\max}) \le 0$, theo Định lý Giá Trị Trung Gian (`Intermediate Value Theorem`), chắc chắn tồn tại duy nhất một nghiệm $f^* \in (0, f_{\max})$ nơi đạo hàm bằng 0. Thuật toán `brentq` (kết hợp chia đôi, cát tuyến và nội suy nghịch đảo bậc 2) sẽ dò tìm ra nghiệm với sai số $< 10^{-6}$.
+- **Chốt 2 ($f = f\_{\max}$):** Nếu tại mức cược tối đa (ví dụ $100\%$ hoặc $25\%$), đường cong tăng trưởng vẫn dốc lên ($G'(f\_{\max}) > 0$), khóa nghiệm tại trần $f\_{\max}$ để tuân thủ giới hạn quản trị rủi ro.
+- **Chốt 3 (`brentq`):** Nếu $G'(0) > 0$ và $G'(f\_{\max}) \le 0$, theo Định lý Giá Trị Trung Gian (`Intermediate Value Theorem`), chắc chắn tồn tại duy nhất một nghiệm $f^* \in (0, f\_{\max})$ nơi đạo hàm bằng 0. Thuật toán `brentq` (kết hợp chia đôi, cát tuyến và nội suy nghịch đảo bậc 2) sẽ dò tìm ra nghiệm với sai số $< 10^{-6}$.
 
 ### 3. Kiểm Thử TDD Phân Phối Bernoulli (`test_solve_empirical_kelly_fraction` & Coin Toss)
 ```python
@@ -268,7 +268,7 @@ def classify\_trade\_mode(p\_i: float, p\_chop\_i: float, fade\_enabled: bool,
 if p\_i >= 0.5:
     return "follow"
 ```
-- **Ý nghĩa:** Khi xác suất xu hướng sơ cấp $p_i \ge 50\%$, tín hiệu động lượng đang chiếm ưu thế. Hệ thống kích hoạt chế độ `Follow` (mua khi phá vỡ kháng cự, bán khi thủng hỗ trợ).
+- **Ý nghĩa:** Khi xác suất xu hướng sơ cấp $p\_i \ge 50\%$, tín hiệu động lượng đang chiếm ưu thế. Hệ thống kích hoạt chế độ `Follow` (mua khi phá vỡ kháng cự, bán khi thủng hỗ trợ).
 
 #### B. Nhánh 2 — Khóa Cổng Đánh Đảo Chiều (`Fade Mode with Regime Gate`)
 ```python
@@ -278,7 +278,7 @@ if fade\_enabled and p\_i < 0.2 and p\_chop\_i > fade\_regime\_gate\_threshold:
 - **Tại sao cần 3 điều kiện đồng thời (`fade_enabled`, `p_i < 0.2`, `p_chop_i > 0.60`)?**
   - `fade_enabled == True`: Cờ cho phép bật/tắt chiến lược đảo chiều từ cấu hình tổng.
   - `p_i < 0.2`: Bắt buộc xác suất xu hướng phải **cực kỳ yếu ($< 20\%$)**, chứng tỏ động lượng đã tắt hẳn.
-  - `p_chop_i > fade_regime_gate_threshold (0.60)`: **Đây là Khóa Cổng An Toàn (`Regime Gate`)!** Ngay cả khi xu hướng yếu ($p_i < 0.2$), hệ thống **tuyệt đối không cho phép đánh đảo chiều** nếu xác suất thị trường đi ngang (`p_chop_i`) chưa đủ cao ($> 60\%$). Nếu `p_chop_i <= 60%`, thị trường đang ở trạng thái nhiễu loạn khó đoán, đánh Fade rất dễ bị bẫy nổ sóng ngầm!
+  - `p_chop_i > fade_regime_gate_threshold (0.60)`: **Đây là Khóa Cổng An Toàn (`Regime Gate`)!** Ngay cả khi xu hướng yếu ($p\_i < 0.2$), hệ thống **tuyệt đối không cho phép đánh đảo chiều** nếu xác suất thị trường đi ngang (`p_chop_i`) chưa đủ cao ($> 60\%$). Nếu `p_chop_i <= 60%`, thị trường đang ở trạng thái nhiễu loạn khó đoán, đánh Fade rất dễ bị bẫy nổ sóng ngầm!
 
 #### C. Nhánh 3 — Vùng Đứng Ngoài Bảo Toàn Tính Mạng (`Deadzone -> None`)
 ```python
@@ -291,7 +291,7 @@ return "none"
 ### 3. Nghiệm Thu Kiểm Thử TDD & Cơ Chế Kiểm Sách An Toàn (`test_b_1_2_trade_mode`)
 Qua đợt kiểm toán kỹ thuật khắt khe (`Rigorous Vulnerability Audit v11.8`), hệ thống đã được thiết lập 5 lớp bảo vệ kiên cố (`Strict Safety Guards`):
 1. `(0.5, 0.4, True) -> follow`: Nhận diện chuẩn xác biên trái của Follow.
-2. `(0.3, 0.8, True) -> none`: Khóa chặt vùng Deadzone $p_i = 0.3$.
+2. `(0.3, 0.8, True) -> none`: Khóa chặt vùng Deadzone $p\_i = 0.3$.
 3. `(0.1, 0.5, True) -> none`: Khóa cổng Fade khi `p_chop` chưa vượt qua ngưỡng an toàn $0.60$.
 4. `(0.1, 0.7, False) -> none`: Tuân thủ tuyệt đối công tắc tổng `fade_enabled = False`.
 5. **[STRICT VALIDATION GUARDS] Kiểm tra tính hợp lệ dữ liệu:** Bắt buộc `p_i` và `p_chop_i` phải nằm trong đoạn $[0, 1]$ và không được là `NaN/Inf`. Nếu mô hình ML trả về số liệu không hợp lệ hay `NaN`, hệ thống ném ngoại lệ `ValueError` để cảnh báo suy thoái mô hình (`Model Degradation`), ngăn chặn sớm lỗi rò rỉ logic ngầm (`Silent Logic Failure`).
@@ -353,7 +353,7 @@ else:
   - `m_sl`: Hệ số nhân rào cản cắt lỗ (`Stop-loss multiplier`).
   - `c_trade_adj`: Phí giao dịch + Trượt giá dự kiến (`Slippage + Commission`).
 - **Tính đối xứng gương (`Symmetric Mirroring`):**
-  - **Với lệnh Mua (`side > 0`):** Giá cắt lỗ nằm bên dưới giá mua một khoảng cách bằng đúng $(m_{sl} \cdot \sigma + c_{\text{trade-adj}}) \cdot \text{Entry}$. Nếu tổng rủi ro $\ge 100\%$, hệ thống ném ngoại lệ `ValueError` để chặn đứng lỗi rủi ro cắt lỗ âm (`Inverted/Negative Stop-Loss: SL <= 0`).
+  - **Với lệnh Mua (`side > 0`):** Giá cắt lỗ nằm bên dưới giá mua một khoảng cách bằng đúng $(m\_{sl} \cdot \sigma + c\_{\text{trade-adj}}) \cdot \text{Entry}$. Nếu tổng rủi ro $\ge 100\%$, hệ thống ném ngoại lệ `ValueError` để chặn đứng lỗi rủi ro cắt lỗ âm (`Inverted/Negative Stop-Loss: SL <= 0`).
   - **Với lệnh Bán (`side < 0`):** Giá cắt lỗ nằm bên trên giá bán đúng bằng khoảng cách đó!
   - Việc đưa `c_trade_adj` vào công thức đảm bảo khi lệnh bị cắt lỗ, số tiền thực tế bạn mất sau khi trừ sạch phí và trượt giá **chính xác bằng đúng mức rủi ro tối đa đã định trước**!
 

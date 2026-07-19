@@ -129,20 +129,20 @@ $$
 
 Một tick tại chỉ số $i$ chỉ bị phân loại là **Bad Tick** khi và chỉ khi thỏa mãn **ĐỒNG THỜI 4 điều kiện**:
 
-1. **Lạch cực đoan (Extreme Deviation Check)**: $|P_i - P_{i-1}| > 5 \times \hat{\sigma}_{\text{MAD}, i}$.
-2. **Khối lượng không đột biến (Volume Consistency Check)**: $V_i < 2 \times \text{median}(V_{i-100:i-1})$.
-3. **Đảo chiều chớp nhoáng (Micro-Reversal Check)**: $|P_{i+1} - P_{i-1}| < 0.3 \times |P_i - P_{i-1}|$.
-4. **Kiểm tra chéo đa sàn (Cross-Venue Parity Check)**: Giá tại sàn đối chứng $P^{\text{ref}}$ trong khoảng thời gian $[t_i - 500\text{ms}, t_i + 500\text{ms}]$ không ghi nhận biến động vượt $2 \times \hat{\sigma}_{\text{MAD}, i}$:
+1. **Lạch cực đoan (Extreme Deviation Check)**: $|P\_i - P\_{i-1}| > 5 \times \hat{\sigma}\_{\text{MAD}, i}$.
+2. **Khối lượng không đột biến (Volume Consistency Check)**: $V\_i < 2 \times \text{median}(V\_{i-100:i-1})$.
+3. **Đảo chiều chớp nhoáng (Micro-Reversal Check)**: $|P\_{i+1} - P\_{i-1}| < 0.3 \times |P\_i - P\_{i-1}|$.
+4. **Kiểm tra chéo đa sàn (Cross-Venue Parity Check)**: Giá tại sàn đối chứng $P^{\text{ref}}$ trong khoảng thời gian $[t\_i - 500\text{ms}, t\_i + 500\text{ms}]$ không ghi nhận biến động vượt $2 \times \hat{\sigma}\_{\text{MAD}, i}$:
 
 $$
 \max_{t \in [t_i - 500\text{ms}, t_i + 500\text{ms}]} |P^{\text{ref}}(t) - P_{i-1}| < 2 \times \hat{\sigma}_{\text{MAD}, i}
 $$
 
-*(Ghi chú Tail Event: Nếu điều kiện 1 thỏa mãn nhưng $V_i \ge 2 \times \text{median}(V_{i-100:i-1})$, đây là dòng tiền thực tháo chạy hoặc đột phá thanh khoản $\implies$ Không lọc giá, giữ nguyên $P_i$ và gắn cờ `is_tail_event = True`).*
+*(Ghi chú Tail Event: Nếu điều kiện 1 thỏa mãn nhưng $V\_i \ge 2 \times \text{median}(V\_{i-100:i-1})$, đây là dòng tiền thực tháo chạy hoặc đột phá thanh khoản $\implies$ Không lọc giá, giữ nguyên $P\_i$ và gắn cờ `is_tail_event = True`).*
 
 #### 1.0.2 Bar Toxicity Flag (Định lượng Độc tính Dòng lệnh theo Khối lượng Nến)
 
-Khi gộp nến theo Dollar-Volume ($V_{\text{dollar}} = \sum P_k V_k \ge \theta_{\text{PIT}}$), một nến hoàn thành trong số lượng tick quá nhỏ ($N_{\text{ticks}} \ll \text{median}$) đồng nghĩa với việc có các lệnh thị trường (Market Orders) quy mô lớn ăn thẳng vào sổ lệnh, gây sốc thanh khoản (Toxic Order Flow).
+Khi gộp nến theo Dollar-Volume ($V\_{\text{dollar}} = \sum P\_k V\_k \ge \theta\_{\text{PIT}}$), một nến hoàn thành trong số lượng tick quá nhỏ ($N\_{\text{ticks}} \ll \text{median}$) đồng nghĩa với việc có các lệnh thị trường (Market Orders) quy mô lớn ăn thẳng vào sổ lệnh, gây sốc thanh khoản (Toxic Order Flow).
 
 $$
 \text{tick-count-to-fill}_t < 0.5 \times \text{median}\left( \text{tick-count-to-fill}_{t-100:t-1} \right) \implies \text{is-high-toxicity-bar} = \text{True}
@@ -150,7 +150,7 @@ $$
 
 #### 1.0.3 Kalman Tick-Level Replacer (Giao thức Predict-Only v11.2)
 
-Khi phát hiện Bad Tick, thay vì loại bỏ làm đứt gãy chỉ số thời gian hoặc điền phương pháp Naive Forward Fill (tạo sai lệch động lượng = 0), hệ thống sử dụng bộ lọc Kalman 2 trạng thái $[P_t, \nu_t]^T$ với **Giao thức Predict-Only**:
+Khi phát hiện Bad Tick, thay vì loại bỏ làm đứt gãy chỉ số thời gian hoặc điền phương pháp Naive Forward Fill (tạo sai lệch động lượng = 0), hệ thống sử dụng bộ lọc Kalman 2 trạng thái $[P\_t, \nu\_t]^T$ với **Giao thức Predict-Only**:
 
 **Trạng thái hệ thống**:
 
@@ -222,7 +222,7 @@ class TickLevelKalmanReplacer:
 
 #### 1.1.1 Toán Học Ngưỡng Động Point-in-Time (PIT)
 
-Để ngăn chặn tuyệt đối hiện tượng rò rỉ thông tin tương lai (Look-ahead Bias / Data Leakage) khi tính ngưỡng tạo nến Dollar-Volume, ngưỡng $\theta_{\text{PIT}}$ cho ngày $T$ chỉ được phép sử dụng tổng Dollar-Volume của 21 ngày giao dịch hoàn tất **trước đó** ($T-21$ đến $T-1$), chia cho tần suất mục tiêu $\text{target-freq} = 50$ nến/ngày:
+Để ngăn chặn tuyệt đối hiện tượng rò rỉ thông tin tương lai (Look-ahead Bias / Data Leakage) khi tính ngưỡng tạo nến Dollar-Volume, ngưỡng $\theta\_{\text{PIT}}$ cho ngày $T$ chỉ được phép sử dụng tổng Dollar-Volume của 21 ngày giao dịch hoàn tất **trước đó** ($T-21$ đến $T-1$), chia cho tần suất mục tiêu $\text{target-freq} = 50$ nến/ngày:
 
 $$
 \theta_{\text{PIT}}(T) = \frac{1}{\text{target-freq}} \times \frac{1}{21} \sum_{k=1}^{21} \text{Daily-Dollar-Volume}(T-k)
@@ -245,7 +245,7 @@ def compute_pit_safe_daily_threshold(df_daily: pl.DataFrame, window: int = 21, t
 
 #### 1.1.2 Ánh Xạ `daily_thresholds` Xuống Tick-Level bằng ASOF Backward Join O(N)
 
-Để tránh vòng lặp chậm trong Python khi gán $\theta_{\text{PIT}}(T)$ cho từng tick $i$, hệ thống sử dụng thuật toán `join_asof` theo chiến lược `backward` trên trục thời gian ngày epoch (`date_epoch_day`), đảm bảo độ phức tạp $O(N \log M)$ hoặc $O(N)$ tuyến tính:
+Để tránh vòng lặp chậm trong Python khi gán $\theta\_{\text{PIT}}(T)$ cho từng tick $i$, hệ thống sử dụng thuật toán `join_asof` theo chiến lược `backward` trên trục thời gian ngày epoch (`date_epoch_day`), đảm bảo độ phức tạp $O(N \log M)$ hoặc $O(N)$ tuyến tính:
 
 ```python
 import polars as pl
@@ -329,19 +329,19 @@ def compute_median_ticks_to_fill_per_tick(ticks: np.ndarray, daily_thresholds: n
 
 #### 1.2.1 Vi Cấu Trúc Tick Rule và Order Flow Imbalance (OFI)
 
-Lấy cảm hứng từ lý thuyết vi cấu trúc dòng lệnh của Easley, López de Prado và O'Hara (VPIN / Order Flow Imbalance), với mỗi tick $i$, quy tắc Tick Rule $b_i \in \{-1, +1\}$ xác định hướng lệnh chủ động dựa trên biến động giá cận biên:
+Lấy cảm hứng từ lý thuyết vi cấu trúc dòng lệnh của Easley, López de Prado và O'Hara (VPIN / Order Flow Imbalance), với mỗi tick $i$, quy tắc Tick Rule $b\_i \in \{-1, +1\}$ xác định hướng lệnh chủ động dựa trên biến động giá cận biên:
 
 $$
 b_i = \begin{cases} +1 & \text{nếu } P_i > P_{i-1} \\ -1 & \text{nếu } P_i < P_{i-1} \\ b_{i-1} & \text{nếu } P_i = P_{i-1} \end{cases}
 $$
 
-Trong quá trình tích lũy một nến Dollar-Volume từ tick $j = 1 \dots N_t$, khối lượng mua và bán chủ động được phân tách:
+Trong quá trình tích lũy một nến Dollar-Volume từ tick $j = 1 \dots N\_t$, khối lượng mua và bán chủ động được phân tách:
 
 $$
 V_{\text{buy}, t} = \sum_{j=1}^{N_t} V_j \cdot \mathbb{1}[b_j = +1], \qquad V_{\text{sell}, t} = \sum_{j=1}^{N_t} V_j \cdot \mathbb{1}[b_j = -1]
 $$
 
-Sự mất cân bằng dòng lệnh chuẩn hóa (Order Flow Imbalance - $\text{OFI}_t$) của nến $t$:
+Sự mất cân bằng dòng lệnh chuẩn hóa (Order Flow Imbalance - $\text{OFI}\_t$) của nến $t$:
 
 $$
 \text{OFI}_t = \frac{V_{\text{buy}, t} - V_{\text{sell}, t}}{V_{\text{buy}, t} + V_{\text{sell}, t} + 10^{-8}} \in [-1, +1]
@@ -428,12 +428,12 @@ $$
 
 #### 1.4.1 Phân định Trách nhiệm Ghi nhận Thử nghiệm (DSR Counting Rule)
 
-Để ngăn chặn việc tính sai số lượng thử nghiệm $N_{\text{DSR}}$ trong công thức Deflated Sharpe Ratio (AFML Chương 14), hệ thống phân tách nghiêm ngặt 3 lớp:
+Để ngăn chặn việc tính sai số lượng thử nghiệm $N\_{\text{DSR}}$ trong công thức Deflated Sharpe Ratio (AFML Chương 14), hệ thống phân tách nghiêm ngặt 3 lớp:
 
-| Lớp (Trial Class) | Có tính vào $N_{\text{DSR}}$? | Lý do Toán học / Thống kê | Ví dụ các tham số thuộc lớp (Bổ sung v11.7 Patch C.2) |
+| Lớp (Trial Class) | Có tính vào $N\_{\text{DSR}}$? | Lý do Toán học / Thống kê | Ví dụ các tham số thuộc lớp (Bổ sung v11.7 Patch C.2) |
 |---|---|---|---|
 | `model_fitting` | **KHÔNG** | Đây là quá trình tối ưu hóa nội bộ trên tập Train (fitting) để tìm nghiệm cực tiểu hóa hàm mất mát (MLE/ADF), không phải lựa chọn chiến lược OOS. | $d^*$ (ADF), $\mathbf{Q}/\alpha$ (Kalman MLE), EM multi-restart (HMM) |
-| `strategy_selection` | **CÓ** | Con người hoặc thuật toán thử nghiệm nhiều cấu hình siêu tham số chiến lược, chọn cấu hình có Sharpe OOS cao nhất $\implies$ Phải phạt qua $N_{\text{DSR}}$. | $m_{pt}/m_{sl}$, $\lambda$, $h_{\text{Brier}}$, $\delta_{\text{spatial}}$, $\kappa$, $k_{\text{cooldown}}$, `n_buckets`, `f_max`, **`t_max_live_fade` (=40 - v11.7 C.2)** |
+| `strategy_selection` | **CÓ** | Con người hoặc thuật toán thử nghiệm nhiều cấu hình siêu tham số chiến lược, chọn cấu hình có Sharpe OOS cao nhất $\implies$ Phải phạt qua $N\_{\text{DSR}}$. | $m\_{pt}/m\_{sl}$, $\lambda$, $h\_{\text{Brier}}$, $\delta\_{\text{spatial}}$, $\kappa$, $k\_{\text{cooldown}}$, `n_buckets`, `f_max`, **`t_max_live_fade` (=40 - v11.7 C.2)** |
 | `production_fit` | **KHÔNG** | Sau khi cấu hình duy nhất đã vượt qua kiểm định DSR $\ge 0.95$ và PBO $\le 0.40$, fit lại 100% dữ liệu lịch sử để xuất trọng số production. | `magic_numbers` đã khóa, không quét thêm |
 
 ```python
@@ -467,7 +467,7 @@ class ExperimentTracker:
 
 #### 2.1.1 Toán Học Fractional Differentiation (AFML Chương 5)
 
-Chuỗi giá tài chính gốc $X_t$ không dừng (Non-stationary), trong khi chuỗi lợi suất log đầu tiên $\Delta X_t = X_t - X_{t-1}$ dừng nhưng mất hoàn toàn trí nhớ dài hạn (Long-memory). Vi phân từng phần (Fractional Differentiation - FFD) tìm bậc vi phân cực tiểu $d^* \in [0, 1]$ vừa đủ để chuỗi $\tilde{X}_t = (1 - B)^d X_t$ đạt tính dừng theo kiểm định ADF ($p\text{-value} < 0.05$), đồng thời giữ lại tối đa hệ số tương quan với chuỗi gốc:
+Chuỗi giá tài chính gốc $X\_t$ không dừng (Non-stationary), trong khi chuỗi lợi suất log đầu tiên $\Delta X\_t = X\_t - X\_{t-1}$ dừng nhưng mất hoàn toàn trí nhớ dài hạn (Long-memory). Vi phân từng phần (Fractional Differentiation - FFD) tìm bậc vi phân cực tiểu $d^* \in [0, 1]$ vừa đủ để chuỗi $\tilde{X}\_t = (1 - B)^d X\_t$ đạt tính dừng theo kiểm định ADF ($p\text{-value} < 0.05$), đồng thời giữ lại tối đa hệ số tương quan với chuỗi gốc:
 
 $$
 (1 - B)^d = \sum_{k=0}^{\infty} w_k(d) B^k, \qquad w_k(d) = -w_{k-1}(d) \frac{d - k + 1}{k}, \quad w_0(d) = 1
@@ -475,7 +475,7 @@ $$
 
 #### 2.1.2 Phương án 1 (MẶC ĐỊNH PRODUCTION — Windowed FFD $O(W^*)$ Cache-Optimized Engine)
 
-Vì trọng số $w_k(d)$ hội tụ về $0$ khi $k \to \infty$, ta cắt ngắn cửa sổ tại ngưỡng tiệm cận $\tau = 10^{-5}$:
+Vì trọng số $w\_k(d)$ hội tụ về $0$ khi $k \to \infty$, ta cắt ngắn cửa sổ tại ngưỡng tiệm cận $\tau = 10^{-5}$:
 
 $$
 W^*(d, \tau) = \min \{ k \in \mathbb{N} \mid |w_k(d)| < \tau \}
@@ -485,13 +485,13 @@ Với $d^* \in [0.3, 0.6]$, độ dài cửa sổ hiệu dụng $W^* \approx 80 
 
 #### 2.1.3 Phương án 2 (Sum-of-Exponentials $O(M)$ — CHỈ khi `approved=True` từ kiểm định sai số)
 
-Để xấp xỉ $w_k(d)$ bằng tổng của $M$ hàm mũ (Prony Approximation / State-Space Realization), ta giải bài toán cực tiểu hóa phi tuyến:
+Để xấp xỉ $w\_k(d)$ bằng tổng của $M$ hàm mũ (Prony Approximation / State-Space Realization), ta giải bài toán cực tiểu hóa phi tuyến:
 
 $$
 \hat{w}_k = \sum_{m=1}^M c_m \rho_m^k \approx w_k(d), \qquad \forall k \in [0, W^*]
 $$
 
-**Sửa lỗi toán học v11.5 (Patch B)**: Trọng số FFD gốc $w_k(d)$ đổi dấu luân phiên ở các giá trị $k$ nhỏ. Ràng buộc $\rho_m > 0$ thuần túy trong v11.4 không thể tái tạo hành vi đổi dấu này. Ta mở rộng miền xác định cho phép $\rho_m \in (-0.9999, +0.9999)$:
+**Sửa lỗi toán học v11.5 (Patch B)**: Trọng số FFD gốc $w\_k(d)$ đổi dấu luân phiên ở các giá trị $k$ nhỏ. Ràng buộc $\rho\_m > 0$ thuần túy trong v11.4 không thể tái tạo hành vi đổi dấu này. Ta mở rộng miền xác định cho phép $\rho\_m \in (-0.9999, +0.9999)$:
 
 ```python
 import numpy as np
@@ -614,7 +614,7 @@ $$
 \det(\boldsymbol{\Sigma}_j)_{\text{safe}} = \max \left( \det(\boldsymbol{\Sigma}_j), 10^{-12} \right)
 $$
 
-**Hurst Labeling Rule**: Sau khi hội tụ EM, trạng thái $j \in \{0, 1\}$ có giá trị chỉ số Hurst trung bình cao hơn ($\bar{H}_j > \bar{H}_{1-j}$) được gán nhãn `Trending`, trạng thái còn lại là `Choppy`.
+**Hurst Labeling Rule**: Sau khi hội tụ EM, trạng thái $j \in \{0, 1\}$ có giá trị chỉ số Hurst trung bình cao hơn ($\bar{H}\_j > \bar{H}\_{1-j}$) được gán nhãn `Trending`, trạng thái còn lại là `Choppy`.
 
 #### 2.2.3 Numba Forward-Only Alpha Pass (Xác Suất HMM Nhân Quả Online)
 
@@ -664,7 +664,7 @@ def compute_causal_hmm_posteriors_safe(O_array: np.ndarray, A: np.ndarray, mu: n
 
 #### 2.3.1 Nền Tảng Lý Thuyết IMM (Interacting Multiple Model) & Sửa Lỗi U-D Factorization
 
-Kiến trúc IMM Kalman gồm 2 bộ lọc chạy song song: Bộ lọc $j=1$ (`Trending Kalman`) có nhiễu quá trình lớn $\mathbf{Q}_{\text{trend}}$ để bám sát vận tốc drift $\nu_t$; Bộ lọc $j=2$ (`Choppy Kalman`) có nhiễu quá trình cực nhỏ $\mathbf{Q}_{\text{chop}} \approx 0$ để triệt tiêu dao động quanh mean.
+Kiến trúc IMM Kalman gồm 2 bộ lọc chạy song song: Bộ lọc $j=1$ (`Trending Kalman`) có nhiễu quá trình lớn $\mathbf{Q}\_{\text{trend}}$ để bám sát vận tốc drift $\nu\_t$; Bộ lọc $j=2$ (`Choppy Kalman`) có nhiễu quá trình cực nhỏ $\mathbf{Q}\_{\text{chop}} \approx 0$ để triệt tiêu dao động quanh mean.
 
 Thay vì sử dụng thuật toán U-D Factorization phức tạp và dễ gặp lỗi triển khai (đã gây bug trong v11.4), hệ thống sử dụng kiến trúc Kalman P-matrix chuẩn kèm hàm làm sạch số học **`sanitize_covariance_matrix`** chạy **NGAY SAU mỗi bước Update**, đảm bảo tính đối xứng tuyệt đối và xác định dương ($P \succ 0$) thông qua kẹp sàn trị riêng (`eigenvalue floor`).
 
@@ -687,7 +687,7 @@ def sanitize_covariance_matrix(P: np.ndarray, eigenvalue_floor: float = 1e-10) -
 
 #### 2.3.2 Trọn Bộ 7 Bước Toán Học IMM Kalman 2D (P-Matrix Trực Tiếp)
 
-Với trạng thái $\hat{\mathbf{x}}_i = [P_i, \nu_i]^T$ và ma trận chuyển tiếp
+Với trạng thái $\hat{\mathbf{x}}\_i = [P\_i, \nu\_i]^T$ và ma trận chuyển tiếp
 
 $$
 \mathbf{F} = \begin{bmatrix} 1 & 1 \\ 0 & 1 \end{bmatrix}, \mathbf{H} = \begin{bmatrix} 1 & 0 \end{bmatrix}
@@ -701,7 +701,7 @@ $$
 c_j = \sum_{i=1}^2 a_{ij} p_{i, t-1}, \qquad \mu_{i|j} = \frac{a_{ij} p_{i, t-1}}{c_j}
 $$
 
-*(Trong đó $a_{ij}$ là ma trận chuyển trạng thái của HMM và $p_{i, t-1}$ là xác suất chế độ trước đó).*
+*(Trong đó $a\_{ij}$ là ma trận chuyển trạng thái của HMM và $p\_{i, t-1}$ là xác suất chế độ trước đó).*
 
 2. **Mixed Initial Conditions & Spread-of-Means (Trộn trạng thái & ma trận hiệp phương sai)**:
 
@@ -787,13 +787,13 @@ pub fn sanitize_covariance_2x2(p: [[f64; 2]; 2], eigenvalue_floor: f64) -> [[f64
 
 #### 2.4.1 Generalized Hurst Exponent (GHE Window $W=168$, Lags $[2, 4, 8, 16]$)
 
-Chỉ số Hurst GHE ước lượng độ dai dẳng của chuỗi log-price $X_t = \ln P_t$ dựa trên mô men chuẩn hóa bậc $q=1$:
+Chỉ số Hurst GHE ước lượng độ dai dẳng của chuỗi log-price $X\_t = \ln P\_t$ dựa trên mô men chuẩn hóa bậc $q=1$:
 
 $$
 K_1(\tau) = \frac{1}{W-\tau} \sum_{k=1}^{W-\tau} |X_{t-k} - X_{t-k-\tau}| \sim c \cdot \tau^{H_t}
 $$
 
-Chỉ báo $H_t$ được giải bằng hồi quy OLS trên cửa sổ trượt 168 bar:
+Chỉ báo $H\_t$ được giải bằng hồi quy OLS trên cửa sổ trượt 168 bar:
 
 $$
 H_t = \frac{\text{Cov}\left( \ln K_1(\tau), \ln \tau \right)}{\text{Var}(\ln \tau)}, \qquad \forall \tau \in \{2, 4, 8, 16\}
@@ -801,7 +801,7 @@ $$
 
 #### 2.4.2 Chẩn Đoán Đa Cộng Tuyến (Spearman Rank Correlation & VIF)
 
-Trước khi đưa đặc trưng vào Meta-Labeler (Module E), mọi biến có tương quan hạng Spearman $|\rho_S(X_j, X_k)| > 0.80$ hoặc Hệ số Phóng đại Phương sai $\text{VIF}_j > 5.0$ bị loại bỏ tự động:
+Trước khi đưa đặc trưng vào Meta-Labeler (Module E), mọi biến có tương quan hạng Spearman $|\rho\_S(X\_j, X\_k)| > 0.80$ hoặc Hệ số Phóng đại Phương sai $\text{VIF}\_j > 5.0$ bị loại bỏ tự động:
 
 $$
 \text{VIF}_j = \frac{1}{1 - R_j^2} \le 5.0
@@ -821,13 +821,13 @@ $$
 S_t^+ = \max \left( 0, S_{t-1}^+ + \Delta P_t - \mathbb{E}[\Delta P] \right), \qquad S_t^- = \min \left( 0, S_{t-1}^- + \Delta P_t - \mathbb{E}[\Delta P] \right)
 $$
 
-Khi $S_t^+ > h_{\text{CUSUM}}$ hoặc $S_t^- < -h_{\text{CUSUM}}$, một sự kiện ứng cử viên được kích hoạt và bộ lọc tự reset về $0$.
+Khi $S\_t^+ > h\_{\text{CUSUM}}$ hoặc $S\_t^- < -h\_{\text{CUSUM}}$, một sự kiện ứng cử viên được kích hoạt và bộ lọc tự reset về $0$.
 
 #### 3.1.2 Luật Cooldown & Gating Kép (Spatial-Temporal Gating)
 
 Một sự kiện CUSUM tại bar $t$ chỉ được phép trở thành điểm vào lệnh chính thức nếu thỏa mãn **ĐỒNG THỜI 2 điều kiện**:
 
-1. **Temporal Cooldown Check**: Số bar trôi qua kể từ sự kiện trước đó vượt ngưỡng $k_{\text{cooldown}}$:
+1. **Temporal Cooldown Check**: Số bar trôi qua kể từ sự kiện trước đó vượt ngưỡng $k\_{\text{cooldown}}$:
 
 $$
 t - t_{\text{prev-event}} \ge k_{\text{cooldown}}
@@ -847,7 +847,7 @@ $$
 
 #### 3.2.1 Tầng 1: Dán Nhãn Thống Kê Triple-Barrier cho Meta-Labeler Train (C.2 Gốc)
 
-Để huấn luyện Meta-Labeler (Random Forest), mỗi sự kiện $i$ tại thời điểm $t_{0, i}$ được dán nhãn theo phương pháp Triple-Barrier (AFML Chương 3). Các rào cản chốt lời ($m_{pt}$) và cắt lỗ ($m_{sl}$) được co giãn động theo xác suất chế độ HMM ($p_{\text{trend, i}}, p_{\text{chop, i}}$):
+Để huấn luyện Meta-Labeler (Random Forest), mỗi sự kiện $i$ tại thời điểm $t\_{0, i}$ được dán nhãn theo phương pháp Triple-Barrier (AFML Chương 3). Các rào cản chốt lời ($m\_{pt}$) và cắt lỗ ($m\_{sl}$) được co giãn động theo xác suất chế độ HMM ($p\_{\text{trend, i}}, p\_{\text{chop, i}}$):
 
 $$
 m_{pt, i} = p_{\text{chop}, i} \times 1.5 + p_{\text{trend}, i} \times 3.0, \qquad m_{sl, i} = p_{\text{chop}, i} \times 1.5 + p_{\text{trend}, i} \times 2.0
@@ -884,7 +884,7 @@ Trong giao dịch thực tế và khi tính toán PnL thực nghiệm OOS, rào 
 **Đối xứng hóa Side<0 & Đảo chiều Regime-Flip theo Trade Mode (v11.6 Patch A)**:
 
 - **Trục hình học (SL / Trailing Stop)**: Phụ thuộc `side`. Lệnh Long (`side > 0`) theo dõi đỉnh cao nhất (`HighestHigh`); Lệnh Short/Fade (`side < 0`) theo dõi đáy thấp nhất (`LowestLow`).
-- **Trục Regime-Flip Exit**: Phụ thuộc vào `trade_mode` (`follow` hoặc `fade`), **KHÔNG** phụ thuộc vào `side`. Lệnh Follow thoát khi xu hướng suy yếu ($p_{\text{trend}} < \text{threshold}_{\text{follow}}$); Lệnh Fade thoát khi chế độ đi ngang/choppy bị phá vỡ và thị trường chuyển sang xu hướng ($p_{\text{trend}} > \text{threshold}_{\text{fade}}$).
+- **Trục Regime-Flip Exit**: Phụ thuộc vào `trade_mode` (`follow` hoặc `fade`), **KHÔNG** phụ thuộc vào `side`. Lệnh Follow thoát khi xu hướng suy yếu ($p\_{\text{trend}} < \text{threshold}\_{\text{follow}}$); Lệnh Fade thoát khi chế độ đi ngang/choppy bị phá vỡ và thị trường chuyển sang xu hướng ($p\_{\text{trend}} > \text{threshold}\_{\text{fade}}$).
 
 ```python
 import numpy as np
@@ -993,9 +993,9 @@ def test_regime_aware_trailing_exit_symmetry():
 
 ### 3.3 Module C.3 & D: Uniqueness Weights & Consensus Feature Selection
 
-#### 3.3.1 Trung Bình Tính Duy Nhất (Average Uniqueness $\bar{u}_i$ - AFML Chương 4)
+#### 3.3.1 Trung Bình Tính Duy Nhất (Average Uniqueness $\bar{u}\_i$ - AFML Chương 4)
 
-Do rào cản Triple-Barrier có độ dài tối đa $T_{\text{max}}$, các nhãn tồn tại sự chồng lấp thời gian lớn. Để tránh hiện tượng Overfitting do đếm trùng lặp mẫu trong Random Forest, số lượng nhãn chồng lấp tại thời điểm $t$ là $c_t = \sum_{i=1}^N \mathbb{1}[t \in [t_{0, i}, t_{1, i}]]$. Trọng số tính duy nhất trung bình của mẫu $i$:
+Do rào cản Triple-Barrier có độ dài tối đa $T\_{\text{max}}$, các nhãn tồn tại sự chồng lấp thời gian lớn. Để tránh hiện tượng Overfitting do đếm trùng lặp mẫu trong Random Forest, số lượng nhãn chồng lấp tại thời điểm $t$ là $c\_t = \sum\_{i=1}^N \mathbb{1}[t \in [t\_{0, i}, t\_{1, i}]]$. Trọng số tính duy nhất trung bình của mẫu $i$:
 
 $$
 \bar{u}_i = \frac{1}{t_{1, i} - t_{0, i} + 1} \sum_{t=t_{0, i}}^{t_{1, i}} \frac{1}{c_t}
@@ -1003,16 +1003,16 @@ $$
 
 #### 3.3.2 Triple Consensus Feature Selection (MDI, MDA, SFI)
 
-Để loại bỏ nhiễu và ngăn chặn lời nguyền chiều dữ liệu, một đặc trưng $X_j$ chỉ được giữ lại nếu vượt qua **ĐỒNG THỜI hoặc đa số 3 kiểm định**:
+Để loại bỏ nhiễu và ngăn chặn lời nguyền chiều dữ liệu, một đặc trưng $X\_j$ chỉ được giữ lại nếu vượt qua **ĐỒNG THỜI hoặc đa số 3 kiểm định**:
 
 1. **Mean Decrease Impurity (MDI)**: Độ giảm entropy trung bình trên các cây rừng > $0.01$.
-2. **Mean Decrease Accuracy (MDA — Permutation Importance)**: Khôi phục mức độ chính xác ngoài mẫu giảm tối thiểu $\ge 5\%$ khi xáo trộn ngẫu nhiên đặc trưng $X_j$:
+2. **Mean Decrease Accuracy (MDA — Permutation Importance)**: Khôi phục mức độ chính xác ngoài mẫu giảm tối thiểu $\ge 5\%$ khi xáo trộn ngẫu nhiên đặc trưng $X\_j$:
 
 $$
 \text{MDA}_j = \text{Score}_{\text{OOS}}(\mathbf{X}) - \text{Score}_{\text{OOS}}\left(\mathbf{X}_{\text{permuted } j}\right) \ge 0.05
 $$
 
-3. **Single Feature Importance (SFI)**: Mô hình Random Forest chỉ huấn luyện riêng trên đặc trưng $X_j$ phải đạt chỉ số Sharpe OOS dương ($SR_{\text{OOS}, j} > 0$).
+3. **Single Feature Importance (SFI)**: Mô hình Random Forest chỉ huấn luyện riêng trên đặc trưng $X\_j$ phải đạt chỉ số Sharpe OOS dương ($SR\_{\text{OOS}, j} > 0$).
 
 Sau Triple Consensus, phân cụm phân cấp (`Hierarchical Clustering`) gộp các biến có $|\rho| > 0.70$ và giữ lại biến đại diện có MDA cao nhất trong mỗi cụm.
 
@@ -1022,7 +1022,7 @@ Sau Triple Consensus, phân cụm phân cấp (`Hierarchical Clustering`) gộp 
 
 #### 3.4.1 PurgedKFold (`t1` = Integer Bar-Index)
 
-Để triệt tiêu hoàn toàn sự rò rỉ nhãn gối đầu trong kiểm định chéo, `PurgedKFold` loại bỏ (Purging) khỏi tập Train mọi mẫu $j$ có khoảng thời gian nhãn $[j, t_{1, j}]$ giao cắt với tập Test $[t_{\text{start}}, t_{\text{end}})$. Sau đó, áp dụng thêm cách ly (Embargo) $24$ bar ngay sau tập Test:
+Để triệt tiêu hoàn toàn sự rò rỉ nhãn gối đầu trong kiểm định chéo, `PurgedKFold` loại bỏ (Purging) khỏi tập Train mọi mẫu $j$ có khoảng thời gian nhãn $[j, t\_{1, j}]$ giao cắt với tập Test $[t\_{\text{start}}, t\_{\text{end}})$. Sau đó, áp dụng thêm cách ly (Embargo) $24$ bar ngay sau tập Test:
 
 ```python
 import numpy as np
@@ -1085,13 +1085,13 @@ def test_purged_kfold_toy_example():
 
 #### 3.4.2 Weighted Bootstrap Forest & Out-of-Bag Isotonic Calibration
 
-Trong mỗi cây quyết định của Rừng ngẫu nhiên, thay vì lấy mẫu Bootstrap đều đặn, xác suất lấy mẫu được gán tỷ lệ thuận với độ duy nhất $\bar{u}_i$:
+Trong mỗi cây quyết định của Rừng ngẫu nhiên, thay vì lấy mẫu Bootstrap đều đặn, xác suất lấy mẫu được gán tỷ lệ thuận với độ duy nhất $\bar{u}\_i$:
 
 $$
 P(\text{chọn mẫu } i) = \frac{\bar{u}_i}{\sum_{k=1}^N \bar{u}_k}
 $$
 
-Xác suất thô từ `RandomForestClassifier` được hiệu chuẩn bằng `CalibratedClassifierCV` (phương pháp Isotonic Regression - `method='isotonic'`) trên các fold PurgedKFold, sinh xác suất tinh chỉnh sát thực tế $p_i \in [0, 1]$.
+Xác suất thô từ `RandomForestClassifier` được hiệu chuẩn bằng `CalibratedClassifierCV` (phương pháp Isotonic Regression - `method='isotonic'`) trên các fold PurgedKFold, sinh xác suất tinh chỉnh sát thực tế $p\_i \in [0, 1]$.
 
 ```python
 def build_weighted_bootstrap_forest(X, y, u_weights, n_estimators=1000, max_depth=5, min_samples_leaf_frac=0.05, random_state=42):
@@ -1517,7 +1517,7 @@ CPCV chia chuỗi thời gian thành $M = 6$ cụm nối tiếp nhau, tổ hợp
 
 ### 4.2 Deflated Sharpe Ratio (DSR — Bailey & López de Prado 2014)
 
-Chỉ số Sharpe OOS quan sát được $\widehat{SR}$ phải được chiết khấu (deflate) để tính đến số lượng thử nghiệm $N_{\text{DSR}}$, độ lệch phi chuẩn (Skewness $\gamma_3$, Kurtosis $\gamma_4$) và phương sai ước lượng cực đại:
+Chỉ số Sharpe OOS quan sát được $\widehat{SR}$ phải được chiết khấu (deflate) để tính đến số lượng thử nghiệm $N\_{\text{DSR}}$, độ lệch phi chuẩn (Skewness $\gamma\_3$, Kurtosis $\gamma\_4$) và phương sai ước lượng cực đại:
 
 $$
 \text{DSR} = \Phi \left( \frac{\left( \widehat{SR} - \mathbb{E}[SR_0] \right) \sqrt{T - 1}}{\sqrt{1 - \gamma_3 \widehat{SR} + \frac{\gamma_4 - 1}{4} \widehat{SR}^2}} \right) \ge 0.95
@@ -1533,7 +1533,7 @@ $$
 
 ### 4.3 Probability of Backtest Overfitting (PBO CSCV $S=16$ Blocks)
 
-Thuật toán CSCV (Combinatorial Symmetric Cross-Validation) chia ma trận PnL OOS thành $S=16$ khối bằng nhau, tổ hợp chập $S/2 = 8$ khối làm tập huấn luyện tối ưu hóa ($J_c$) và $8$ khối còn lại làm kiểm định ngoài mẫu ($\bar{J}_c$). Tỷ lệ PBO được tính bằng logit phân phối hạng tương đối:
+Thuật toán CSCV (Combinatorial Symmetric Cross-Validation) chia ma trận PnL OOS thành $S=16$ khối bằng nhau, tổ hợp chập $S/2 = 8$ khối làm tập huấn luyện tối ưu hóa ($J\_c$) và $8$ khối còn lại làm kiểm định ngoài mẫu ($\bar{J}\_c$). Tỷ lệ PBO được tính bằng logit phân phối hạng tương đối:
 
 $$
 \text{PBO} = P\left( \text{Rank}_{\bar{J}_c}(\theta^*) < 0.5 \right) \le 0.40
@@ -1543,7 +1543,7 @@ $$
 
 ### 4.4 Flat Plateau Robustness Check (Cân nhắc `t_max_live_fade` - v11.7 Patch C.3)
 
-Mô hình phải nằm trên một cao nguyên ổn định (Flat Plateau) thay vì một đỉnh nhọn đơn lẻ (Spike / Overfitting). Quét không gian lưới $\pm 5\%$ xung quanh 4 tham số macro ($m_{pt}, m_{sl}, \lambda, \delta_{\text{spatial}}$) tạo ra 81 cấu hình lân cận. Tiêu chí bền vững:
+Mô hình phải nằm trên một cao nguyên ổn định (Flat Plateau) thay vì một đỉnh nhọn đơn lẻ (Spike / Overfitting). Quét không gian lưới $\pm 5\%$ xung quanh 4 tham số macro ($m\_{pt}, m\_{sl}, \lambda, \delta\_{\text{spatial}}$) tạo ra 81 cấu hình lân cận. Tiêu chí bền vững:
 
 $$
 \frac{1}{81} \sum_{k=1}^{81} \widehat{SR}(\theta_k) \ge 0.80 \times \widehat{SR}(\theta^*)
@@ -1559,7 +1559,7 @@ $$
 
 #### 5.1.1 Độ Trễ Phụ Thuộc Chế Độ & Khớp Lệnh Thị Trường Căn Bậc Hai
 
-Độ trễ truyền nhận tín hiệu (Latency $\Delta t_{\text{lat}}$) được mô phỏng theo phân phối Lognormal, co giãn theo độc tính thanh khoản và phân vị biến động giá:
+Độ trễ truyền nhận tín hiệu (Latency $\Delta t\_{\text{lat}}$) được mô phỏng theo phân phối Lognormal, co giãn theo độc tính thanh khoản và phân vị biến động giá:
 
 $$
 \Delta t_{\text{lat}} \sim \text{Lognormal}\left( \ln\left( 15.0\text{ms} \times (1 + 1.5 \cdot \mathbb{1}[\text{toxic}]) \times (1 + \text{Percentile}(\sigma_{\text{realized}})) \right), 0.3 \right)
@@ -1611,7 +1611,7 @@ def compute_realized_pnl(side, size_notional, fill_price_entry, fill_price_exit,
 | HMM Causal Alpha Pass | Cùng `O_array`, ma trận `A`, `mu`, `Sigma` | `max_abs_diff < 1e-9` |
 | IMM Kalman + `sanitize` | Cùng chuỗi `y_t`, cấu hình ma trận nhiễu | `max_abs_diff < 1e-8`, $P \succ 0$ ($100\%$) |
 | Isotonic Interpolation | 10,000 điểm xác suất thô `raw_prob` | `max_abs_diff < 1e-9` |
-| Dollar-Bar Generator | Cùng luồng tick thô và mảng $\theta_{\text{PIT}}$ | OHLCV + OFI khớp `max_abs_diff < 1e-9` |
+| Dollar-Bar Generator | Cùng luồng tick thô và mảng $\theta\_{\text{PIT}}$ | OHLCV + OFI khớp `max_abs_diff < 1e-9` |
 | Tick Kalman Replacer | 100,000 ticks kèm cờ bad ticks | `max_abs_diff < 1e-9` Predict-Only |
 | CUSUM Brier + Reset | Chuỗi xác suất và nhãn thực tế | Khớp `max_abs_diff < 1e-9` |
 | **Full-Chain Golden Path** | **100,000 tick thô chạy trọn vẹn toàn bộ pipeline** | **`max_diff < 1e-6` VÀ `sign_flip_count == 0`** |
@@ -1648,12 +1648,12 @@ def check_shadow_mode_readiness(n_events_observed: int, weeks_elapsed: float, mi
 
 #### 5.4.1 Ngắt Mạch Sụt Giảm Tài Khoản (Drawdown Circuit Breakers)
 
-| Cấp Độ | Điều Kiện Kích Hoạt ($\text{DD}_t$) | Hành Động Vận Hành |
+| Cấp Độ | Điều Kiện Kích Hoạt ($\text{DD}\_t$) | Hành Động Vận Hành |
 |---|---|---|
-| **Tier 0** | $\text{DD}_t < 5\%$ | Giao dịch bình thường với quy mô Kelly trọn vẹn. |
-| **Tier 1** | $5\% \le \text{DD}_t < 10\%$ | Cắt giảm 50% quy mô mọi lệnh (`size = size * 0.5`). |
-| **Tier 2** | $10\% \le \text{DD}_t < 15\%$ | Flatten (đóng 100% vị thế hiện tại), dừng mở lệnh mới 24 giờ. |
-| **Tier 3** | $\text{DD}_t \ge 15\%$ | Kill Switch tuyệt đối: Hủy mọi lệnh, dừng hệ thống, yêu cầu sign-off thủ công từ con người. |
+| **Tier 0** | $\text{DD}\_t < 5\%$ | Giao dịch bình thường với quy mô Kelly trọn vẹn. |
+| **Tier 1** | $5\% \le \text{DD}\_t < 10\%$ | Cắt giảm 50% quy mô mọi lệnh (`size = size * 0.5`). |
+| **Tier 2** | $10\% \le \text{DD}\_t < 15\%$ | Flatten (đóng 100% vị thế hiện tại), dừng mở lệnh mới 24 giờ. |
+| **Tier 3** | $\text{DD}\_t \ge 15\%$ | Kill Switch tuyệt đối: Hủy mọi lệnh, dừng hệ thống, yêu cầu sign-off thủ công từ con người. |
 
 #### 5.4.2 Hiệp Phương Sai Ledoit-Wolf Shrinkage & Stressed Correlation Overlay
 
@@ -1705,7 +1705,7 @@ $$
 G_t = \max \left( 0, G_{t-1} + e_t - \bar{e}_{\text{OOS}} \right), \qquad \text{Alarm if } G_t > h_{\text{Brier}}
 $$
 
-**Chính sách Refresh Ngưỡng Tái Sinh (`refresh_cusum_thresholds`)**: Ngưỡng $\bar{e}_{\text{OOS}}$ và $h_{\text{Brier}} = 2 \cdot \sigma_{\text{Brier-OOS}}$ không được khóa cứng vĩnh viễn từ lần backtest đầu tiên, mà phải được tái sinh ngay lập tức sau mỗi lần `production_fit` mới:
+**Chính sách Refresh Ngưỡng Tái Sinh (`refresh_cusum_thresholds`)**: Ngưỡng $\bar{e}\_{\text{OOS}}$ và $h\_{\text{Brier}} = 2 \cdot \sigma\_{\text{Brier-OOS}}$ không được khóa cứng vĩnh viễn từ lần backtest đầu tiên, mà phải được tái sinh ngay lập tức sau mỗi lần `production_fit` mới:
 
 ```python
 def update_prediction_error_cusum(G_prev: float, e_i: float, e_bar_oos: float, h_brier: float) -> tuple:
@@ -1758,8 +1758,8 @@ def estimate_queue_ahead(order_book_snapshot: dict, limit_price: float, side: in
 Artifacts (`/artifacts`) khi đạt $\text{DSR} \ge 0.95$, $\text{PBO} \le 0.40$, Flat Plateau & Parity Pass:
 
 1. `ffd_weights.bin` hoặc `ffd_prony.json`: Quyết định bởi `select_ffd_production_engine`.
-2. `kalman_matrices.json`: $F, H, \mathbf{Q}_{\text{trend}}, \mathbf{Q}_{\text{chop}}, \alpha$ + `eigenvalue_floor`.
-3. `hmm_transitions.json`: $A, \boldsymbol{\mu}_j, \boldsymbol{\Sigma}_j^{-1}, \det(\boldsymbol{\Sigma}_j)$.
+2. `kalman_matrices.json`: $F, H, \mathbf{Q}\_{\text{trend}}, \mathbf{Q}\_{\text{chop}}, \alpha$ + `eigenvalue_floor`.
+3. `hmm_transitions.json`: $A, \boldsymbol{\mu}\_j, \boldsymbol{\Sigma}\_j^{-1}, \det(\boldsymbol{\Sigma}\_j)$.
 4. `meta_labeler_raw.onnx`: Random Forest ONNX (chạy qua Microsoft `ort` crate).
 5. `iso_knots.json`: Mảng điểm nút isotonic cho `interpolate_isotonic`.
 6. `kelly_lookup_table_follow.json`: Bảng Empirical Kelly Follow (cùng format iso\_knots, dùng lại `interpolate_isotonic`).
@@ -1855,7 +1855,7 @@ impl FfdStateApprox {
 - [ ] **TickLevelKalmanReplacer** Predict-Only Protocol.
 - [ ] **map\_daily\_threshold\_to\_ticks** (`join_asof backward`) + **compute\_median\_ticks\_to\_fill** Worst-Case Two-Pass.
 - [ ] **validate\_two\_regime\_architecture\_bootstrap** Parametric Bootstrap LRT ($p < 0.01$).
-- [ ] Đăng ký `n_buckets`, `min_samples_per_bucket`, `f_max` vào $N_{\text{DSR}}$ tracker.
+- [ ] Đăng ký `n_buckets`, `min_samples_per_bucket`, `f_max` vào $N\_{\text{DSR}}$ tracker.
 - [ ] Module F: CPCV 15-Fold theo đúng quy trình tuần tự Mục 4.0 (v11.8). $\text{DSR} \ge 0.95$, $\text{PBO} \le 0.40$, Flat Plateau $\ge 80\%$.
 - [ ] Module G: Execution Simulator (`sample_latency_regime_aware`, `simulate_limit_fill_with_queue`, `compute_realized_pnl`).
 - [ ] Module H: Golden Fixture SHA-256 + 8 thành phần Parity + `full_chain_parity_check` (zero sign flips).

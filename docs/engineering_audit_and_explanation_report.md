@@ -103,7 +103,12 @@ def check_absolute_index_logic(df: pd.DataFrame) -> pd.Series:
     return df["exit_idx_absolute"] == (df["entry_idx"] + 1 + df["exit_idx_relative"])
 ```
 - **Ý nghĩa & Lý do:** Đây là **bản vá khắc phục điểm mù v11.8**. Khóa cứng phương trình:
-  $$\text{exit-idx-absolute} = \text{entry-idx} + 1 + \text{exit-idx-relative}$$
+  
+
+$$
+\text{exit-idx-absolute} = \text{entry-idx} + 1 + \text{exit-idx-relative}
+$$
+
   Đảm bảo khi Module G tra cứu giá khớp lệnh (`fill_price_exit`) và chi phí qua đêm (`funding_accrued`), hệ thống luôn tra vào đúng cây nến tuyệt đối trên dòng thời gian, loại bỏ hoàn toàn sai lệch giữa backtest và live.
 
 ---
@@ -211,7 +216,12 @@ def test\_b\_1\_1\_kelly\_classical\_coin\_toss():
     assert abs(f\_star - 0.2) < 0.05
 ```
 - **Kiểm chứng bằng toán học nhị thức Bernoulli:** Với phân phối nhị thức ($60\%$ lệnh thắng $+100\%$, $40\%$ lệnh thua $-100\%$), công thức Kelly kinh điển cho kết quả lời giải chuẩn xác là:
-  $$f^* = p - \frac{1-p}{b} = 0.6 - \frac{0.4}{1.0} = 0.20 \quad (20\%)$$
+  
+
+$$
+f^* = p - \frac{1-p}{b} = 0.6 - \frac{0.4}{1.0} = 0.20 \quad (20\%)
+$$
+
 - **Nghiệm thu thực tế:** Kết quả `f_star` tính trên 10,000 mẫu xấp xỉ `0.20`, xác nhận động cơ giải tích phi tuyến (`solve_empirical_kelly_fraction`) đạt chuẩn chính xác tuyệt đối.
 
 #### Sơ Đồ Luồng Tối Ưu Hóa Kelly Phi Tuyến (`Empirical Kelly Solver Pipeline`)
@@ -290,8 +300,6 @@ Kết quả `✅ PASSED!` xác nhận bộ phân loại chế độ giao dịch 
 
 > [!NOTE]
 > **Thiết Kế Kiến Trúc: Ném Lỗi (`ValueError`) vs Cầu Dao Tự Động (`Circuit Breaker Module J`):** Tại sao `classify_trade_mode` và `compute_sl_initial` chọn ném ngoại lệ `ValueError` ngay khi gặp input `NaN` hoặc rác? Ở tầng kiểm định schema và nghiên cứu backtest (`Research/Labeling Layer`), đây là quyết định chuẩn xác để lập tức dừng chạy và bộc lộ lỗi dữ liệu (`Fast-Fail`). Tuy nhiên, ở tầng khớp lệnh thực tế (`Live Execution Layer - Module G`), việc để một ngoại lệ không được xử lý làm crash toàn bộ vòng lặp trading là nguy hiểm. Do đó, theo thiết kế tổng thể, **Module J (`Circuit Breaker`)** sẽ bọc bên ngoài các lời gọi hàm này trong môi trường live: khi bắt được `ValueError` do suy thoái mô hình HMM/Kalman (nhả `NaN`), Module J sẽ chủ động kích hoạt quy trình hạ cấp (`Graceful Degradation` / `Flatten All Positions` / chuyển trạng thái `Circuit Breaker Tripped`) thay vì để bot sập đột ngột.
-
-
 
 #### C. Sơ Đồ Luồng Phân Loại Chế Độ Giao Dịch & Khóa Cổng An Toàn (`Trade Mode Classification Pipeline`)
 ```mermaid
@@ -458,18 +466,37 @@ Khi giao dịch phái sinh hợp đồng tương lai vĩnh cửu (`Perpetual Fut
 
 ### 2. Chứng Minh Toán Học Phương Trình Khép Kín (`Closed-Form Mathematical Derivation`)
 Để đảm bảo điểm Cắt Lỗ cách điểm Thanh Lý một lớp đệm $B = \text{safety-buffer-pct}$, ta thiết lập phương trình:
-$$\text{Khoảng cách đến SL} \le \text{Khoảng cách đến Liq} \times (1 - B)$$
+
+$$
+\text{Khoảng cách đến SL} \le \text{Khoảng cách đến Liq} \times (1 - B)
+$$
 
 Gọi $S = \frac{|\text{Entry} - \text{SL}|}{\text{Entry}}$ là tỷ lệ % cắt lỗ (ví dụ Cắt lỗ `10%` thì $S = 0.10$).
 Với lệnh Long (`side = 1`), giá thanh lý là:
-$$P_{\text{liq}} = \text{Entry} \times \left(1 - \frac{1}{L} + M\right)$$
+
+$$
+P_{\text{liq}} = \text{Entry} \times \left(1 - \frac{1}{L} + M\right)
+$$
+
 Trong đó $L$ là đòn bẩy, $M$ là `maintenance_margin_rate`. Khi đó khoảng cách đến điểm thanh lý là:
-$$\text{Entry} - P_{\text{liq}} = \text{Entry} \times \left(\frac{1}{L} - M\right)$$
+
+$$
+\text{Entry} - P_{\text{liq}} = \text{Entry} \times \left(\frac{1}{L} - M\right)
+$$
 
 Thay vào bất phương trình an toàn:
-$$S \times \text{Entry} \le \text{Entry} \times \left(\frac{1}{L} - M\right) \times (1 - B)$$
-$$\frac{S}{1 - B} \le \frac{1}{L} - M \implies \frac{1}{L} \ge \frac{S}{1 - B} + M$$
-$$L_{\max} = \frac{1}{\frac{S}{1 - B} + M}$$
+
+$$
+S \times \text{Entry} \le \text{Entry} \times \left(\frac{1}{L} - M\right) \times (1 - B)
+$$
+
+$$
+\frac{S}{1 - B} \le \frac{1}{L} - M \implies \frac{1}{L} \ge \frac{S}{1 - B} + M
+$$
+
+$$
+L_{\max} = \frac{1}{\frac{S}{1 - B} + M}
+$$
 
 👉 Đây chính là công thức giải tích được cài đặt trong hàm `resolve_max_safe_leverage`, với độ chính xác tuyệt đối và thời gian thực thi $O(1)$.
 
@@ -508,7 +535,12 @@ flowchart TD
 Trong kiểm định chéo thời gian (`Purged Group Time-Series Cross-Validation`), một trong những lỗi vi phạm rò rỉ dữ liệu (`Data Leakage / Look-ahead bias`) phổ biến và khó phát hiện nhất là **cho phép hàm mô phỏng giao dịch nhìn thấy dữ liệu nằm ngoài biên Fold trong quá trình chạy tự do, sau đó mới sửa lại kết quả khi thoát hàm (`Post-Patching`)**.
 - Nếu hàm `compute_regime_aware_trailing_exit` được truyền vào toàn bộ chuỗi nến tương lai không giới hạn, bot có thể ra quyết định cắt lời `TRAIL` dựa trên những biến động giá thuộc Fold tiếp theo. Dù sau đó ta có ép kiểu lại thành `TIME_STOP` tại biên Fold cũ, toàn bộ quá trình mô phỏng đã bị ô nhiễm thông tin tương lai!
 - **Khắc phục ở Task B-1-5 (`simulate_trailing_exit_within_fold_bounds`):** Hệ thống thực thi chân lý "Phòng bệnh hơn chữa bệnh — Cắt phăng mảng dữ liệu ngay tại cửa trước khi đưa vào hàm (`Pre-Slice before calling exit logic`)".
-  $$\text{effective-end} = \min(\text{entry-idx} + 1 + t_{\max}, \text{test-window-end-idx}, \text{len}(\text{full-highs}))$$
+  
+
+$$
+\text{effective-end} = \min(\text{entry-idx} + 1 + t_{\max}, \text{test-window-end-idx}, \text{len}(\text{full-highs}))
+$$
+
   Khi mảng `future_highs` bị cắt cụt tuyệt đối tại `effective_end`, dù hàm mô phỏng bên trong có muốn nhìn xa hơn thì cũng **hoàn toàn không có dữ liệu để nhìn**! Đây là tiêu chuẩn định chế `Zero-Leakage`.
 
 ---
@@ -517,7 +549,11 @@ Trong kiểm định chéo thời gian (`Purged Group Time-Series Cross-Validati
 Khi một lệnh bị sàn phái sinh quét thanh lý (`LIQUIDATION`), cơ chế tính toán tổn thất hoàn toàn khác so với chốt lời/cắt lỗ thông thường:
 - **Sai lầm ngây thơ:** Dùng công thức PnL thường $\text{Loss} = \text{size-notional} \times (1 + \text{fee})$. Nếu `size_notional` là giá trị danh nghĩa USD (ví dụ đòn bẩy `10x` thì `size_notional` gấp 10 lần tiền cọc), việc trừ thẳng `size_notional` sẽ báo cáo quỹ bị lỗ gấp `10 lần` số vốn ký quỹ thực tế!
 - **Chuẩn hóa định chế (`compute_realized_pnl`):** Khi thanh lý, số tiền bị mất chính là toàn bộ tiền thế chấp (`Margin = size_notional / leverage`) cộng với phí phạt thanh lý mà sàn thu trên tổng giá trị lệnh (`size_notional * liquidation_fee_rate`).
-  $$\text{Loss}_{\text{Liq}} = -\left( \frac{\text{size-notional}}{\text{leverage}} + \text{size-notional} \times \text{liquidation-fee-rate} \right) - \text{funding-accrued}$$
+  
+
+$$
+\text{Loss}_{\text{Liq}} = -\left( \frac{\text{size-notional}}{\text{leverage}} + \text{size-notional} \times \text{liquidation-fee-rate} \right) - \text{funding-accrued}
+$$
 
 ---
 
@@ -584,7 +620,10 @@ Giả sử quỹ có **100 triệu đồng** vốn. Quỹ sở hữu một chi�
 
 **Lời Giải Tối Ưu Từ Định Lý Kelly:**  
 Công thức Kelly xác định chính xác tỷ lệ phân bổ tối đa hóa kỳ vọng logarithm:
-$$f^* = p - \frac{q}{b} = 60\% - \frac{40\%}{1} = 20\% \text{ (Phân bổ chính xác 20 triệu đồng cho mỗi lệnh)}$$
+
+$$
+f^* = p - \frac{q}{b} = 60\% - \frac{40\%}{1} = 20\% \text{ (Phân bổ chính xác 20 triệu đồng cho mỗi lệnh)}
+$$
 
 > [!TIP]
 > **Quy Luật Tăng Trưởng Kelly:** Nếu phân bổ đúng $f^* = 20\%$ vốn cho mỗi lệnh, đường cong tăng trưởng dài hạn của tài khoản sẽ đạt tốc độ dốc cực đại. Phân bổ vượt quá $f^*$ (`Over-betting`), rủi ro cháy tài khoản tăng vọt trong khi mức lợi suất kỳ vọng dài hạn thực tế lại suy giảm theo đường parabol; ngược lại, phân bổ thấp hơn $f^*$ (`Under-betting`, như Half-Kelly $f^*/2$) giúp giảm đáng kể biến động Drawdown với cái giá là tốc độ tích lũy vốn chậm hơn một mức tỷ lệ thuần tuý toán học.

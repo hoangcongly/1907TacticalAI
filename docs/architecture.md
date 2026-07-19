@@ -117,10 +117,15 @@ Tài liệu này **PHỤC HỒI TRỌN VẸN VÀ TĂNG CƯỜNG TOÀN BỘ CÁC 
 
 Chuỗi dữ liệu giá tick thực tế tồn tại nhiễu vi cấu trúc cực đoan (bad ticks, spikes do lỗi đường truyền hoặc khớp lệnh sai). Để tách bạch giữa nhiễu kỹ thuật và sự kiện đuôi đen (Black Swan / Tail Events), hệ thống định nghĩa Median Absolute Deviation (MAD) trên cửa sổ trượt $W = 100$ ticks:
 
-$$\text{MAD}_i = \text{median}\left( |P_{i-k} - \text{median}(P_{i-100:i-1})| \right)_{k=1}^{100}$$
+$$
+\text{MAD}_i = \text{median}\left( |P_{i-k} - \text{median}(P_{i-100:i-1})| \right)_{k=1}^{100}
+$$
 
 Độ lệch chuẩn bền vững ước lượng từ MAD (giả định phân phối chuẩn đối với phần nhiễu nền):
-$$\hat{\sigma}_{\text{MAD}, i} = 1.4826 \times \text{MAD}_i$$
+
+$$
+\hat{\sigma}_{\text{MAD}, i} = 1.4826 \times \text{MAD}_i
+$$
 
 Một tick tại chỉ số $i$ chỉ bị phân loại là **Bad Tick** khi và chỉ khi thỏa mãn **ĐỒNG THỜI 4 điều kiện**:
 
@@ -128,7 +133,10 @@ Một tick tại chỉ số $i$ chỉ bị phân loại là **Bad Tick** khi và
 2. **Khối lượng không đột biến (Volume Consistency Check)**: $V_i < 2 \times \text{median}(V_{i-100:i-1})$.
 3. **Đảo chiều chớp nhoáng (Micro-Reversal Check)**: $|P_{i+1} - P_{i-1}| < 0.3 \times |P_i - P_{i-1}|$.
 4. **Kiểm tra chéo đa sàn (Cross-Venue Parity Check)**: Giá tại sàn đối chứng $P^{\text{ref}}$ trong khoảng thời gian $[t_i - 500\text{ms}, t_i + 500\text{ms}]$ không ghi nhận biến động vượt $2 \times \hat{\sigma}_{\text{MAD}, i}$:
-$$\max_{t \in [t_i - 500\text{ms}, t_i + 500\text{ms}]} |P^{\text{ref}}(t) - P_{i-1}| < 2 \times \hat{\sigma}_{\text{MAD}, i}$$
+
+$$
+\max_{t \in [t_i - 500\text{ms}, t_i + 500\text{ms}]} |P^{\text{ref}}(t) - P_{i-1}| < 2 \times \hat{\sigma}_{\text{MAD}, i}
+$$
 
 *(Ghi chú Tail Event: Nếu điều kiện 1 thỏa mãn nhưng $V_i \ge 2 \times \text{median}(V_{i-100:i-1})$, đây là dòng tiền thực tháo chạy hoặc đột phá thanh khoản $\implies$ Không lọc giá, giữ nguyên $P_i$ và gắn cờ `is_tail_event = True`).*
 
@@ -136,27 +144,43 @@ $$\max_{t \in [t_i - 500\text{ms}, t_i + 500\text{ms}]} |P^{\text{ref}}(t) - P_{
 
 Khi gộp nến theo Dollar-Volume ($V_{\text{dollar}} = \sum P_k V_k \ge \theta_{\text{PIT}}$), một nến hoàn thành trong số lượng tick quá nhỏ ($N_{\text{ticks}} \ll \text{median}$) đồng nghĩa với việc có các lệnh thị trường (Market Orders) quy mô lớn ăn thẳng vào sổ lệnh, gây sốc thanh khoản (Toxic Order Flow).
 
-$$\text{tick-count-to-fill}_t < 0.5 \times \text{median}\left( \text{tick-count-to-fill}_{t-100:t-1} \right) \implies \text{is-high-toxicity-bar} = \text{True}$$
+$$
+\text{tick-count-to-fill}_t < 0.5 \times \text{median}\left( \text{tick-count-to-fill}_{t-100:t-1} \right) \implies \text{is-high-toxicity-bar} = \text{True}
+$$
 
 #### 1.0.3 Kalman Tick-Level Replacer (Giao thức Predict-Only v11.2)
 
 Khi phát hiện Bad Tick, thay vì loại bỏ làm đứt gãy chỉ số thời gian hoặc điền phương pháp Naive Forward Fill (tạo sai lệch động lượng = 0), hệ thống sử dụng bộ lọc Kalman 2 trạng thái $[P_t, \nu_t]^T$ với **Giao thức Predict-Only**:
 
 **Trạng thái hệ thống**:
+
 $$
 \mathbf{x}_t = \begin{bmatrix} P_t \\ \nu_t \end{bmatrix}, \qquad \mathbf{F} = \begin{bmatrix} 1 & 1 \\ 0 & 1 \end{bmatrix}, \qquad \mathbf{H} = \begin{bmatrix} 1 & 0 \end{bmatrix}
 $$
 
 **Khi gặp Good Tick (Bình thường)** — Thực hiện cả bước Dự báo và Cập nhật:
-$$\hat{\mathbf{x}}_{t|t-1} = \mathbf{F} \hat{\mathbf{x}}_{t-1|t-1}, \qquad \mathbf{P}_{t|t-1} = \mathbf{F} \mathbf{P}_{t-1|t-1} \mathbf{F}^T + \mathbf{Q}$$
-$$K_t = \mathbf{P}_{t|t-1} \mathbf{H}^T \left( \mathbf{H} \mathbf{P}_{t|t-1} \mathbf{H}^T + R \right)^{-1}$$
-$$\hat{\mathbf{x}}_{t|t} = \hat{\mathbf{x}}_{t|t-1} + K_t \left( y_t - \mathbf{H} \hat{\mathbf{x}}_{t|t-1} \right), \qquad \mathbf{P}_{t|t} = (\mathbf{I} - K_t \mathbf{H}) \mathbf{P}_{t|t-1}$$
+
+$$
+\hat{\mathbf{x}}_{t|t-1} = \mathbf{F} \hat{\mathbf{x}}_{t-1|t-1}, \qquad \mathbf{P}_{t|t-1} = \mathbf{F} \mathbf{P}_{t-1|t-1} \mathbf{F}^T + \mathbf{Q}
+$$
+
+$$
+K_t = \mathbf{P}_{t|t-1} \mathbf{H}^T \left( \mathbf{H} \mathbf{P}_{t|t-1} \mathbf{H}^T + R \right)^{-1}
+$$
+
+$$
+\hat{\mathbf{x}}_{t|t} = \hat{\mathbf{x}}_{t|t-1} + K_t \left( y_t - \mathbf{H} \hat{\mathbf{x}}_{t|t-1} \right), \qquad \mathbf{P}_{t|t} = (\mathbf{I} - K_t \mathbf{H}) \mathbf{P}_{t|t-1}
+$$
 
 **Khi gặp Bad Tick (`is_bad_tick = True`)** — **Bỏ qua bước Cập nhật (Predict-Only Protocol)**:
+
 $$
 \hat{\mathbf{x}}_{t|t} \equiv \hat{\mathbf{x}}_{t|t-1} = \begin{bmatrix} \hat{P}_{t-1|t-1} + \hat{\nu}_{t-1|t-1} \\ \hat{\nu}_{t-1|t-1} \end{bmatrix}, \qquad \mathbf{P}_{t|t} \equiv \mathbf{P}_{t|t-1}
 $$
-$$\tilde{y}_t = \mathbf{H} \hat{\mathbf{x}}_{t|t} = \hat{P}_{t-1|t-1} + \hat{\nu}_{t-1|t-1}$$
+
+$$
+\tilde{y}_t = \mathbf{H} \hat{\mathbf{x}}_{t|t} = \hat{P}_{t-1|t-1} + \hat{\nu}_{t-1|t-1}
+$$
 
 ```python
 import numpy as np
@@ -200,7 +224,9 @@ class TickLevelKalmanReplacer:
 
 Để ngăn chặn tuyệt đối hiện tượng rò rỉ thông tin tương lai (Look-ahead Bias / Data Leakage) khi tính ngưỡng tạo nến Dollar-Volume, ngưỡng $\theta_{\text{PIT}}$ cho ngày $T$ chỉ được phép sử dụng tổng Dollar-Volume của 21 ngày giao dịch hoàn tất **trước đó** ($T-21$ đến $T-1$), chia cho tần suất mục tiêu $\text{target-freq} = 50$ nến/ngày:
 
-$$\theta_{\text{PIT}}(T) = \frac{1}{\text{target-freq}} \times \frac{1}{21} \sum_{k=1}^{21} \text{Daily-Dollar-Volume}(T-k)$$
+$$
+\theta_{\text{PIT}}(T) = \frac{1}{\text{target-freq}} \times \frac{1}{21} \sum_{k=1}^{21} \text{Daily-Dollar-Volume}(T-k)
+$$
 
 ```python
 import polars as pl
@@ -310,10 +336,16 @@ b_i = \begin{cases} +1 & \text{nếu } P_i > P_{i-1} \\ -1 & \text{nếu } P_i <
 $$
 
 Trong quá trình tích lũy một nến Dollar-Volume từ tick $j = 1 \dots N_t$, khối lượng mua và bán chủ động được phân tách:
-$$V_{\text{buy}, t} = \sum_{j=1}^{N_t} V_j \cdot \mathbb{1}[b_j = +1], \qquad V_{\text{sell}, t} = \sum_{j=1}^{N_t} V_j \cdot \mathbb{1}[b_j = -1]$$
+
+$$
+V_{\text{buy}, t} = \sum_{j=1}^{N_t} V_j \cdot \mathbb{1}[b_j = +1], \qquad V_{\text{sell}, t} = \sum_{j=1}^{N_t} V_j \cdot \mathbb{1}[b_j = -1]
+$$
 
 Sự mất cân bằng dòng lệnh chuẩn hóa (Order Flow Imbalance - $\text{OFI}_t$) của nến $t$:
-$$\text{OFI}_t = \frac{V_{\text{buy}, t} - V_{\text{sell}, t}}{V_{\text{buy}, t} + V_{\text{sell}, t} + 10^{-8}} \in [-1, +1]$$
+
+$$
+\text{OFI}_t = \frac{V_{\text{buy}, t} - V_{\text{sell}, t}}{V_{\text{buy}, t} + V_{\text{sell}, t} + 10^{-8}} \in [-1, +1]
+$$
 
 ```python
 from numba import njit
@@ -383,7 +415,10 @@ def generate_dollar_volume_bars_v11(ticks: np.ndarray, daily_thresholds: np.ndar
 Khi thị trường mở cửa lại sau khoảng trống thanh khoản hoặc mất kết nối:
 
 1. **Đối với Kalman Filter (Module B.2)**: Thực hiện $n$ bước Predict-Only liên tiếp ứng với số khoảng thời gian bị thiếu, duy trì sự suy giảm độ bất định hoặc giữ nguyên tốc độ Drift:
-$$\hat{\mathbf{x}}_{t+n|t} = \mathbf{F}^n \hat{\mathbf{x}}_{t|t}, \qquad \mathbf{P}_{t+n|t} = \mathbf{F}^n \mathbf{P}_{t|t} (\mathbf{F}^T)^n + \sum_{m=0}^{n-1} \mathbf{F}^m \mathbf{Q} (\mathbf{F}^T)^m$$
+
+$$
+\hat{\mathbf{x}}_{t+n|t} = \mathbf{F}^n \hat{\mathbf{x}}_{t|t}, \qquad \mathbf{P}_{t+n|t} = \mathbf{F}^n \mathbf{P}_{t|t} (\mathbf{F}^T)^n + \sum_{m=0}^{n-1} \mathbf{F}^m \mathbf{Q} (\mathbf{F}^T)^m
+$$
 
 2. **Đối với Chỉ báo Cuộn (Rolling Window $W$)**: Gắn cờ trạng thái `insufficient_history = True` cho $W$ nến đầu tiên sau khởi động, ép mọi tín hiệu giao dịch về $0.0$.
 
@@ -434,19 +469,27 @@ class ExperimentTracker:
 
 Chuỗi giá tài chính gốc $X_t$ không dừng (Non-stationary), trong khi chuỗi lợi suất log đầu tiên $\Delta X_t = X_t - X_{t-1}$ dừng nhưng mất hoàn toàn trí nhớ dài hạn (Long-memory). Vi phân từng phần (Fractional Differentiation - FFD) tìm bậc vi phân cực tiểu $d^* \in [0, 1]$ vừa đủ để chuỗi $\tilde{X}_t = (1 - B)^d X_t$ đạt tính dừng theo kiểm định ADF ($p\text{-value} < 0.05$), đồng thời giữ lại tối đa hệ số tương quan với chuỗi gốc:
 
-$$(1 - B)^d = \sum_{k=0}^{\infty} w_k(d) B^k, \qquad w_k(d) = -w_{k-1}(d) \frac{d - k + 1}{k}, \quad w_0(d) = 1$$
+$$
+(1 - B)^d = \sum_{k=0}^{\infty} w_k(d) B^k, \qquad w_k(d) = -w_{k-1}(d) \frac{d - k + 1}{k}, \quad w_0(d) = 1
+$$
 
 #### 2.1.2 Phương án 1 (MẶC ĐỊNH PRODUCTION — Windowed FFD $O(W^*)$ Cache-Optimized Engine)
 
 Vì trọng số $w_k(d)$ hội tụ về $0$ khi $k \to \infty$, ta cắt ngắn cửa sổ tại ngưỡng tiệm cận $\tau = 10^{-5}$:
-$$W^*(d, \tau) = \min \{ k \in \mathbb{N} \mid |w_k(d)| < \tau \}$$
+
+$$
+W^*(d, \tau) = \min \{ k \in \mathbb{N} \mid |w_k(d)| < \tau \}
+$$
 
 Với $d^* \in [0.3, 0.6]$, độ dài cửa sổ hiệu dụng $W^* \approx 80 \text{–} 150$, nhỏ hơn nhiều so với $1000$. Mảng trọng số `weights` kích thước $80 \text{–} 150$ nằm trọn trong bộ nhớ đệm tốc độ cao L1 CPU Cache ($32\text{KB} \text{–} 64\text{KB}$), đạt tốc độ thực thi nhị phân tối đa trên Rust RTK.
 
 #### 2.1.3 Phương án 2 (Sum-of-Exponentials $O(M)$ — CHỈ khi `approved=True` từ kiểm định sai số)
 
 Để xấp xỉ $w_k(d)$ bằng tổng của $M$ hàm mũ (Prony Approximation / State-Space Realization), ta giải bài toán cực tiểu hóa phi tuyến:
-$$\hat{w}_k = \sum_{m=1}^M c_m \rho_m^k \approx w_k(d), \qquad \forall k \in [0, W^*]$$
+
+$$
+\hat{w}_k = \sum_{m=1}^M c_m \rho_m^k \approx w_k(d), \qquad \forall k \in [0, W^*]
+$$
 
 **Sửa lỗi toán học v11.5 (Patch B)**: Trọng số FFD gốc $w_k(d)$ đổi dấu luân phiên ở các giá trị $k$ nhỏ. Ràng buộc $\rho_m > 0$ thuần túy trong v11.4 không thể tái tạo hành vi đổi dấu này. Ta mở rộng miền xác định cho phép $\rho_m \in (-0.9999, +0.9999)$:
 
@@ -511,7 +554,9 @@ def select_ffd_production_engine(ffd_weights_exact: np.ndarray, M_prony: int = 6
 
 Để ngăn chặn việc ép buộc mô hình HMM 2 trạng thái khi thị trường thực tế đang di chuyển ngẫu nhiên đơn chế độ (Gaussian Random Walk), hệ thống thực hiện kiểm định tỷ số hợp lý Bootstrap tham số (Parametric Bootstrap LRT):
 
-$$LR = 2 \left( \ln L_{N=2}(\mathbf{O}) - \ln L_{N=1}(\mathbf{O}) \right)$$
+$$
+LR = 2 \left( \ln L_{N=2}(\mathbf{O}) - \ln L_{N=1}(\mathbf{O}) \right)
+$$
 
 ```python
 import numpy as np
@@ -558,12 +603,16 @@ def validate_two_regime_architecture_bootstrap(O_full: np.ndarray, n_bootstrap: 
 #### 2.2.2 Causal HMM 2D Emission & Zero-Variance Clamp
 
 Hệ HMM được khóa cứng $N = 2$ trạng thái (`Trending` và `Choppy/Mean-Reverting`). Véctơ quan sát 2 chiều kết hợp giữa biến động giá và thông tin vi cấu trúc:
+
 $$
 \mathbf{O}_t = \begin{bmatrix} r_t \\ \text{OFI}_t \times \sigma_{\text{realized}, 24, t} \end{bmatrix}
 $$
 
 **Zero-Variance Trap Safe Clamp**: Để tránh tràn số (`NaN` hoặc `Inf`) khi ma trận hiệp phương sai của trạng thái $j$ bị suy biến (tiệm cận ma trận đơn lẻ), định thức luôn được kẹp sàn:
-$$\det(\boldsymbol{\Sigma}_j)_{\text{safe}} = \max \left( \det(\boldsymbol{\Sigma}_j), 10^{-12} \right)$$
+
+$$
+\det(\boldsymbol{\Sigma}_j)_{\text{safe}} = \max \left( \det(\boldsymbol{\Sigma}_j), 10^{-12} \right)
+$$
 
 **Hurst Labeling Rule**: Sau khi hội tụ EM, trạng thái $j \in \{0, 1\}$ có giá trị chỉ số Hurst trung bình cao hơn ($\bar{H}_j > \bar{H}_{1-j}$) được gán nhãn `Trending`, trạng thái còn lại là `Choppy`.
 
@@ -571,8 +620,13 @@ $$\det(\boldsymbol{\Sigma}_j)_{\text{safe}} = \max \left( \det(\boldsymbol{\Sigm
 
 Trong môi trường Production thực tế, ta chỉ được phép sử dụng bộ lọc nhân quả Forward Pass (Alpha Pass) từ thời điểm $0$ đến $t$, tuyệt đối không dùng Backward Pass (Beta Pass - Baum-Welch smoothing):
 
-$$\alpha_j(t) = P(\mathbf{O}_1, \dots, \mathbf{O}_t, S_t = j) = \mathcal{N}\left(\mathbf{O}_t; \boldsymbol{\mu}_j, \boldsymbol{\Sigma}_j\right) \sum_{i=1}^2 \alpha_i(t-1) A_{ij}$$
-$$p_{\text{trend}, t} = \frac{\alpha_{\text{trend}}(t)}{\alpha_0(t) + \alpha_1(t)}, \qquad p_{\text{chop}, t} = 1 - p_{\text{trend}, t}$$
+$$
+\alpha_j(t) = P(\mathbf{O}_1, \dots, \mathbf{O}_t, S_t = j) = \mathcal{N}\left(\mathbf{O}_t; \boldsymbol{\mu}_j, \boldsymbol{\Sigma}_j\right) \sum_{i=1}^2 \alpha_i(t-1) A_{ij}
+$$
+
+$$
+p_{\text{trend}, t} = \frac{\alpha_{\text{trend}}(t)}{\alpha_0(t) + \alpha_1(t)}, \qquad p_{\text{chop}, t} = 1 - p_{\text{trend}, t}
+$$
 
 ```python
 from numba import njit
@@ -642,33 +696,65 @@ $$
 :
 
 1. **Mixing Probabilities (Tính xác suất trộn đầu vào)**:
-$$c_j = \sum_{i=1}^2 a_{ij} p_{i, t-1}, \qquad \mu_{i|j} = \frac{a_{ij} p_{i, t-1}}{c_j}$$
+
+$$
+c_j = \sum_{i=1}^2 a_{ij} p_{i, t-1}, \qquad \mu_{i|j} = \frac{a_{ij} p_{i, t-1}}{c_j}
+$$
+
 *(Trong đó $a_{ij}$ là ma trận chuyển trạng thái của HMM và $p_{i, t-1}$ là xác suất chế độ trước đó).*
 
 2. **Mixed Initial Conditions & Spread-of-Means (Trộn trạng thái & ma trận hiệp phương sai)**:
-$$\hat{\mathbf{x}}_{0j} = \sum_{i=1}^2 \mu_{i|j} \hat{\mathbf{x}}_{i, t-1|t-1}$$
-$$\mathbf{P}_{0j} = \sum_{i=1}^2 \mu_{i|j} \left[ \mathbf{P}_{i, t-1|t-1} + (\hat{\mathbf{x}}_{i, t-1|t-1} - \hat{\mathbf{x}}_{0j})(\hat{\mathbf{x}}_{i, t-1|t-1} - \hat{\mathbf{x}}_{0j})^T \right]$$
+
+$$
+\hat{\mathbf{x}}_{0j} = \sum_{i=1}^2 \mu_{i|j} \hat{\mathbf{x}}_{i, t-1|t-1}
+$$
+
+$$
+\mathbf{P}_{0j} = \sum_{i=1}^2 \mu_{i|j} \left[ \mathbf{P}_{i, t-1|t-1} + (\hat{\mathbf{x}}_{i, t-1|t-1} - \hat{\mathbf{x}}_{0j})(\hat{\mathbf{x}}_{i, t-1|t-1} - \hat{\mathbf{x}}_{0j})^T \right]
+$$
 
 3. **Prediction (Dự báo riêng từng bộ lọc $j \in \{1, 2\}$)**:
-$$\hat{\mathbf{x}}_{j, t|t-1} = \mathbf{F} \hat{\mathbf{x}}_{0j}, \qquad \mathbf{P}_{j, t|t-1} = \mathbf{F} \mathbf{P}_{0j} \mathbf{F}^T + \mathbf{Q}_j$$
+
+$$
+\hat{\mathbf{x}}_{j, t|t-1} = \mathbf{F} \hat{\mathbf{x}}_{0j}, \qquad \mathbf{P}_{j, t|t-1} = \mathbf{F} \mathbf{P}_{0j} \mathbf{F}^T + \mathbf{Q}_j
+$$
 
 4. **Measurement Update (Cập nhật đo lường & Làm sạch)**:
-$$S_j = \mathbf{H} \mathbf{P}_{j, t|t-1} \mathbf{H}^T + R_t, \qquad K_j = \mathbf{P}_{j, t|t-1} \mathbf{H}^T S_j^{-1}$$
-$$\hat{\mathbf{x}}_{j, t|t} = \hat{\mathbf{x}}_{j, t|t-1} + K_j (y_t - \mathbf{H} \hat{\mathbf{x}}_{j, t|t-1})$$
-$$\mathbf{P}_{j, t|t}^{\text{raw}} = (\mathbf{I} - K_j \mathbf{H}) \mathbf{P}_{j, t|t-1}$$
-$$\mathbf{P}_{j, t|t} = \text{sanitize-covariance-matrix}\left( \mathbf{P}_{j, t|t}^{\text{raw}}, 10^{-10} \right)$$
+
+$$
+S_j = \mathbf{H} \mathbf{P}_{j, t|t-1} \mathbf{H}^T + R_t, \qquad K_j = \mathbf{P}_{j, t|t-1} \mathbf{H}^T S_j^{-1}
+$$
+
+$$
+\hat{\mathbf{x}}_{j, t|t} = \hat{\mathbf{x}}_{j, t|t-1} + K_j (y_t - \mathbf{H} \hat{\mathbf{x}}_{j, t|t-1})
+$$
+
+$$
+\mathbf{P}_{j, t|t}^{\text{raw}} = (\mathbf{I} - K_j \mathbf{H}) \mathbf{P}_{j, t|t-1}
+$$
+
+$$
+\mathbf{P}_{j, t|t} = \text{sanitize-covariance-matrix}\left( \mathbf{P}_{j, t|t}^{\text{raw}}, 10^{-10} \right)
+$$
 
 5. **Master Regime Probability Injection (Đồng bộ xác suất chế độ từ Causal HMM)**:
 Thay vì cập nhật xác suất IMM bằng hàm hợp lý chuẩn hóa riêng rẽ dễ bị drift, ta inject trực tiếp xác suất hậu nghiệm nhân quả từ Module B.1:
-$$p_{j, t} \equiv p_{\text{HMM}, j}(t)$$
+
+$$
+p_{j, t} \equiv p_{\text{HMM}, j}(t)
+$$
 
 6. **Combined Output (Cập nhật trạng thái tổng hợp toàn hệ thống)**:
+
 $$
 \hat{\mathbf{x}}_{t|t} = \sum_{j=1}^2 p_{j, t} \hat{\mathbf{x}}_{j, t|t} = \begin{bmatrix} \hat{P}_{t|t} \\ \hat{\nu}_{t|t} \end{bmatrix}
 $$
 
 7. **Trend Score Output (Chỉ báo Động lượng Chuẩn hóa theo ATR)**:
-$$\text{Trend-Score}_t = \frac{\hat{\nu}_{t|t}}{\text{ATR}_{14, t} + 10^{-8}}$$
+
+$$
+\text{Trend-Score}_t = \frac{\hat{\nu}_{t|t}}{\text{ATR}_{14, t} + 10^{-8}}
+$$
 
 #### 2.3.3 Mã Nguồn Rust `sanitize_covariance_2x2` (Nghiệm Đóng Dạng Tường Minh)
 
@@ -702,15 +788,24 @@ pub fn sanitize_covariance_2x2(p: [[f64; 2]; 2], eigenvalue_floor: f64) -> [[f64
 #### 2.4.1 Generalized Hurst Exponent (GHE Window $W=168$, Lags $[2, 4, 8, 16]$)
 
 Chỉ số Hurst GHE ước lượng độ dai dẳng của chuỗi log-price $X_t = \ln P_t$ dựa trên mô men chuẩn hóa bậc $q=1$:
-$$K_1(\tau) = \frac{1}{W-\tau} \sum_{k=1}^{W-\tau} |X_{t-k} - X_{t-k-\tau}| \sim c \cdot \tau^{H_t}$$
+
+$$
+K_1(\tau) = \frac{1}{W-\tau} \sum_{k=1}^{W-\tau} |X_{t-k} - X_{t-k-\tau}| \sim c \cdot \tau^{H_t}
+$$
 
 Chỉ báo $H_t$ được giải bằng hồi quy OLS trên cửa sổ trượt 168 bar:
-$$H_t = \frac{\text{Cov}\left( \ln K_1(\tau), \ln \tau \right)}{\text{Var}(\ln \tau)}, \qquad \forall \tau \in \{2, 4, 8, 16\}$$
+
+$$
+H_t = \frac{\text{Cov}\left( \ln K_1(\tau), \ln \tau \right)}{\text{Var}(\ln \tau)}, \qquad \forall \tau \in \{2, 4, 8, 16\}
+$$
 
 #### 2.4.2 Chẩn Đoán Đa Cộng Tuyến (Spearman Rank Correlation & VIF)
 
 Trước khi đưa đặc trưng vào Meta-Labeler (Module E), mọi biến có tương quan hạng Spearman $|\rho_S(X_j, X_k)| > 0.80$ hoặc Hệ số Phóng đại Phương sai $\text{VIF}_j > 5.0$ bị loại bỏ tự động:
-$$\text{VIF}_j = \frac{1}{1 - R_j^2} \le 5.0$$
+
+$$
+\text{VIF}_j = \frac{1}{1 - R_j^2} \le 5.0
+$$
 
 ---
 
@@ -722,7 +817,9 @@ $$\text{VIF}_j = \frac{1}{1 - R_j^2} \le 5.0$$
 
 Để chuyển đổi từ chuỗi thời gian nến đều đặn sang các sự kiện mang thông tin mang tính cấu trúc (Information-driven Events), bộ lọc CUSUM theo dõi sự tích lũy của biến động giá vượt ngưỡng kỳ vọng:
 
-$$S_t^+ = \max \left( 0, S_{t-1}^+ + \Delta P_t - \mathbb{E}[\Delta P] \right), \qquad S_t^- = \min \left( 0, S_{t-1}^- + \Delta P_t - \mathbb{E}[\Delta P] \right)$$
+$$
+S_t^+ = \max \left( 0, S_{t-1}^+ + \Delta P_t - \mathbb{E}[\Delta P] \right), \qquad S_t^- = \min \left( 0, S_{t-1}^- + \Delta P_t - \mathbb{E}[\Delta P] \right)
+$$
 
 Khi $S_t^+ > h_{\text{CUSUM}}$ hoặc $S_t^- < -h_{\text{CUSUM}}$, một sự kiện ứng cử viên được kích hoạt và bộ lọc tự reset về $0$.
 
@@ -731,10 +828,16 @@ Khi $S_t^+ > h_{\text{CUSUM}}$ hoặc $S_t^- < -h_{\text{CUSUM}}$, một sự ki
 Một sự kiện CUSUM tại bar $t$ chỉ được phép trở thành điểm vào lệnh chính thức nếu thỏa mãn **ĐỒNG THỜI 2 điều kiện**:
 
 1. **Temporal Cooldown Check**: Số bar trôi qua kể từ sự kiện trước đó vượt ngưỡng $k_{\text{cooldown}}$:
-$$t - t_{\text{prev-event}} \ge k_{\text{cooldown}}$$
+
+$$
+t - t_{\text{prev-event}} \ge k_{\text{cooldown}}
+$$
 
 2. **Spatial Deviation Check**: Khoảng cách giá tuyệt đối so với mức giá vào lệnh trước đó phải vượt mức biến động nội tại:
-$$\left| P_t - P_{t_{\text{prev-event}}} \right| > \delta_{\text{spatial}} \times \text{ATR}_{14, t}$$
+
+$$
+\left| P_t - P_{t_{\text{prev-event}}} \right| > \delta_{\text{spatial}} \times \text{ATR}_{14, t}
+$$
 
 **Quy ước v11.6 C.4 (Lưu metadata sự kiện)**: Mỗi bản ghi sự kiện CUSUM hợp lệ bắt buộc phải lưu trữ đồng thời `trade_mode` (xác định bởi hàm `classify_trade_mode` tại thời điểm mở lệnh) và `side` (`side_follow = np.sign(Trend_Score_t)`, `side_fade = -side_follow`), đảm bảo khả năng tái tạo chính xác tuyệt đối trong quy trình validation Module F.
 
@@ -746,12 +849,18 @@ $$\left| P_t - P_{t_{\text{prev-event}}} \right| > \delta_{\text{spatial}} \time
 
 Để huấn luyện Meta-Labeler (Random Forest), mỗi sự kiện $i$ tại thời điểm $t_{0, i}$ được dán nhãn theo phương pháp Triple-Barrier (AFML Chương 3). Các rào cản chốt lời ($m_{pt}$) và cắt lỗ ($m_{sl}$) được co giãn động theo xác suất chế độ HMM ($p_{\text{trend, i}}, p_{\text{chop, i}}$):
 
-$$m_{pt, i} = p_{\text{chop}, i} \times 1.5 + p_{\text{trend}, i} \times 3.0, \qquad m_{sl, i} = p_{\text{chop}, i} \times 1.5 + p_{\text{trend}, i} \times 2.0$$
+$$
+m_{pt, i} = p_{\text{chop}, i} \times 1.5 + p_{\text{trend}, i} \times 3.0, \qquad m_{sl, i} = p_{\text{chop}, i} \times 1.5 + p_{\text{trend}, i} \times 2.0
+$$
 
 Để bù đắp rủi ro trượt giá khi nến hiện tại có độc tính cao (`is_high_toxicity_bar`), chi phí giao dịch ước tính được nới rộng 50%:
-$$c_{\text{trade}, i}^{\text{adj}} = c_{\text{trade}, i} \times \left( 1 + 0.5 \cdot \mathbb{1}[\text{is-high-toxicity-bar}_i] \right)$$
+
+$$
+c_{\text{trade}, i}^{\text{adj}} = c_{\text{trade}, i} \times \left( 1 + 0.5 \cdot \mathbb{1}[\text{is-high-toxicity-bar}_i] \right)
+$$
 
 **Công Thức Cắt Lỗ Ban Đầu Đối Xứng Long/Short (v11.6 Patch A.1)**:
+
 $$
 SL_{\text{initial}, i} = \begin{cases} P_{\text{entry}, i} \times \left( 1 - m_{sl, i} \cdot \sigma_i - c_{\text{trade}, i}^{\text{adj}} \right) & \text{khi } \text{side}_i > 0 \\ P_{\text{entry}, i} \times \left( 1 + m_{sl, i} \cdot \sigma_i + c_{\text{trade}, i}^{\text{adj}} \right) & \text{khi } \text{side}_i < 0 \end{cases}
 $$
@@ -888,7 +997,9 @@ def test_regime_aware_trailing_exit_symmetry():
 
 Do rào cản Triple-Barrier có độ dài tối đa $T_{\text{max}}$, các nhãn tồn tại sự chồng lấp thời gian lớn. Để tránh hiện tượng Overfitting do đếm trùng lặp mẫu trong Random Forest, số lượng nhãn chồng lấp tại thời điểm $t$ là $c_t = \sum_{i=1}^N \mathbb{1}[t \in [t_{0, i}, t_{1, i}]]$. Trọng số tính duy nhất trung bình của mẫu $i$:
 
-$$\bar{u}_i = \frac{1}{t_{1, i} - t_{0, i} + 1} \sum_{t=t_{0, i}}^{t_{1, i}} \frac{1}{c_t}$$
+$$
+\bar{u}_i = \frac{1}{t_{1, i} - t_{0, i} + 1} \sum_{t=t_{0, i}}^{t_{1, i}} \frac{1}{c_t}
+$$
 
 #### 3.3.2 Triple Consensus Feature Selection (MDI, MDA, SFI)
 
@@ -896,7 +1007,10 @@ $$\bar{u}_i = \frac{1}{t_{1, i} - t_{0, i} + 1} \sum_{t=t_{0, i}}^{t_{1, i}} \fr
 
 1. **Mean Decrease Impurity (MDI)**: Độ giảm entropy trung bình trên các cây rừng > $0.01$.
 2. **Mean Decrease Accuracy (MDA — Permutation Importance)**: Khôi phục mức độ chính xác ngoài mẫu giảm tối thiểu $\ge 5\%$ khi xáo trộn ngẫu nhiên đặc trưng $X_j$:
-$$\text{MDA}_j = \text{Score}_{\text{OOS}}(\mathbf{X}) - \text{Score}_{\text{OOS}}\left(\mathbf{X}_{\text{permuted } j}\right) \ge 0.05$$
+
+$$
+\text{MDA}_j = \text{Score}_{\text{OOS}}(\mathbf{X}) - \text{Score}_{\text{OOS}}\left(\mathbf{X}_{\text{permuted } j}\right) \ge 0.05
+$$
 
 3. **Single Feature Importance (SFI)**: Mô hình Random Forest chỉ huấn luyện riêng trên đặc trưng $X_j$ phải đạt chỉ số Sharpe OOS dương ($SR_{\text{OOS}, j} > 0$).
 
@@ -972,7 +1086,10 @@ def test_purged_kfold_toy_example():
 #### 3.4.2 Weighted Bootstrap Forest & Out-of-Bag Isotonic Calibration
 
 Trong mỗi cây quyết định của Rừng ngẫu nhiên, thay vì lấy mẫu Bootstrap đều đặn, xác suất lấy mẫu được gán tỷ lệ thuận với độ duy nhất $\bar{u}_i$:
-$$P(\text{chọn mẫu } i) = \frac{\bar{u}_i}{\sum_{k=1}^N \bar{u}_k}$$
+
+$$
+P(\text{chọn mẫu } i) = \frac{\bar{u}_i}{\sum_{k=1}^N \bar{u}_k}
+$$
 
 Xác suất thô từ `RandomForestClassifier` được hiệu chuẩn bằng `CalibratedClassifierCV` (phương pháp Isotonic Regression - `method='isotonic'`) trên các fold PurgedKFold, sinh xác suất tinh chỉnh sát thực tế $p_i \in [0, 1]$.
 
@@ -1008,8 +1125,13 @@ def build_and_calibrate_meta_labeler_v12(X_train, y_train, u_weights, t1_train, 
 
 Công thức Kelly nhị phân đóng dạng $f^* = p - \frac{1-p}{b}$ chỉ áp dụng được cho cược có đúng 2 kết cục rời rạc ($+b$ hoặc $-1$). Với lệnh giao dịch thực tế có Trailing-Exit, phân phối lợi nhuận là liên tục, bất đối xứng và có đuôi dài ($r \in (-1, +\infty)$). Tỷ lệ Kelly thực nghiệm $f^*$ được giải bằng phương pháp tìm nghiệm tối đa hóa kỳ vọng log-growth (Tốc độ tăng trưởng kỳ vọng hợp kép) trên mẫu phân phối lợi nhuận thực nghiệm $\mathcal{R}$:
 
-$$G(f) = \mathbb{E}\left[ \ln(1 + f \cdot r) \right] \approx \frac{1}{N} \sum_{k=1}^N \ln(1 + f \cdot r_k)$$
-$$f^* = \arg\max_{f \in [0, f_{\text{max}}]} G(f) \implies \frac{dG(f)}{df} = \frac{1}{N} \sum_{k=1}^N \frac{r_k}{1 + f^* \cdot r_k} = 0$$
+$$
+G(f) = \mathbb{E}\left[ \ln(1 + f \cdot r) \right] \approx \frac{1}{N} \sum_{k=1}^N \ln(1 + f \cdot r_k)
+$$
+
+$$
+f^* = \arg\max_{f \in [0, f_{\text{max}}]} G(f) \implies \frac{dG(f)}{df} = \frac{1}{N} \sum_{k=1}^N \frac{r_k}{1 + f^* \cdot r_k} = 0
+$$
 
 ```python
 import numpy as np
@@ -1166,7 +1288,9 @@ def apply_toxicity_and_confidence_discount(kelly_size, is_high_toxicity_bar, deg
     return kelly_size * multiplier
 ```
 
-$$\text{Scale}_t = \min \left( \frac{\sigma_{\text{target}}}{\hat{\sigma}_{\text{realized}, 20d, t} + 10^{-8}}, \text{Leverage}_{\text{cap}} \right), \qquad S_{\text{final}, t} = S_{\text{agg}, t} \times \text{Scale}_t$$
+$$
+\text{Scale}_t = \min \left( \frac{\sigma_{\text{target}}}{\hat{\sigma}_{\text{realized}, 20d, t} + 10^{-8}}, \text{Leverage}_{\text{cap}} \right), \qquad S_{\text{final}, t} = S_{\text{agg}, t} \times \text{Scale}_t
+$$
 
 #### 3.5.6 Chọn $\lambda$ Theo Calmar Ratio
 
@@ -1395,9 +1519,14 @@ CPCV chia chuỗi thời gian thành $M = 6$ cụm nối tiếp nhau, tổ hợp
 
 Chỉ số Sharpe OOS quan sát được $\widehat{SR}$ phải được chiết khấu (deflate) để tính đến số lượng thử nghiệm $N_{\text{DSR}}$, độ lệch phi chuẩn (Skewness $\gamma_3$, Kurtosis $\gamma_4$) và phương sai ước lượng cực đại:
 
-$$\text{DSR} = \Phi \left( \frac{\left( \widehat{SR} - \mathbb{E}[SR_0] \right) \sqrt{T - 1}}{\sqrt{1 - \gamma_3 \widehat{SR} + \frac{\gamma_4 - 1}{4} \widehat{SR}^2}} \right) \ge 0.95$$
+$$
+\text{DSR} = \Phi \left( \frac{\left( \widehat{SR} - \mathbb{E}[SR_0] \right) \sqrt{T - 1}}{\sqrt{1 - \gamma_3 \widehat{SR} + \frac{\gamma_4 - 1}{4} \widehat{SR}^2}} \right) \ge 0.95
+$$
 
-$$\mathbb{E}[SR_0] = \sqrt{V[SR_0]} \left( (1 - \gamma) \Phi^{-1}\left(1 - \frac{1}{N_{\text{DSR}}}\right) + \gamma \Phi^{-1}\left(1 - \frac{1}{N_{\text{DSR}} \cdot e}\right) \right)$$
+$$
+\mathbb{E}[SR_0] = \sqrt{V[SR_0]} \left( (1 - \gamma) \Phi^{-1}\left(1 - \frac{1}{N_{\text{DSR}}}\right) + \gamma \Phi^{-1}\left(1 - \frac{1}{N_{\text{DSR}} \cdot e}\right) \right)
+$$
+
 *(Với Euler-Mascheroni $\gamma \approx 0.5772156649$ và $\Phi(\cdot)$ là hàm phân phối tích lũy chuẩn hóa).*
 
 ---
@@ -1406,14 +1535,19 @@ $$\mathbb{E}[SR_0] = \sqrt{V[SR_0]} \left( (1 - \gamma) \Phi^{-1}\left(1 - \frac
 
 Thuật toán CSCV (Combinatorial Symmetric Cross-Validation) chia ma trận PnL OOS thành $S=16$ khối bằng nhau, tổ hợp chập $S/2 = 8$ khối làm tập huấn luyện tối ưu hóa ($J_c$) và $8$ khối còn lại làm kiểm định ngoài mẫu ($\bar{J}_c$). Tỷ lệ PBO được tính bằng logit phân phối hạng tương đối:
 
-$$\text{PBO} = P\left( \text{Rank}_{\bar{J}_c}(\theta^*) < 0.5 \right) \le 0.40$$
+$$
+\text{PBO} = P\left( \text{Rank}_{\bar{J}_c}(\theta^*) < 0.5 \right) \le 0.40
+$$
 
 ---
 
 ### 4.4 Flat Plateau Robustness Check (Cân nhắc `t_max_live_fade` - v11.7 Patch C.3)
 
 Mô hình phải nằm trên một cao nguyên ổn định (Flat Plateau) thay vì một đỉnh nhọn đơn lẻ (Spike / Overfitting). Quét không gian lưới $\pm 5\%$ xung quanh 4 tham số macro ($m_{pt}, m_{sl}, \lambda, \delta_{\text{spatial}}$) tạo ra 81 cấu hình lân cận. Tiêu chí bền vững:
-$$\frac{1}{81} \sum_{k=1}^{81} \widehat{SR}(\theta_k) \ge 0.80 \times \widehat{SR}(\theta^*)$$
+
+$$
+\frac{1}{81} \sum_{k=1}^{81} \widehat{SR}(\theta_k) \ge 0.80 \times \widehat{SR}(\theta^*)
+$$
 
 *(Ghi chú v11.7 Patch C.3: Cân nhắc thêm `t_max_live_fade` vào tập tham số quét lân cận $\pm 5\%$ nếu Fade đóng góp tỷ trọng đáng kể vào PnL tổng — nếu Fade chỉ là phần phụ trợ nhỏ, giữ cố định sau khi chọn qua Calmar Ratio để tránh nổ tổ hợp).*
 
@@ -1426,10 +1560,16 @@ $$\frac{1}{81} \sum_{k=1}^{81} \widehat{SR}(\theta_k) \ge 0.80 \times \widehat{S
 #### 5.1.1 Độ Trễ Phụ Thuộc Chế Độ & Khớp Lệnh Thị Trường Căn Bậc Hai
 
 Độ trễ truyền nhận tín hiệu (Latency $\Delta t_{\text{lat}}$) được mô phỏng theo phân phối Lognormal, co giãn theo độc tính thanh khoản và phân vị biến động giá:
-$$\Delta t_{\text{lat}} \sim \text{Lognormal}\left( \ln\left( 15.0\text{ms} \times (1 + 1.5 \cdot \mathbb{1}[\text{toxic}]) \times (1 + \text{Percentile}(\sigma_{\text{realized}})) \right), 0.3 \right)$$
+
+$$
+\Delta t_{\text{lat}} \sim \text{Lognormal}\left( \ln\left( 15.0\text{ms} \times (1 + 1.5 \cdot \mathbb{1}[\text{toxic}]) \times (1 + \text{Percentile}(\sigma_{\text{realized}})) \right), 0.3 \right)
+$$
 
 Định luật tác động thị trường căn bậc hai (Square-Root Market Impact Model - Almgren, Thales, Bouchaud):
-$$P_{\text{fill-market}} = P_{\text{post-latency}} \times \left( 1 + \text{side} \times \kappa \cdot \sigma_{\text{daily}} \sqrt{\frac{\text{Size}_{\text{notional}}}{\text{ADV}}} \right)$$
+
+$$
+P_{\text{fill-market}} = P_{\text{post-latency}} \times \left( 1 + \text{side} \times \kappa \cdot \sigma_{\text{daily}} \sqrt{\frac{\text{Size}_{\text{notional}}}{\text{ADV}}} \right)
+$$
 
 #### 5.1.2 Hàng Đợi Lệnh Giới Hạn (Resting Limit Queue Position Simulation)
 
@@ -1493,7 +1633,9 @@ def full_chain_parity_check(python_output: np.ndarray, rust_output: np.ndarray, 
 
 Trước khi rót vốn thực tế, hệ thống phải chạy trong chế độ Shadow Mode thực thi song song và chỉ được phép thăng hạng lên giao dịch vốn thật khi thỏa mãn **Gate Kép**:
 
-$$\left( N_{\text{events-observed}} \ge 30 \right) \land \left( T_{\text{weeks-elapsed}} \ge 2.0 \right)$$
+$$
+\left( N_{\text{events-observed}} \ge 30 \right) \land \left( T_{\text{weeks-elapsed}} \ge 2.0 \right)
+$$
 
 ```python
 def check_shadow_mode_readiness(n_events_observed: int, weeks_elapsed: float, min_events: int = 30, min_weeks: float = 2.0) -> bool:
@@ -1516,10 +1658,16 @@ def check_shadow_mode_readiness(n_events_observed: int, weeks_elapsed: float, mi
 #### 5.4.2 Hiệp Phương Sai Ledoit-Wolf Shrinkage & Stressed Correlation Overlay
 
 Để tối ưu hóa danh mục đa tài sản, ma trận hiệp phương sai mẫu $\mathbf{S}$ được co ngót về ma trận mục tiêu $\mathbf{F}$ (Constant Correlation Target) theo công thức Ledoit-Wolf:
-$$\boldsymbol{\Sigma}_{\text{shrunk}} = (1 - \delta) \mathbf{S} + \delta \mathbf{F}$$
+
+$$
+\boldsymbol{\Sigma}_{\text{shrunk}} = (1 - \delta) \mathbf{S} + \delta \mathbf{F}
+$$
 
 Khi thị trường rơi vào trạng thái hoảng loạn (danh mục sụt giảm dưới phân vị $5\%$), hệ thống áp dụng Lớp phủ tương quan căng thẳng (Stressed Correlation Overlay):
-$$\mathbf{R}_{\text{final}} = \max \left( \mathbf{R}_{\text{normal}}, \mathbf{R}_{\text{stressed-tail}} \right)$$
+
+$$
+\mathbf{R}_{\text{final}} = \max \left( \mathbf{R}_{\text{normal}}, \mathbf{R}_{\text{stressed-tail}} \right)
+$$
 
 ```python
 from sklearn.covariance import LedoitWolf
@@ -1546,10 +1694,16 @@ def get_risk_budget_correlation(returns_matrix: np.ndarray) -> np.ndarray:
 #### 5.4.3 CUSUM Brier Score với Reset & Refresh Tái Sinh (PATCH E v11.5)
 
 Để giám sát hiện tượng suy thoái hiệu năng mô hình out-of-sample theo thời gian thực (Model Drift / Concept Drift), hệ thống tính sai số Brier tại mỗi lệnh chốt:
-$$e_i = (p_i - o_i)^2, \qquad o_i \in \{0, 1\}$$
+
+$$
+e_i = (p_i - o_i)^2, \qquad o_i \in \{0, 1\}
+$$
 
 CUSUM sai số dự báo (theo chuẩn Page 1954 - tự động reset về $0$ khi báo động vượt ngưỡng):
-$$G_t = \max \left( 0, G_{t-1} + e_t - \bar{e}_{\text{OOS}} \right), \qquad \text{Alarm if } G_t > h_{\text{Brier}}$$
+
+$$
+G_t = \max \left( 0, G_{t-1} + e_t - \bar{e}_{\text{OOS}} \right), \qquad \text{Alarm if } G_t > h_{\text{Brier}}
+$$
 
 **Chính sách Refresh Ngưỡng Tái Sinh (`refresh_cusum_thresholds`)**: Ngưỡng $\bar{e}_{\text{OOS}}$ và $h_{\text{Brier}} = 2 \cdot \sigma_{\text{Brier-OOS}}$ không được khóa cứng vĩnh viễn từ lần backtest đầu tiên, mà phải được tái sinh ngay lập tức sau mỗi lần `production_fit` mới:
 
@@ -1721,4 +1875,3 @@ impl FfdStateApprox {
 | **P6 — Shadow Mode Gate Kép** | Module I (Shadow Mode chạy song song) | Kiểm chứng qua Gate Kép ($\ge 30$ sự kiện và $\ge 2$ tuần liền mạch) trước khi thăng hạng rót vốn thật. |
 
 *(Kỷ luật thép: P(-1) bắt buộc hoàn tất trước bất kỳ giai đoạn nào khác. P0 $\to$ P2 phải hoàn tất tuyệt đối trước khi bất kỳ con số Sharpe/DSR nào được coi là đáng tin cậy).*
-

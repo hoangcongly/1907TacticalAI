@@ -8,7 +8,7 @@ Tài liệu này **PHỤC HỒI TRỌN VẸN VÀ TĂNG CƯỜNG TOÀN BỘ CÁC 
 
 ## BẢN ĐỒ KIẾN TRÚC TOÀN HỆ THỐNG & ĐƯỜNG ĐI DỮ LIỆU (v11.8 DEFINITIVE)
 
-```
+```text
 ========================================================================================================================
                                      PHA NGHIÊN CỨU & HUẤN LUYỆN (PYTHON CORE)
 ========================================================================================================================
@@ -114,6 +114,7 @@ Tài liệu này **PHỤC HỒI TRỌN VẸN VÀ TĂNG CƯỜNG TOÀN BỘ CÁC 
 ### 1.0 Tick-Level Outlier Filter & Bar Toxicity Flag (Sửa lỗi A.5)
 
 #### 1.0.1 Nền Tảng Toán Học Lọc Nhiễu Tick (MAD 5σ & Cross-Venue Parity)
+
 Chuỗi dữ liệu giá tick thực tế tồn tại nhiễu vi cấu trúc cực đoan (bad ticks, spikes do lỗi đường truyền hoặc khớp lệnh sai). Để tách bạch giữa nhiễu kỹ thuật và sự kiện đuôi đen (Black Swan / Tail Events), hệ thống định nghĩa Median Absolute Deviation (MAD) trên cửa sổ trượt $W = 100$ ticks:
 
 $$\text{MAD}_i = \text{median}\left( |P_{i-k} - \text{median}(P_{i-100:i-1})| \right)_{k=1}^{100}$$
@@ -122,6 +123,7 @@ $$\text{MAD}_i = \text{median}\left( |P_{i-k} - \text{median}(P_{i-100:i-1})| \r
 $$\hat{\sigma}_{\text{MAD}, i} = 1.4826 \times \text{MAD}_i$$
 
 Một tick tại chỉ số $i$ chỉ bị phân loại là **Bad Tick** khi và chỉ khi thỏa mãn **ĐỒNG THỜI 4 điều kiện**:
+
 1. **Lạch cực đoan (Extreme Deviation Check)**: $|P_i - P_{i-1}| > 5 \times \hat{\sigma}_{\text{MAD}, i}$.
 2. **Khối lượng không đột biến (Volume Consistency Check)**: $V_i < 2 \times \text{median}(V_{i-100:i-1})$.
 3. **Đảo chiều chớp nhoáng (Micro-Reversal Check)**: $|P_{i+1} - P_{i-1}| < 0.3 \times |P_i - P_{i-1}|$.
@@ -131,11 +133,13 @@ $$\max_{t \in [t_i - 500\text{ms}, t_i + 500\text{ms}]} |P^{\text{ref}}(t) - P_{
 *(Ghi chú Tail Event: Nếu điều kiện 1 thỏa mãn nhưng $V_i \ge 2 \times \text{median}(V_{i-100:i-1})$, đây là dòng tiền thực tháo chạy hoặc đột phá thanh khoản $\implies$ Không lọc giá, giữ nguyên $P_i$ và gắn cờ `is_tail_event = True`).*
 
 #### 1.0.2 Bar Toxicity Flag (Định lượng Độc tính Dòng lệnh theo Khối lượng Nến)
+
 Khi gộp nến theo Dollar-Volume ($V_{\text{dollar}} = \sum P_k V_k \ge \theta_{\text{PIT}}$), một nến hoàn thành trong số lượng tick quá nhỏ ($N_{\text{ticks}} \ll \text{median}$) đồng nghĩa với việc có các lệnh thị trường (Market Orders) quy mô lớn ăn thẳng vào sổ lệnh, gây sốc thanh khoản (Toxic Order Flow).
 
 $$\text{tick\_count\_to\_fill}_t < 0.5 \times \text{median}\left( \text{tick\_count\_to\_fill}_{t-100:t-1} \right) \implies \text{is\_high\_toxicity\_bar} = \text{True}$$
 
 #### 1.0.3 Kalman Tick-Level Replacer (Giao thức Predict-Only v11.2)
+
 Khi phát hiện Bad Tick, thay vì loại bỏ làm đứt gãy chỉ số thời gian hoặc điền phương pháp Naive Forward Fill (tạo sai lệch động lượng = 0), hệ thống sử dụng bộ lọc Kalman 2 trạng thái $[P_t, \nu_t]^T$ với **Giao thức Predict-Only**:
 
 **Trạng thái hệ thống**:
@@ -189,6 +193,7 @@ class TickLevelKalmanReplacer:
 ### 1.1 PIT-Safe Threshold Generation (Sửa lỗi A.4) & Ánh Xạ Xuống Tick O(N)
 
 #### 1.1.1 Toán Học Ngưỡng Động Point-in-Time (PIT)
+
 Để ngăn chặn tuyệt đối hiện tượng rò rỉ thông tin tương lai (Look-ahead Bias / Data Leakage) khi tính ngưỡng tạo nến Dollar-Volume, ngưỡng $\theta_{\text{PIT}}$ cho ngày $T$ chỉ được phép sử dụng tổng Dollar-Volume của 21 ngày giao dịch hoàn tất **trước đó** ($T-21$ đến $T-1$), chia cho tần suất mục tiêu $\text{target\_freq} = 50$ nến/ngày:
 
 $$\theta_{\text{PIT}}(T) = \frac{1}{\text{target\_freq}} \times \frac{1}{21} \sum_{k=1}^{21} \text{Daily\_Dollar\_Volume}(T-k)$$
@@ -209,6 +214,7 @@ def compute_pit_safe_daily_threshold(df_daily: pl.DataFrame, window: int = 21, t
 ```
 
 #### 1.1.2 Ánh Xạ `daily_thresholds` Xuống Tick-Level bằng ASOF Backward Join O(N)
+
 Để tránh vòng lặp chậm trong Python khi gán $\theta_{\text{PIT}}(T)$ cho từng tick $i$, hệ thống sử dụng thuật toán `join_asof` theo chiến lược `backward` trên trục thời gian ngày epoch (`date_epoch_day`), đảm bảo độ phức tạp $O(N \log M)$ hoặc $O(N)$ tuyến tính:
 
 ```python
@@ -238,6 +244,7 @@ def map_daily_threshold_to_ticks(ticks_df: pl.DataFrame, daily_threshold_df: pl.
 ```
 
 #### 1.1.3 Đặc Tả Hai Bước (Two-Pass) Tính `median_ticks_to_fill` PIT-Safe
+
 Để phát hiện Bar Toxicity (`is_high_toxicity_bar`), cần trung vị số tick hoàn thành nến trong 100 nến trước đó ($\text{median\_ticks\_pit}$). Để đảm bảo PIT-Safe tuyệt đối và không phát sinh lỗi cấp phát bộ nhớ động trong Numba (`np.append`), ta tách thành **2 bước (Two-Pass Worst-Case Allocation)**:
 
 ```python
@@ -266,7 +273,6 @@ def _pass1_extract_tick_counts(ticks: np.ndarray, daily_thresholds: np.ndarray) 
 
     return bar_tick_counts[:bar_count], bar_end_tick_idx[:bar_count]
 
-
 def compute_median_ticks_to_fill_per_tick(ticks: np.ndarray, daily_thresholds: np.ndarray, window: int = 100) -> np.ndarray:
     bar_tick_counts, bar_end_tick_idx = _pass1_extract_tick_counts(ticks, daily_thresholds)
     bar_df = pl.DataFrame({"tick_count": bar_tick_counts, "end_tick_idx": bar_end_tick_idx})
@@ -292,6 +298,7 @@ def compute_median_ticks_to_fill_per_tick(ticks: np.ndarray, daily_thresholds: n
 ### 1.2 Dollar-Volume Bar Generator với Tick Rule OFI & Worst-Case Allocation (v11.2)
 
 #### 1.2.1 Vi Cấu Trúc Tick Rule và Order Flow Imbalance (OFI)
+
 Lấy cảm hứng từ lý thuyết vi cấu trúc dòng lệnh của Easley, López de Prado và O'Hara (VPIN / Order Flow Imbalance), với mỗi tick $i$, quy tắc Tick Rule $b_i \in \{-1, +1\}$ xác định hướng lệnh chủ động dựa trên biến động giá cận biên:
 
 $$b_i = \begin{cases} +1 & \text{nếu } P_i > P_{i-1} \\ -1 & \text{nếu } P_i < P_{i-1} \\ b_{i-1} & \text{nếu } P_i = P_{i-1} \end{cases}$$
@@ -366,9 +373,12 @@ def generate_dollar_volume_bars_v11(ticks: np.ndarray, daily_thresholds: np.ndar
 ---
 
 ### 1.3 Gap Handling Protocol (Xử Lý Đứt Gãy Dữ Liệu & Khởi Động Cuộn)
+
 Khi thị trường mở cửa lại sau khoảng trống thanh khoản hoặc mất kết nối:
+
 1. **Đối với Kalman Filter (Module B.2)**: Thực hiện $n$ bước Predict-Only liên tiếp ứng với số khoảng thời gian bị thiếu, duy trì sự suy giảm độ bất định hoặc giữ nguyên tốc độ Drift:
 $$\hat{\mathbf{x}}_{t+n|t} = \mathbf{F}^n \hat{\mathbf{x}}_{t|t}, \qquad \mathbf{P}_{t+n|t} = \mathbf{F}^n \mathbf{P}_{t|t} (\mathbf{F}^T)^n + \sum_{m=0}^{n-1} \mathbf{F}^m \mathbf{Q} (\mathbf{F}^T)^m$$
+
 2. **Đối với Chỉ báo Cuộn (Rolling Window $W$)**: Gắn cờ trạng thái `insufficient_history = True` cho $W$ nến đầu tiên sau khởi động, ép mọi tín hiệu giao dịch về $0.0$.
 
 ---
@@ -376,6 +386,7 @@ $$\hat{\mathbf{x}}_{t+n|t} = \mathbf{F}^n \hat{\mathbf{x}}_{t|t}, \qquad \mathbf
 ### 1.4 Singleton Experiment Tracker (JSON-Lines Logging & Hashing)
 
 #### 1.4.1 Phân định Trách nhiệm Ghi nhận Thử nghiệm (DSR Counting Rule)
+
 Để ngăn chặn việc tính sai số lượng thử nghiệm $N_{\text{DSR}}$ trong công thức Deflated Sharpe Ratio (AFML Chương 14), hệ thống phân tách nghiêm ngặt 3 lớp:
 
 | Lớp (Trial Class) | Có tính vào $N_{\text{DSR}}$? | Lý do Toán học / Thống kê | Ví dụ các tham số thuộc lớp (Bổ sung v11.7 Patch C.2) |
@@ -414,17 +425,20 @@ class ExperimentTracker:
 ### 2.1 Module A.3: Fractional Differentiation — Windowed FFD $O(W^*)$ MẶC ĐỊNH & Sum-of-Exponentials $O(M)$ (PATCH-A.3.1 + PATCH B & C v11.5)
 
 #### 2.1.1 Toán Học Fractional Differentiation (AFML Chương 5)
+
 Chuỗi giá tài chính gốc $X_t$ không dừng (Non-stationary), trong khi chuỗi lợi suất log đầu tiên $\Delta X_t = X_t - X_{t-1}$ dừng nhưng mất hoàn toàn trí nhớ dài hạn (Long-memory). Vi phân từng phần (Fractional Differentiation - FFD) tìm bậc vi phân cực tiểu $d^* \in [0, 1]$ vừa đủ để chuỗi $\tilde{X}_t = (1 - B)^d X_t$ đạt tính dừng theo kiểm định ADF ($p\text{-value} < 0.05$), đồng thời giữ lại tối đa hệ số tương quan với chuỗi gốc:
 
 $$(1 - B)^d = \sum_{k=0}^{\infty} w_k(d) B^k, \qquad w_k(d) = -w_{k-1}(d) \frac{d - k + 1}{k}, \quad w_0(d) = 1$$
 
 #### 2.1.2 Phương án 1 (MẶC ĐỊNH PRODUCTION — Windowed FFD $O(W^*)$ Cache-Optimized Engine)
+
 Vì trọng số $w_k(d)$ hội tụ về $0$ khi $k \to \infty$, ta cắt ngắn cửa sổ tại ngưỡng tiệm cận $\tau = 10^{-5}$:
 $$W^*(d, \tau) = \min \{ k \in \mathbb{N} \mid |w_k(d)| < \tau \}$$
 
 Với $d^* \in [0.3, 0.6]$, độ dài cửa sổ hiệu dụng $W^* \approx 80 \text{–} 150$, nhỏ hơn nhiều so với $1000$. Mảng trọng số `weights` kích thước $80 \text{–} 150$ nằm trọn trong bộ nhớ đệm tốc độ cao L1 CPU Cache ($32\text{KB} \text{–} 64\text{KB}$), đạt tốc độ thực thi nhị phân tối đa trên Rust RTK.
 
 #### 2.1.3 Phương án 2 (Sum-of-Exponentials $O(M)$ — CHỈ khi `approved=True` từ kiểm định sai số)
+
 Để xấp xỉ $w_k(d)$ bằng tổng của $M$ hàm mũ (Prony Approximation / State-Space Realization), ta giải bài toán cực tiểu hóa phi tuyến:
 $$\hat{w}_k = \sum_{m=1}^M c_m \rho_m^k \approx w_k(d), \qquad \forall k \in [0, W^*]$$
 
@@ -488,6 +502,7 @@ def select_ffd_production_engine(ffd_weights_exact: np.ndarray, M_prony: int = 6
 ### 2.2 Module B.0 & B.1: Causal HMM 2D Emission — Parametric Bootstrap LRT (PATCH-B.0.1)
 
 #### 2.2.1 Kiểm Định Parametric Bootstrap Likelihood Ratio Test ($N=1$ vs $N=2$)
+
 Để ngăn chặn việc ép buộc mô hình HMM 2 trạng thái khi thị trường thực tế đang di chuyển ngẫu nhiên đơn chế độ (Gaussian Random Walk), hệ thống thực hiện kiểm định tỷ số hợp lý Bootstrap tham số (Parametric Bootstrap LRT):
 
 $$LR = 2 \left( \ln L_{N=2}(\mathbf{O}) - \ln L_{N=1}(\mathbf{O}) \right)$$
@@ -535,6 +550,7 @@ def validate_two_regime_architecture_bootstrap(O_full: np.ndarray, n_bootstrap: 
 ```
 
 #### 2.2.2 Causal HMM 2D Emission & Zero-Variance Clamp
+
 Hệ HMM được khóa cứng $N = 2$ trạng thái (`Trending` và `Choppy/Mean-Reverting`). Véctơ quan sát 2 chiều kết hợp giữa biến động giá và thông tin vi cấu trúc:
 $$\mathbf{O}_t = \begin{bmatrix} r_t \\ \text{OFI}_t \times \sigma_{\text{realized}, 24, t} \end{bmatrix}$$
 
@@ -544,6 +560,7 @@ $$\det(\boldsymbol{\Sigma}_j)_{\text{safe}} = \max \left( \det(\boldsymbol{\Sigm
 **Hurst Labeling Rule**: Sau khi hội tụ EM, trạng thái $j \in \{0, 1\}$ có giá trị chỉ số Hurst trung bình cao hơn ($\bar{H}_j > \bar{H}_{1-j}$) được gán nhãn `Trending`, trạng thái còn lại là `Choppy`.
 
 #### 2.2.3 Numba Forward-Only Alpha Pass (Xác Suất HMM Nhân Quả Online)
+
 Trong môi trường Production thực tế, ta chỉ được phép sử dụng bộ lọc nhân quả Forward Pass (Alpha Pass) từ thời điểm $0$ đến $t$, tuyệt đối không dùng Backward Pass (Beta Pass - Baum-Welch smoothing):
 
 $$\alpha_j(t) = P(\mathbf{O}_1, \dots, \mathbf{O}_t, S_t = j) = \mathcal{N}\left(\mathbf{O}_t; \boldsymbol{\mu}_j, \boldsymbol{\Sigma}_j\right) \sum_{i=1}^2 \alpha_i(t-1) A_{ij}$$
@@ -584,6 +601,7 @@ def compute_causal_hmm_posteriors_safe(O_array: np.ndarray, A: np.ndarray, mu: n
 ### 2.3 Module B.2: IMM Kalman 2D + `sanitize_covariance_matrix` (PATCH D v11.5)
 
 #### 2.3.1 Nền Tảng Lý Thuyết IMM (Interacting Multiple Model) & Sửa Lỗi U-D Factorization
+
 Kiến trúc IMM Kalman gồm 2 bộ lọc chạy song song: Bộ lọc $j=1$ (`Trending Kalman`) có nhiễu quá trình lớn $\mathbf{Q}_{\text{trend}}$ để bám sát vận tốc drift $\nu_t$; Bộ lọc $j=2$ (`Choppy Kalman`) có nhiễu quá trình cực nhỏ $\mathbf{Q}_{\text{chop}} \approx 0$ để triệt tiêu dao động quanh mean.
 
 Thay vì sử dụng thuật toán U-D Factorization phức tạp và dễ gặp lỗi triển khai (đã gây bug trong v11.4), hệ thống sử dụng kiến trúc Kalman P-matrix chuẩn kèm hàm làm sạch số học **`sanitize_covariance_matrix`** chạy **NGAY SAU mỗi bước Update**, đảm bảo tính đối xứng tuyệt đối và xác định dương ($P \succ 0$) thông qua kẹp sàn trị riêng (`eigenvalue floor`).
@@ -606,6 +624,7 @@ def sanitize_covariance_matrix(P: np.ndarray, eigenvalue_floor: float = 1e-10) -
 ```
 
 #### 2.3.2 Trọn Bộ 7 Bước Toán Học IMM Kalman 2D (P-Matrix Trực Tiếp)
+
 Với trạng thái $\hat{\mathbf{x}}_i = [P_i, \nu_i]^T$ và ma trận chuyển tiếp $\mathbf{F} = \begin{bmatrix} 1 & 1 \\ 0 & 1 \end{bmatrix}, \mathbf{H} = \begin{bmatrix} 1 & 0 \end{bmatrix}$:
 
 1. **Mixing Probabilities (Tính xác suất trộn đầu vào)**:
@@ -636,6 +655,7 @@ $$\hat{\mathbf{x}}_{t|t} = \sum_{j=1}^2 p_{j, t} \hat{\mathbf{x}}_{j, t|t} = \be
 $$\text{Trend\_Score}_t = \frac{\hat{\nu}_{t|t}}{\text{ATR}_{14, t} + 10^{-8}}$$
 
 #### 2.3.3 Mã Nguồn Rust `sanitize_covariance_2x2` (Nghiệm Đóng Dạng Tường Minh)
+
 ```rust
 pub fn sanitize_covariance_2x2(p: [[f64; 2]; 2], eigenvalue_floor: f64) -> [[f64; 2]; 2] {
     let a = p[0][0];
@@ -664,6 +684,7 @@ pub fn sanitize_covariance_2x2(p: [[f64; 2]; 2], eigenvalue_floor: f64) -> [[f64
 ### 2.4 Module B.3 & B.4: Generalized Hurst Exponent (GHE) & Multicollinearity Diagnostics
 
 #### 2.4.1 Generalized Hurst Exponent (GHE Window $W=168$, Lags $[2, 4, 8, 16]$)
+
 Chỉ số Hurst GHE ước lượng độ dai dẳng của chuỗi log-price $X_t = \ln P_t$ dựa trên mô men chuẩn hóa bậc $q=1$:
 $$K_1(\tau) = \frac{1}{W-\tau} \sum_{k=1}^{W-\tau} |X_{t-k} - X_{t-k-\tau}| \sim c \cdot \tau^{H_t}$$
 
@@ -671,6 +692,7 @@ Chỉ báo $H_t$ được giải bằng hồi quy OLS trên cửa sổ trượt 
 $$H_t = \frac{\text{Cov}\left( \ln K_1(\tau), \ln \tau \right)}{\text{Var}(\ln \tau)}, \qquad \forall \tau \in \{2, 4, 8, 16\}$$
 
 #### 2.4.2 Chẩn Đoán Đa Cộng Tuyến (Spearman Rank Correlation & VIF)
+
 Trước khi đưa đặc trưng vào Meta-Labeler (Module E), mọi biến có tương quan hạng Spearman $|\rho_S(X_j, X_k)| > 0.80$ hoặc Hệ số Phóng đại Phương sai $\text{VIF}_j > 5.0$ bị loại bỏ tự động:
 $$\text{VIF}_j = \frac{1}{1 - R_j^2} \le 5.0$$
 
@@ -681,6 +703,7 @@ $$\text{VIF}_j = \frac{1}{1 - R_j^2} \le 5.0$$
 ### 3.1 Module C.1: CUSUM Event Generator với Spatial-Temporal Cooldown Gating
 
 #### 3.1.1 Bộ Lọc CUSUM Biến Động (AFML Chương 2)
+
 Để chuyển đổi từ chuỗi thời gian nến đều đặn sang các sự kiện mang thông tin mang tính cấu trúc (Information-driven Events), bộ lọc CUSUM theo dõi sự tích lũy của biến động giá vượt ngưỡng kỳ vọng:
 
 $$S_t^+ = \max \left( 0, S_{t-1}^+ + \Delta P_t - \mathbb{E}[\Delta P] \right), \qquad S_t^- = \min \left( 0, S_{t-1}^- + \Delta P_t - \mathbb{E}[\Delta P] \right)$$
@@ -688,9 +711,12 @@ $$S_t^+ = \max \left( 0, S_{t-1}^+ + \Delta P_t - \mathbb{E}[\Delta P] \right), 
 Khi $S_t^+ > h_{\text{CUSUM}}$ hoặc $S_t^- < -h_{\text{CUSUM}}$, một sự kiện ứng cử viên được kích hoạt và bộ lọc tự reset về $0$.
 
 #### 3.1.2 Luật Cooldown & Gating Kép (Spatial-Temporal Gating)
+
 Một sự kiện CUSUM tại bar $t$ chỉ được phép trở thành điểm vào lệnh chính thức nếu thỏa mãn **ĐỒNG THỜI 2 điều kiện**:
+
 1. **Temporal Cooldown Check**: Số bar trôi qua kể từ sự kiện trước đó vượt ngưỡng $k_{\text{cooldown}}$:
 $$t - t_{\text{prev\_event}} \ge k_{\text{cooldown}}$$
+
 2. **Spatial Deviation Check**: Khoảng cách giá tuyệt đối so với mức giá vào lệnh trước đó phải vượt mức biến động nội tại:
 $$\left| P_t - P_{t_{\text{prev\_event}}} \right| > \delta_{\text{spatial}} \times \text{ATR}_{14, t}$$
 
@@ -701,6 +727,7 @@ $$\left| P_t - P_{t_{\text{prev\_event}}} \right| > \delta_{\text{spatial}} \tim
 ### 3.2 Module C.2: Tách Bạch Rào Cản Dán Nhãn Thống Kê vs Trailing Exit Live (PATCH-C.2.1 + v11.6 Patch A + v11.7 Patch C)
 
 #### 3.2.1 Tầng 1: Dán Nhãn Thống Kê Triple-Barrier cho Meta-Labeler Train (C.2 Gốc)
+
 Để huấn luyện Meta-Labeler (Random Forest), mỗi sự kiện $i$ tại thời điểm $t_{0, i}$ được dán nhãn theo phương pháp Triple-Barrier (AFML Chương 3). Các rào cản chốt lời ($m_{pt}$) và cắt lỗ ($m_{sl}$) được co giãn động theo xác suất chế độ HMM ($p_{\text{trend, i}}, p_{\text{chop, i}}$):
 
 $$m_{pt, i} = p_{\text{chop}, i} \times 1.5 + p_{\text{trend}, i} \times 3.0, \qquad m_{sl, i} = p_{\text{chop}, i} \times 1.5 + p_{\text{trend}, i} \times 2.0$$
@@ -721,11 +748,14 @@ def compute_sl_initial(entry_price: float, side: int, m_sl: float, sigma: float,
 ```
 
 #### 3.2.2 Tầng 2: Regime-Aware Trailing Exit v2 (Thực Thi Live & Đánh Giá OOS Module G - v11.6 Patch A.2 + v11.7 Patch C)
+
 Trong giao dịch thực tế và khi tính toán PnL thực nghiệm OOS, rào cản chốt lời cố định bị bãi bỏ để cho phép hệ thống ăn trọn xu hướng lớn. Tuy nhiên, **v11.7 Patch C tách bạch hoàn toàn thời gian giữ lệnh tối đa (`T_max_live`) cho 2 chế độ**:
+
 - **Follow (`t_max_live_follow = 120` bar)**: Để lời chạy dài (let winners run) khi đu theo xu hướng lớn.
 - **Fade (`t_max_live_fade = 40` bar mặc định)**: Áp dụng $120$ bar cho Fade là không khớp bản chất kinh tế, vì Fade là cược hồi quy về mean ngắn hạn trong chế độ choppy. Giữ lệnh quá lâu làm loãng giả thuyết ban đầu và tăng rủi ro bị cắt biên fold CPCV không cần thiết.
 
 **Đối xứng hóa Side<0 & Đảo chiều Regime-Flip theo Trade Mode (v11.6 Patch A)**:
+
 - **Trục hình học (SL / Trailing Stop)**: Phụ thuộc `side`. Lệnh Long (`side > 0`) theo dõi đỉnh cao nhất (`HighestHigh`); Lệnh Short/Fade (`side < 0`) theo dõi đáy thấp nhất (`LowestLow`).
 - **Trục Regime-Flip Exit**: Phụ thuộc vào `trade_mode` (`follow` hoặc `fade`), **KHÔNG** phụ thuộc vào `side`. Lệnh Follow thoát khi xu hướng suy yếu ($p_{\text{trend}} < \text{threshold}_{\text{follow}}$); Lệnh Fade thoát khi chế độ đi ngang/choppy bị phá vỡ và thị trường chuyển sang xu hướng ($p_{\text{trend}} > \text{threshold}_{\text{fade}}$).
 
@@ -743,7 +773,6 @@ def _update_regime_flip(p_trend_k: float, trade_mode: str, threshold: float, pre
     else:  # "fade"
         triggered = p_trend_k > threshold
     return prev_count + 1 if triggered else 0
-
 
 def compute_regime_aware_trailing_exit_v2(
     entry_price: float, side: int, trade_mode: str,
@@ -797,6 +826,7 @@ def compute_regime_aware_trailing_exit_v2(
 ```
 
 #### 3.2.3 Unit Test Bắt Buộc CI cho Trailing Exit Đối Xứng (`test_regime_aware_trailing_exit_symmetry`)
+
 ```python
 import numpy as np
 
@@ -837,15 +867,19 @@ def test_regime_aware_trailing_exit_symmetry():
 ### 3.3 Module C.3 & D: Uniqueness Weights & Consensus Feature Selection
 
 #### 3.3.1 Trung Bình Tính Duy Nhất (Average Uniqueness $\bar{u}_i$ - AFML Chương 4)
+
 Do rào cản Triple-Barrier có độ dài tối đa $T_{\text{max}}$, các nhãn tồn tại sự chồng lấp thời gian lớn. Để tránh hiện tượng Overfitting do đếm trùng lặp mẫu trong Random Forest, số lượng nhãn chồng lấp tại thời điểm $t$ là $c_t = \sum_{i=1}^N \mathbb{1}[t \in [t_{0, i}, t_{1, i}]]$. Trọng số tính duy nhất trung bình của mẫu $i$:
 
 $$\bar{u}_i = \frac{1}{t_{1, i} - t_{0, i} + 1} \sum_{t=t_{0, i}}^{t_{1, i}} \frac{1}{c_t}$$
 
 #### 3.3.2 Triple Consensus Feature Selection (MDI, MDA, SFI)
+
 Để loại bỏ nhiễu và ngăn chặn lời nguyền chiều dữ liệu, một đặc trưng $X_j$ chỉ được giữ lại nếu vượt qua **ĐỒNG THỜI hoặc đa số 3 kiểm định**:
+
 1. **Mean Decrease Impurity (MDI)**: Độ giảm entropy trung bình trên các cây rừng > $0.01$.
 2. **Mean Decrease Accuracy (MDA — Permutation Importance)**: Khôi phục mức độ chính xác ngoài mẫu giảm tối thiểu $\ge 5\%$ khi xáo trộn ngẫu nhiên đặc trưng $X_j$:
 $$\text{MDA}_j = \text{Score}_{\text{OOS}}(\mathbf{X}) - \text{Score}_{\text{OOS}}\left(\mathbf{X}_{\text{permuted } j}\right) \ge 0.05$$
+
 3. **Single Feature Importance (SFI)**: Mô hình Random Forest chỉ huấn luyện riêng trên đặc trưng $X_j$ phải đạt chỉ số Sharpe OOS dương ($SR_{\text{OOS}, j} > 0$).
 
 Sau Triple Consensus, phân cụm phân cấp (`Hierarchical Clustering`) gộp các biến có $|\rho| > 0.70$ và giữ lại biến đại diện có MDA cao nhất trong mỗi cụm.
@@ -855,6 +889,7 @@ Sau Triple Consensus, phân cụm phân cấp (`Hierarchical Clustering`) gộp 
 ### 3.4 Module E.1 & E.2: PurgedKFold (v11.5 Patch G) & Weighted Bootstrap Forest
 
 #### 3.4.1 PurgedKFold (`t1` = Integer Bar-Index)
+
 Để triệt tiêu hoàn toàn sự rò rỉ nhãn gối đầu trong kiểm định chéo, `PurgedKFold` loại bỏ (Purging) khỏi tập Train mọi mẫu $j$ có khoảng thời gian nhãn $[j, t_{1, j}]$ giao cắt với tập Test $[t_{\text{start}}, t_{\text{end}})$. Sau đó, áp dụng thêm cách ly (Embargo) $24$ bar ngay sau tập Test:
 
 ```python
@@ -901,7 +936,6 @@ class PurgedKFold(BaseCrossValidator):
     def get_n_splits(self, X=None, y=None, groups=None):
         return self.n_splits
 
-
 def test_purged_kfold_toy_example():
     """Unit test bắt buộc, chạy trước mọi CPCV thật trong CI."""
     n = 20
@@ -918,6 +952,7 @@ def test_purged_kfold_toy_example():
 ```
 
 #### 3.4.2 Weighted Bootstrap Forest & Out-of-Bag Isotonic Calibration
+
 Trong mỗi cây quyết định của Rừng ngẫu nhiên, thay vì lấy mẫu Bootstrap đều đặn, xác suất lấy mẫu được gán tỷ lệ thuận với độ duy nhất $\bar{u}_i$:
 $$P(\text{chọn mẫu } i) = \frac{\bar{u}_i}{\sum_{k=1}^N \bar{u}_k}$$
 
@@ -952,6 +987,7 @@ def build_and_calibrate_meta_labeler_v12(X_train, y_train, u_weights, t1_train, 
 ### 3.5 Module E.3: EMPIRICAL KELLY SIZING (v11.5 Patch A + v11.6 Patch C + v11.7 Patch B + v11.8)
 
 #### 3.5.1 Nền Tảng Toán Học Empirical Kelly Tối Đa Hóa Log-Growth (Kelly 1956 / Thorp)
+
 Công thức Kelly nhị phân đóng dạng $f^* = p - \frac{1-p}{b}$ chỉ áp dụng được cho cược có đúng 2 kết cục rời rạc ($+b$ hoặc $-1$). Với lệnh giao dịch thực tế có Trailing-Exit, phân phối lợi nhuận là liên tục, bất đối xứng và có đuôi dài ($r \in (-1, +\infty)$). Tỷ lệ Kelly thực nghiệm $f^*$ được giải bằng phương pháp tìm nghiệm tối đa hóa kỳ vọng log-growth (Tốc độ tăng trưởng kỳ vọng hợp kép) trên mẫu phân phối lợi nhuận thực nghiệm $\mathcal{R}$:
 
 $$G(f) = \mathbb{E}\left[ \ln(1 + f \cdot r) \right] \approx \frac{1}{N} \sum_{k=1}^N \ln(1 + f \cdot r_k)$$
@@ -985,6 +1021,7 @@ def solve_empirical_kelly_fraction(returns_sample: np.ndarray, f_max: float = 1.
 ```
 
 #### 3.5.2 Hàm Phân Loại Trade Mode Duy Nhất (`classify_trade_mode` - v11.6 Patch C.1)
+
 ```python
 def classify_trade_mode(p_i: float, p_chop_i: float, fade_enabled: bool,
                           fade_regime_gate_threshold: float = 0.60) -> str:
@@ -1002,6 +1039,7 @@ def classify_trade_mode(p_i: float, p_chop_i: float, fade_enabled: bool,
 ```
 
 #### 3.5.3 Dựng Bảng Kelly Thực Nghiệm & Glue Chuyển Đổi Dữ Liệu (v11.6 Patch C.2 + v11.7 Patch B.3)
+
 ```python
 import numpy as np
 
@@ -1014,7 +1052,6 @@ def trade_records_to_kelly_table_inputs(trade_records: list) -> tuple:
     p_chop_oos = np.array([r["p_chop_i"] for r in trade_records], dtype=np.float64)
     realized_returns_oos = np.array([r["realized_return"] for r in trade_records], dtype=np.float64)
     return p_oos, p_chop_oos, realized_returns_oos
-
 
 def build_empirical_kelly_table(
     p_oos: np.ndarray, realized_returns_oos: np.ndarray,
@@ -1040,7 +1077,6 @@ def build_empirical_kelly_table(
                        "f_star": float(f_star), "n_samples": int(len(bucket_returns))})
     return table
 
-
 def build_empirical_kelly_tables_v2(
     p_oos: np.ndarray, p_chop_oos: np.ndarray, realized_returns_oos: np.ndarray,
     fade_enabled: bool, fade_regime_gate_threshold: float = 0.60,
@@ -1062,7 +1098,6 @@ def build_empirical_kelly_tables_v2(
 
     return {"follow": table_follow, "fade": table_fade}
 
-
 def lookup_empirical_kelly(p_i: float, kelly_table: list) -> float:
     if not kelly_table: return 0.0
     p_mids = np.array([b["p_mid"] for b in kelly_table])
@@ -1073,6 +1108,7 @@ def lookup_empirical_kelly(p_i: float, kelly_table: list) -> float:
 ```
 
 #### 3.5.4 Inference Thống Nhất Bi-Directional Empirical Kelly (v11.6 Patch C.3)
+
 ```python
 import numpy as np
 
@@ -1102,6 +1138,7 @@ def compute_bi_directional_kelly_v14_unified(
 ```
 
 #### 3.5.5 Đấu Nối Cờ Toxicity, Degraded Confidence & Vol-Targeting Overlay
+
 ```python
 def apply_toxicity_and_confidence_discount(kelly_size, is_high_toxicity_bar, degraded_confidence,
                                             toxicity_discount=0.5, degraded_confidence_discount=0.6):
@@ -1114,6 +1151,7 @@ def apply_toxicity_and_confidence_discount(kelly_size, is_high_toxicity_bar, deg
 $$\text{Scale}_t = \min \left( \frac{\sigma_{\text{target}}}{\hat{\sigma}_{\text{realized}, 20d, t} + 10^{-8}}, \text{Leverage}_{\text{cap}} \right), \qquad S_{\text{final}, t} = S_{\text{agg}, t} \times \text{Scale}_t$$
 
 #### 3.5.6 Chọn $\lambda$ Theo Calmar Ratio
+
 ```python
 def select_fractional_kelly_lambda(candidates_metrics: dict, maxdd_budget=0.20, dsr_min=0.95, pbo_max=0.40) -> float:
     valid = {lam: m for lam, m in candidates_metrics.items() if m["dsr"] >= dsr_min and m["pbo"] <= pbo_max}
@@ -1128,7 +1166,8 @@ def select_fractional_kelly_lambda(candidates_metrics: dict, maxdd_budget=0.20, 
 ## PHẦN IV: KHUNG VALIDATION OOS, DSR, PBO & WIRING THỐNG NHẤT (MODULE F - v11.8)
 
 ### 4.0 THỨ TỰ THỰC THI BẮT BUỘC 5 BƯỚC v11.8
-```
+
+```text
 1. Chạy CPCV 15-Fold (F.1): mỗi fold refit độc lập A->E, sinh p_i, p_chop_i, side_primary
    (dấu Trend_Score) cho tập OOS.
 2. [CẬP NHẬT - v11.7 A & v11.8]: Với MỖI sự kiện OOS, gọi run_trailing_exit_for_oos_event ->
@@ -1145,7 +1184,9 @@ def select_fractional_kelly_lambda(candidates_metrics: dict, maxdd_budget=0.20, 
 ```
 
 #### 4.0.1 Schema Chuẩn Hóa (`TRADE_RECORD_SCHEMA` - v11.8 DEFINITIVE)
+
 Mọi nơi trong pipeline (Module F, Module G, `filter_boundary_truncated_for_kelly_table`, `build_empirical_kelly_tables_v2`) BẮT BUỘC dùng đúng các key và phân định minh bạch chỉ số offset như sau cho bản ghi giao dịch OOS:
+
 - `entry_idx`: int (chỉ số bar vào lệnh trên toàn bộ mảng dữ liệu gốc)
 - `p_i`: float (xác suất Isotonic meta-labeler)
 - `p_chop_i`: float (xác suất chế độ Choppy từ HMM)
@@ -1159,6 +1200,7 @@ Mọi nơi trong pipeline (Module F, Module G, `filter_boundary_truncated_for_ke
 - `realized_return`: float (% return $= \text{PnL} / \text{notional}$, gắn vào SAU bước tra cứu giá tuyệt đối qua `finalize_trade_record`)
 
 #### 4.0.2 Hàm Chuyển Đổi Offset Tuyệt Đối `resolve_absolute_exit_idx` & Wiring Glue (v11.8 DEFINITIVE)
+
 `classify_trade_mode` chỉ trả về nhãn `"follow"/"fade"/"none"` — không trả về `side` hay `sl_initial`. Theo quy ước C.4: `side_follow = side_primary`, `side_fade = -side_primary`. Hàm `resolve_trade_execution_params` thực hiện phép đảo dấu này và tính lại `sl_initial`. Tiếp theo, `run_trailing_exit_for_oos_event` gọi mô phỏng Trailing-Exit và chuyển đổi ngay lập tức offset $k$ sang `exit_idx_absolute`:
 
 ```python
@@ -1182,14 +1224,12 @@ def resolve_trade_execution_params(
 
     return {"mode": mode, "side": side_actual, "sl_initial": sl_initial, "t_max_live": t_max_live}
 
-
 def resolve_absolute_exit_idx(entry_idx: int, exit_idx_relative: int) -> int:
     """
     CHUYỂN ĐỔI BẮT BUỘC (v11.8): Chuyển offset tương đối k trả về từ compute_regime_aware_trailing_exit_v2
     (trên mảng future_highs/lows bắt đầu tại entry_idx + 1) sang chỉ số bar tuyệt đối trên toàn chuỗi.
     """
     return entry_idx + 1 + exit_idx_relative
-
 
 def run_trailing_exit_for_oos_event(
     entry_idx: int, entry_price: float, test_window_end_idx: int,
@@ -1233,6 +1273,7 @@ def run_trailing_exit_for_oos_event(
 ```
 
 #### 4.0.3 Hoàn Thiện Bản Ghi Với `finalize_trade_record` & Tra Cứu Tuyệt Đối (v11.8 DEFINITIVE)
+
 ```python
 def finalize_trade_record(
     partial_record: dict,
@@ -1259,7 +1300,6 @@ def finalize_trade_record(
     realized_return_pct = pnl_abs / max(size_notional, 1e-8)
     return {**partial_record, "realized_return": realized_return_pct}
 
-
 def simulate_trailing_exit_within_fold_bounds(
     entry_idx: int, entry_price: float, test_window_end_idx: int, side: int, trade_mode: str,
     full_highs: np.ndarray, full_lows: np.ndarray, full_atr: np.ndarray, full_p_trend: np.ndarray,
@@ -1279,7 +1319,6 @@ def simulate_trailing_exit_within_fold_bounds(
         max_lookforward_override=max_lookforward, **kwargs
     )
 
-
 def filter_boundary_truncated_for_kelly_table(trade_records: list, warn_threshold: float = 0.15) -> tuple:
     """Loại lệnh boundary_truncated khỏi input dựng bảng Kelly, GIỮ lại cho Sharpe tổng."""
     n_total = len(trade_records)
@@ -1292,6 +1331,7 @@ def filter_boundary_truncated_for_kelly_table(trade_records: list, warn_threshol
 ```
 
 #### 4.0.4 Unit Test Bắt Buộc CI cho Wiring & Absolute Index Resolution (v11.8 DEFINITIVE)
+
 ```python
 def test_resolve_trade_execution_params_symmetry():
     """
@@ -1328,11 +1368,13 @@ def test_resolve_trade_execution_params_symmetry():
 ---
 
 ### 4.1 Combinatorial Purged Cross-Validation (CPCV 15-Fold — AFML Chương 12)
+
 CPCV chia chuỗi thời gian thành $M = 6$ cụm nối tiếp nhau, tổ hợp chập $k = 2$ cụm làm tập Test cho mỗi fold $\implies \binom{M}{k} = \binom{6}{2} = 15$ Folds độc lập. Với mỗi fold, mọi bước từ A.3 FFD, B.2 Kalman đến E.1 Meta-Labeler đều phải refit lại 100% độc lập để sinh dự báo OOS.
 
 ---
 
 ### 4.2 Deflated Sharpe Ratio (DSR — Bailey & López de Prado 2014)
+
 Chỉ số Sharpe OOS quan sát được $\widehat{SR}$ phải được chiết khấu (deflate) để tính đến số lượng thử nghiệm $N_{\text{DSR}}$, độ lệch phi chuẩn (Skewness $\gamma_3$, Kurtosis $\gamma_4$) và phương sai ước lượng cực đại:
 
 $$\text{DSR} = \Phi \left( \frac{\left( \widehat{SR} - \mathbb{E}[SR_0] \right) \sqrt{T - 1}}{\sqrt{1 - \gamma_3 \widehat{SR} + \frac{\gamma_4 - 1}{4} \widehat{SR}^2}} \right) \ge 0.95$$
@@ -1343,6 +1385,7 @@ $$\mathbb{E}[SR_0] = \sqrt{V[SR_0]} \left( (1 - \gamma) \Phi^{-1}\left(1 - \frac
 ---
 
 ### 4.3 Probability of Backtest Overfitting (PBO CSCV $S=16$ Blocks)
+
 Thuật toán CSCV (Combinatorial Symmetric Cross-Validation) chia ma trận PnL OOS thành $S=16$ khối bằng nhau, tổ hợp chập $S/2 = 8$ khối làm tập huấn luyện tối ưu hóa ($J_c$) và $8$ khối còn lại làm kiểm định ngoài mẫu ($\bar{J}_c$). Tỷ lệ PBO được tính bằng logit phân phối hạng tương đối:
 
 $$\text{PBO} = P\left( \text{Rank}_{\bar{J}_c}(\theta^*) < 0.5 \right) \le 0.40$$
@@ -1350,6 +1393,7 @@ $$\text{PBO} = P\left( \text{Rank}_{\bar{J}_c}(\theta^*) < 0.5 \right) \le 0.40$
 ---
 
 ### 4.4 Flat Plateau Robustness Check (Cân nhắc `t_max_live_fade` - v11.7 Patch C.3)
+
 Mô hình phải nằm trên một cao nguyên ổn định (Flat Plateau) thay vì một đỉnh nhọn đơn lẻ (Spike / Overfitting). Quét không gian lưới $\pm 5\%$ xung quanh 4 tham số macro ($m_{pt}, m_{sl}, \lambda, \delta_{\text{spatial}}$) tạo ra 81 cấu hình lân cận. Tiêu chí bền vững:
 $$\frac{1}{81} \sum_{k=1}^{81} \widehat{SR}(\theta_k) \ge 0.80 \times \widehat{SR}(\theta^*)$$
 
@@ -1362,6 +1406,7 @@ $$\frac{1}{81} \sum_{k=1}^{81} \widehat{SR}(\theta_k) \ge 0.80 \times \widehat{S
 ### 5.1 Module G: Execution Simulation & Vi Cấu Trúc Khớp Lệnh
 
 #### 5.1.1 Độ Trễ Phụ Thuộc Chế Độ & Khớp Lệnh Thị Trường Căn Bậc Hai
+
 Độ trễ truyền nhận tín hiệu (Latency $\Delta t_{\text{lat}}$) được mô phỏng theo phân phối Lognormal, co giãn theo độc tính thanh khoản và phân vị biến động giá:
 $$\Delta t_{\text{lat}} \sim \text{Lognormal}\left( \ln\left( 15.0\text{ms} \times (1 + 1.5 \cdot \mathbb{1}[\text{toxic}]) \times (1 + \text{Percentile}(\sigma_{\text{realized}})) \right), 0.3 \right)$$
 
@@ -1369,6 +1414,7 @@ $$\Delta t_{\text{lat}} \sim \text{Lognormal}\left( \ln\left( 15.0\text{ms} \tim
 $$P_{\text{fill\_market}} = P_{\text{post\_latency}} \times \left( 1 + \text{side} \times \kappa \cdot \sigma_{\text{daily}} \sqrt{\frac{\text{Size}_{\text{notional}}}{\text{ADV}}} \right)$$
 
 #### 5.1.2 Hàng Đợi Lệnh Giới Hạn (Resting Limit Queue Position Simulation)
+
 ```python
 import numpy as np
 
@@ -1426,6 +1472,7 @@ def full_chain_parity_check(python_output: np.ndarray, rust_output: np.ndarray, 
 ---
 
 ### 5.3 Module I: Paper Trading Protocol — Gate Kép (PATCH-I.1.1)
+
 Trước khi rót vốn thực tế, hệ thống phải chạy trong chế độ Shadow Mode thực thi song song và chỉ được phép thăng hạng lên giao dịch vốn thật khi thỏa mãn **Gate Kép**:
 
 $$\left( N_{\text{events\_observed}} \ge 30 \right) \land \left( T_{\text{weeks\_elapsed}} \ge 2.0 \right)$$
@@ -1440,6 +1487,7 @@ def check_shadow_mode_readiness(n_events_observed: int, weeks_elapsed: float, mi
 ### 5.4 Module J: Portfolio Risk, Shrinkage & Prediction Error CUSUM
 
 #### 5.4.1 Ngắt Mạch Sụt Giảm Tài Khoản (Drawdown Circuit Breakers)
+
 | Cấp Độ | Điều Kiện Kích Hoạt ($\text{DD}_t$) | Hành Động Vận Hành |
 |---|---|---|
 | **Tier 0** | $\text{DD}_t < 5\%$ | Giao dịch bình thường với quy mô Kelly trọn vẹn. |
@@ -1448,6 +1496,7 @@ def check_shadow_mode_readiness(n_events_observed: int, weeks_elapsed: float, mi
 | **Tier 3** | $\text{DD}_t \ge 15\%$ | Kill Switch tuyệt đối: Hủy mọi lệnh, dừng hệ thống, yêu cầu sign-off thủ công từ con người. |
 
 #### 5.4.2 Hiệp Phương Sai Ledoit-Wolf Shrinkage & Stressed Correlation Overlay
+
 Để tối ưu hóa danh mục đa tài sản, ma trận hiệp phương sai mẫu $\mathbf{S}$ được co ngót về ma trận mục tiêu $\mathbf{F}$ (Constant Correlation Target) theo công thức Ledoit-Wolf:
 $$\boldsymbol{\Sigma}_{\text{shrunk}} = (1 - \delta) \mathbf{S} + \delta \mathbf{F}$$
 
@@ -1477,6 +1526,7 @@ def get_risk_budget_correlation(returns_matrix: np.ndarray) -> np.ndarray:
 ```
 
 #### 5.4.3 CUSUM Brier Score với Reset & Refresh Tái Sinh (PATCH E v11.5)
+
 Để giám sát hiện tượng suy thoái hiệu năng mô hình out-of-sample theo thời gian thực (Model Drift / Concept Drift), hệ thống tính sai số Brier tại mỗi lệnh chốt:
 $$e_i = (p_i - o_i)^2, \qquad o_i \in \{0, 1\}$$
 
@@ -1509,12 +1559,14 @@ def refresh_cusum_thresholds(oos_brier_scores: np.ndarray) -> dict:
 ---
 
 ### 5.5 Module K: Data & Universe Governance (Bổ sung K.5 L2 Order Book Depth v11.5)
+
 - **K.1 Funding Cost Accrual**: Trừ chính xác chi phí qua đêm/lãi suất margin khỏi PnL dựa trên khoảng thời gian tuyệt đối từ `full_timestamps[entry_idx]` đến `full_timestamps[exit_idx_absolute]` (cùng dùng chung biến `size_notional`).
 - **K.2 Cross-Venue Parity**: Kiểm định chéo sàn đối chứng ($\pm 500\text{ms}$), fallback MAD $7\sigma$ gắn cờ `degraded_confidence`.
 - **K.3 PIT Universe Construction**: Cập nhật danh sách tài sản giao dịch theo đúng thời điểm quá khứ, chống Survivorship Bias.
 - **K.4 Dataset Manifest**: Khóa băm SHA-256 + ghi nhận rõ `ffd_engine_type` và `orderbook_feed_source`.
 
 #### 5.5.1 L2 Order Book Depth Source & Queue Position Estimation (Module K.5)
+
 Để mô phỏng chính xác khả năng khớp lệnh giới hạn (`simulate_limit_fill_with_queue`), hệ thống khai thác dữ liệu L2 Order Book Snapshot (tối thiểu top 10 mức giá mỗi bên bid/ask, tần suất cập nhật $\le 100\text{ms}$). Khối lượng xếp hàng phía trước (`estimated_queue_ahead`) ước tính bảo thủ bằng toàn bộ khối lượng hiện đang hiển thị tại đúng mức giá đặt lệnh:
 
 ```python
@@ -1524,6 +1576,7 @@ def estimate_queue_ahead(order_book_snapshot: dict, limit_price: float, side: in
     levels = order_book_snapshot.get(price_key, {})
     return float(levels.get(limit_price, 0.0))
 ```
+
 *(Fallback quy tắc thép: Nếu mất kết nối feed L2 Order Book, tắt hoàn toàn nhánh lệnh giới hạn limit-order, chỉ được phép thực thi lệnh thị trường market-order qua `simulate_market_fill`).*
 
 ---
@@ -1531,6 +1584,7 @@ def estimate_queue_ahead(order_book_snapshot: dict, limit_price: float, side: in
 ## PHẦN VI: GIAO THỨC BÀN GIAO NHỊ PHÂN SANG RUST REAL-TIME KIT (RTK)
 
 Artifacts (`/artifacts`) khi đạt $\text{DSR} \ge 0.95$, $\text{PBO} \le 0.40$, Flat Plateau & Parity Pass:
+
 1. `ffd_weights.bin` hoặc `ffd_prony.json`: Quyết định bởi `select_ffd_production_engine`.
 2. `kalman_matrices.json`: $F, H, \mathbf{Q}_{\text{trend}}, \mathbf{Q}_{\text{chop}}, \alpha$ + `eigenvalue_floor`.
 3. `hmm_transitions.json`: $A, \boldsymbol{\mu}_j, \boldsymbol{\Sigma}_j^{-1}, \det(\boldsymbol{\Sigma}_j)$.
@@ -1542,6 +1596,7 @@ Artifacts (`/artifacts`) khi đạt $\text{DSR} \ge 0.95$, $\text{PBO} \le 0.40$
 9. `dataset_manifest.json`: SHA-256 + `ffd_engine_type` + `orderbook_feed_source`.
 
 ### 6.1 Isotonic Linear Interpolation Engine (Rust Reference)
+
 ```rust
 pub fn interpolate_isotonic(knots: &[[f64; 2]], raw_prob: f64) -> f64 {
     if raw_prob <= knots[0][0] { return knots[0][1]; }
@@ -1558,6 +1613,7 @@ pub fn interpolate_isotonic(knots: &[[f64; 2]], raw_prob: f64) -> f64 {
 ```
 
 ### 6.2 Windowed FFD $O(W^*)$ & Sum-of-Exponentials $O(M)$ Engine (Rust Reference)
+
 ```rust
 pub struct FfdWindowedEngine {
     buffer: Vec<f64>,
@@ -1609,6 +1665,7 @@ impl FfdStateApprox {
 ## PHẦN VII: DEFINITION OF DONE & LỘ TRÌNH THỰC THI THÉP (v11.8 ROADMAP)
 
 ### 7.1 Definition of Done (Checklist Toàn Diện v11.8)
+
 - [ ] **[v11.8 Patch — ABSOLUTE INDEX RESOLUTION]** Triển khai hàm `resolve_absolute_exit_idx` và cập nhật `TRADE_RECORD_SCHEMA` phân định minh bạch `exit_idx_relative` vs `exit_idx_absolute`. Đảm bảo `finalize_trade_record` và `accrue_funding_cost` (Module K.1) tra cứu giá fill/tick/timestamp tại đúng chỉ số bar tuyệt đối `exit_idx_absolute` và dùng chung biến `size_notional`.
 - [ ] **[v11.7 Patch A — WIRING GLUE]** Triển khai hàm `resolve_trade_execution_params` và `run_trailing_exit_for_oos_event`. Thay mọi lời gọi trực tiếp `simulate_trailing_exit_within_fold_bounds` trong quy trình Module F bằng `run_trailing_exit_for_oos_event`. Chạy unit test bắt buộc `test_resolve_trade_execution_params_symmetry` pass 100%.
 - [ ] **[v11.7 Patch B — SCHEMA CHUẨN]** Thống nhất `TRADE_RECORD_SCHEMA` xuyên suốt Module F/G. Triển khai `finalize_trade_record` và `trade_records_to_kelly_table_inputs`. Cập nhật quy trình Mục 4.0 theo đúng thứ tự 5 bước v11.8 (1 -> 2 -> 2.5 -> 3 -> 4).
@@ -1633,6 +1690,7 @@ impl FfdStateApprox {
 - [ ] Module I, J, K: Circuit Breaker 3 tier, Ledoit-Wolf + Stressed Correlation, Gate Kép $\ge 30$ events & $\ge 2$ tuần.
 
 ### 7.2 Lộ Trình Triển Khai Theo Ưu Tiên Tuyệt Đối
+
 | Giai Đoạn | Nội Dung Thực Thi | Lý Do Chiến Lược |
 |---|---|---|
 | **P(-1) — Sửa Payoff Mismatch + Trailing-Exit + Wiring & Absolute Index Resolution (BẮT BUỘC TRƯỚC P0)** | Thực thi theo thứ tự nghiêm ngặt: <br>1. **v11.5 Patch A** (Kiến trúc bảng Empirical Kelly) <br>2. **v11.6 Patch A** (Đối xứng hóa Trailing-Exit v2 + `compute_sl_initial`) <br>3. **v11.6 Patch B** (`simulate_trailing_exit_within_fold_bounds` + `filter_boundary_truncated`) <br>4. **v11.7 Patch A + v11.8** (Hàm glue `resolve_trade_execution_params`, `resolve_absolute_exit_idx` & `run_trailing_exit_for_oos_event`) <br>5. **v11.7 Patch C** (Tách `t_max_live_fade = 40` vs `follow = 120`) <br>6. **v11.6 Patch C + v11.7 Patch B + v11.8** (`classify_trade_mode` duy nhất, `TRADE_RECORD_SCHEMA` với `exit_idx_absolute`, `finalize_trade_record` & `trade_records_to_kelly_table_inputs`) <br>7. **v11.5 Patch G** (`PurgedKFold` t1=integer + CI test) | Đảm bảo tính nhất quán tuyệt đối về định dạng dữ liệu, hướng lệnh (`side`), giá cắt lỗ (`sl_initial`), thời gian giữ lệnh (`t_max_live`) và đặc biệt là **chỉ số bar thoát lệnh tuyệt đối (`exit_idx_absolute`)** giữa các module trước khi tra cứu giá fill cho Module G và dựng bảng Empirical Kelly. |
@@ -1645,3 +1703,4 @@ impl FfdStateApprox {
 | **P6 — Shadow Mode Gate Kép** | Module I (Shadow Mode chạy song song) | Kiểm chứng qua Gate Kép ($\ge 30$ sự kiện và $\ge 2$ tuần liền mạch) trước khi thăng hạng rót vốn thật. |
 
 *(Kỷ luật thép: P(-1) bắt buộc hoàn tất trước bất kỳ giai đoạn nào khác. P0 $\to$ P2 phải hoàn tất tuyệt đối trước khi bất kỳ con số Sharpe/DSR nào được coi là đáng tin cậy).*
+

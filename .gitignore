@@ -1,0 +1,21 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+venv/
+ai_env/
+.pytest_cache/
+
+# Artifacts & Heavy Data (NEVER commit)
+data/
+models/weights/
+models/rust_artifacts/
+backtest/results/
+scratch/
+logs/
+*.db
+*.bin
+*.onnx

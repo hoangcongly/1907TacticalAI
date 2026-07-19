@@ -1,0 +1,4 @@
+system:
+  name: aegis-trading-system
+  version: 11.8.0
+  target_frequency_bars_per_day: 50.0

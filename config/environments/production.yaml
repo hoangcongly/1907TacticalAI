@@ -1,0 +1,6 @@
+env: production
+mode: live
+circuit_breaker:
+  tier1_dd: 0.05
+  tier2_dd: 0.10
+  tier3_dd: 0.15

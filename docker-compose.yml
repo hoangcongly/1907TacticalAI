@@ -1,0 +1,19 @@
+version: '3.8'
+services:
+  aegis-core:
+    build: .
+    image: aegis-core:v11.8
+    environment:
+      - AEGIS_ENV=paper
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
+      - ./logs:/app/logs
+
+  aegis-rust-core:
+    build: ./aegis-rust-core
+    image: aegis-rust-core:v11.8
+
+  aegis-sentiment:
+    build: ./aegis-sentiment-service
+    image: aegis-sentiment:v11.8

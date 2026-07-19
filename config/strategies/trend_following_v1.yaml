@@ -1,0 +1,11 @@
+strategy_selection:
+  m_pt: 3.0
+  m_sl: 2.0
+  lambda_follow: 0.35
+  lambda_fade: 0.20
+  t_max_live_follow: 120
+  t_max_live_fade: 40
+  ffd_prony_approved: false
+  n_buckets: 10
+  min_samples_per_bucket: 30
+  f_max: 1.0

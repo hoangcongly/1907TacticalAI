@@ -1,0 +1,12 @@
+[Unit]
+Description=Aegis Trading System Service
+After=network.target
+
+[Service]
+User=aegis
+WorkingDirectory=/app/aegis-trading-system
+ExecStart=/usr/bin/python3 main.py --config config/environments/production.yaml
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

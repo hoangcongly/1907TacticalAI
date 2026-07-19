@@ -1,0 +1,4 @@
+env: paper
+mode: shadow
+min_events_gate: 30
+min_weeks_gate: 2.0

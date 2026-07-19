@@ -17,7 +17,7 @@ Trong các định chế tài chính quant trading hàng đầu thế giới (nh
 1. **Trụ Cột 1 — Lớp Kiểm Soát Dữ Liệu & Hợp Đồng Giao Dịch (`Data Gatekeeper — schemas.py / Task B-1-10`)**:  
    Sử dụng mô hình kiểm duyệt kép (`TypedDict` trên RAM cho từng lệnh lẻ và `Pandera DataFrameSchema` cho lô lớn), kết hợp cơ chế Tem Niêm Phong `dataset_manifest_hash` (SHA-256). Trụ cột này đảm bảo 100% dữ liệu đầu vào sạch tuyệt đối, ngăn chặn triệt để các lỗi vi cấu trúc số học trước khi bước vào tính toán.
 2. **Trụ Cột 2 — Lớp Phân Loại Chế Độ & Khóa Cổng An Toàn (`Regime Gate — trade_mode.py / Task B-1-2`)**:  
-   Là hàm định tuyến duy nhất (`Single Source of Truth`) phân chia thị trường thành 3 nhánh: `Follow` (khi xu hướng mạnh $p_i \ge 0.50$), `Fade` (khi xu hướng yếu $p_i < 0.20$VÀ thị trường đi ngang$p_{\text{chop}} > 0.60$), và `none` (vùng Deadzone $[0.20, 0.50)$hoặc khi thị trường hỗn mang). Trụ cột này giúp lọc bỏ$>40\%$ lệnh rác, bảo toàn lực lượng cho quỹ.
+   Là hàm định tuyến duy nhất (`Single Source of Truth`) phân chia thị trường thành 3 nhánh: `Follow` (khi xu hướng mạnh $p_i \ge 0.50$), `Fade` (khi xu hướng yếu $p_i < 0.20$ VÀ thị trường đi ngang $p_{\text{chop}} > 0.60$), và `none` (vùng Deadzone $[0.20, 0.50)$ hoặc khi thị trường hỗn mang). Trụ cột này giúp lọc bỏ $>40\%$ lệnh rác, bảo toàn lực lượng cho quỹ.
 3. **Trụ Cột 3 — Lớp Quản Trị Vốn Động Phi Tuyến (`Non-Linear Kelly Sizing — kelly_empirical.py / Task B-1-1`)**:  
    Động cơ giải tích phi tuyến (`brentq`) giải trực tiếp bài toán cực đại hóa tốc độ tăng trưởng log kỳ vọng $E[\ln(1 + f \cdot r)] \to \max$ trên phân phối thực nghiệm của chiến lược, tích hợp phanh khẩn cấp `Singularity Guard` ngăn rủi ro cháy tài khoản ($1 + f \cdot r_i \le 0$).
 
@@ -103,12 +103,7 @@ def check_absolute_index_logic(df: pd.DataFrame) -> pd.Series:
     return df["exit_idx_absolute"] == (df["entry_idx"] + 1 + df["exit_idx_relative"])
 ```
 - **Ý nghĩa & Lý do:** Đây là **bản vá khắc phục điểm mù v11.8**. Khóa cứng phương trình:
-  
-
-$$
-\text{exit-idx-absolute} = \text{entry-idx} + 1 + \text{exit-idx-relative}
-$$
-
+  $$\text{exit-idx-absolute} = \text{entry-idx} + 1 + \text{exit-idx-relative}$$
   Đảm bảo khi Module G tra cứu giá khớp lệnh (`fill_price_exit`) và chi phí qua đêm (`funding_accrued`), hệ thống luôn tra vào đúng cây nến tuyệt đối trên dòng thời gian, loại bỏ hoàn toàn sai lệch giữa backtest và live.
 
 ---
@@ -164,7 +159,7 @@ Trong kiến trúc Master Blueprint v11.8, `solve_empirical_kelly_fraction` đ�
 1. **Máy Tính Đạo Hàm & Dò Nghiệm Tối Ưu (`Non-linear Solver`):**  
    Thay vì sử dụng các công thức tĩnh hay phán đoán cảm tính, hàm thực thi chính xác toán học cực đại hóa $E[\ln(1 + f \cdot r)] \to \max$ bằng thuật toán Brent's Method (`brentq`).
 2. **Khối Lõi Phục Vụ Xây Bảng Tra Cứu Kelly 2D (`Kelly 2D Lookup Table Engine`):**  
-   Để phục vụ giao dịch thực chiến tốc độ cao, hệ thống chia không gian xác suất $[0, 1] \times [0, 1]$thành lưới 10x10 (`100 buckets`). Với mỗi ô lưới, hệ thống gom mẫu giao dịch tương ứng và gọi trực tiếp hàm `solve_empirical_kelly_fraction` (Task B-1-1) 100 lần để tính tỷ lệ tối ưu$f_{ij}^*$ điền vào bảng tra cứu.
+   Để phục vụ giao dịch thực chiến tốc độ cao, hệ thống chia không gian xác suất $[0, 1] \times [0, 1]$ thành lưới 10x10 (`100 buckets`). Với mỗi ô lưới, hệ thống gom mẫu giao dịch tương ứng và gọi trực tiếp hàm `solve_empirical_kelly_fraction` (Task B-1-1) 100 lần để tính tỷ lệ tối ưu $f_{ij}^*$ điền vào bảng tra cứu.
 3. **Cơ Chế Phanh Khẩn Cấp (`Severe Drawdown Prevention Guard`):**  
    Nhờ dòng kiểm tra `if np.any(denom <= 1e-6): return -1e6`, Task B-1-1 đóng vai trò như một bộ phanh an toàn tự động: Ngăn chặn triệt để các mức tỷ lệ đặt cược gây suy kiệt vốn ($1 + f \cdot r_i \le 0$) ngay trong bước dò nghiệm.
 
@@ -180,9 +175,9 @@ if len(returns\_sample) < 30:
     return 0.0
 ```
 - Lọc bỏ các số `NaN` hoặc `Inf` để bảo đảm đạo hàm hợp lệ.
-- Kiểm tra số lượng lệnh tối thiểu $N \ge 30$. Nếu dưới 30 lệnh, Định lý Giới Hạn Trung Tâm (`Central Limit Theorem`) chưa đủ lực để đảm bảo phân phối mẫu đại diện cho thực tế $\implies$Trả về$f^* = 0.0$ (Không cược tiền khi thiếu dữ liệu để chống Overfitting).
+- Kiểm tra số lượng lệnh tối thiểu $N \ge 30$. Nếu dưới 30 lệnh, Định lý Giới Hạn Trung Tâm (`Central Limit Theorem`) chưa đủ lực để đảm bảo phân phối mẫu đại diện cho thực tế $\implies$ Trả về $f^* = 0.0$ (Không cược tiền khi thiếu dữ liệu để chống Overfitting).
   > [!NOTE]
-  > **Phân Tích Độ Nhạy Mẫu Số (`Sample Size Sensitivity N=30 vs 100 vs 200`):** Ngưỡng $N \ge 30$là quy tắc kinh nghiệm căn bản theo CLT. Tuy nhiên, trong phân tích định lượng thực chiến, phân phối lợi suất thường có đuôi dày (`fat-tailed`) và lệch (`skewed`). Vì công thức Kelly cực kỳ nhạy cảm với các rủi ro tổn thất đuôi (`tail risk`), mức$N=30$có thể chưa đủ kiên cố. Trong giai đoạn kiểm định hệ thống toàn diện tại Module F (`CPCV/DSR/PBO`), chúng ta sẽ chạy bài kiểm tra độ nhạy (`sensitivity test` với$N=30, 100, 200$) để đánh giá tính ổn định của $f^*$ trước khi ấn định quy mô đặt cược live.
+  > **Phân Tích Độ Nhạy Mẫu Số (`Sample Size Sensitivity N=30 vs 100 vs 200`):** Ngưỡng $N \ge 30$ là quy tắc kinh nghiệm căn bản theo CLT. Tuy nhiên, trong phân tích định lượng thực chiến, phân phối lợi suất thường có đuôi dày (`fat-tailed`) và lệch (`skewed`). Vì công thức Kelly cực kỳ nhạy cảm với các rủi ro tổn thất đuôi (`tail risk`), mức $N=30$ có thể chưa đủ kiên cố. Trong giai đoạn kiểm định hệ thống toàn diện tại Module F (`CPCV/DSR/PBO`), chúng ta sẽ chạy bài kiểm tra độ nhạy (`sensitivity test` với $N=30, 100, 200$) để đánh giá tính ổn định của $f^*$ trước khi ấn định quy mô đặt cược live.
 
 #### B. Phương Trình Đạo Hàm Tăng Trưởng Log Kỳ Vọng (`growth_derivative`)
 ```python
@@ -193,7 +188,7 @@ def growth\_derivative(f):
     return np.mean(returns\_sample / denom)
 ```
 - **Nền tảng Toán học:**  
-  Mục tiêu là cực đại hóa hàm tăng trưởng: $G(f) = E\left[ \ln(1 + f \cdot r) \right]$. Đạo hàm bậc nhất theo $f$là$G'(f) = E\left[ \frac{r}{1 + f \cdot r} \right] = 0$.
+  Mục tiêu là cực đại hóa hàm tăng trưởng: $G(f) = E\left[ \ln(1 + f \cdot r) \right]$. Đạo hàm bậc nhất theo $f$ là $G'(f) = E\left[ \frac{r}{1 + f \cdot r} \right] = 0$.
 - **Cơ chế bảo vệ thâm hụt vốn (`if np.any(denom <= 1e-6): return -1e6`):**  
   Đây là chốt chặn quan trọng! Nếu thử nghiệm một tỷ lệ `f` quá lớn khiến lệnh thua ($r_i < 0$) làm số dư $1 + f \cdot r_i \le 0$ (Suy kiệt vốn), code trả về `-1e6` để báo hiệu thuật toán dò nghiệm `brentq` cần lùi về vùng tỷ lệ an toàn hơn.
 
@@ -204,8 +199,8 @@ if growth\_derivative(f\_max) > 0: return f\_max
 return brentq(growth\_derivative, 0.0, f\_max, xtol=1e-6)
 ```
 - **Chốt 1 ($f = 0.0$):** Tại $f=0$, $G'(0) = E[r]$. Nếu trung bình lợi suất của chiến lược $E[r] \le 0$ (chiến lược không có kỳ vọng dương), hệ thống khóa nghiệm tại `0.0` (Không cược tiền).
-- **Chốt 2 ($f = f_{\max}$):** Nếu tại mức cược tối đa (ví dụ $100\%$hoặc$25\%$), đường cong tăng trưởng vẫn dốc lên ($G'(f_{\max}) > 0$), khóa nghiệm tại trần $f_{\max}$ để tuân thủ giới hạn quản trị rủi ro.
-- **Chốt 3 (`brentq`):** Nếu $G'(0) > 0$và$G'(f_{\max}) \le 0$, theo Định lý Giá Trị Trung Gian (`Intermediate Value Theorem`), chắc chắn tồn tại duy nhất một nghiệm $f^* \in (0, f_{\max})$nơi đạo hàm bằng 0. Thuật toán `brentq` (kết hợp chia đôi, cát tuyến và nội suy nghịch đảo bậc 2) sẽ dò tìm ra nghiệm với sai số$< 10^{-6}$.
+- **Chốt 2 ($f = f_{\max}$):** Nếu tại mức cược tối đa (ví dụ $100\%$ hoặc $25\%$), đường cong tăng trưởng vẫn dốc lên ($G'(f_{\max}) > 0$), khóa nghiệm tại trần $f_{\max}$ để tuân thủ giới hạn quản trị rủi ro.
+- **Chốt 3 (`brentq`):** Nếu $G'(0) > 0$ và $G'(f_{\max}) \le 0$, theo Định lý Giá Trị Trung Gian (`Intermediate Value Theorem`), chắc chắn tồn tại duy nhất một nghiệm $f^* \in (0, f_{\max})$ nơi đạo hàm bằng 0. Thuật toán `brentq` (kết hợp chia đôi, cát tuyến và nội suy nghịch đảo bậc 2) sẽ dò tìm ra nghiệm với sai số $< 10^{-6}$.
 
 ### 3. Kiểm Thử TDD Phân Phối Bernoulli (`test_solve_empirical_kelly_fraction` & Coin Toss)
 ```python
@@ -215,13 +210,8 @@ def test\_b\_1\_1\_kelly\_classical\_coin\_toss():
     f\_star = solve\_empirical\_kelly\_fraction(sample, f\_max=1.0)
     assert abs(f\_star - 0.2) < 0.05
 ```
-- **Kiểm chứng bằng toán học nhị thức Bernoulli:** Với phân phối nhị thức ($60\%$lệnh thắng$+100\%$, $40\%$lệnh thua$-100\%$), công thức Kelly kinh điển cho kết quả lời giải chuẩn xác là:
-  
-
-$$
-f^* = p - \frac{1-p}{b} = 0.6 - \frac{0.4}{1.0} = 0.20 \quad (20\%)
-$$
-
+- **Kiểm chứng bằng toán học nhị thức Bernoulli:** Với phân phối nhị thức ($60\%$ lệnh thắng $+100\%$, $40\%$ lệnh thua $-100\%$), công thức Kelly kinh điển cho kết quả lời giải chuẩn xác là:
+  $$f^* = p - \frac{1-p}{b} = 0.6 - \frac{0.4}{1.0} = 0.20 \quad (20\%)$$
 - **Nghiệm thu thực tế:** Kết quả `f_star` tính trên 10,000 mẫu xấp xỉ `0.20`, xác nhận động cơ giải tích phi tuyến (`solve_empirical_kelly_fraction`) đạt chuẩn chính xác tuyệt đối.
 
 #### Sơ Đồ Luồng Tối Ưu Hóa Kelly Phi Tuyến (`Empirical Kelly Solver Pipeline`)
@@ -301,6 +291,8 @@ Kết quả `✅ PASSED!` xác nhận bộ phân loại chế độ giao dịch 
 > [!NOTE]
 > **Thiết Kế Kiến Trúc: Ném Lỗi (`ValueError`) vs Cầu Dao Tự Động (`Circuit Breaker Module J`):** Tại sao `classify_trade_mode` và `compute_sl_initial` chọn ném ngoại lệ `ValueError` ngay khi gặp input `NaN` hoặc rác? Ở tầng kiểm định schema và nghiên cứu backtest (`Research/Labeling Layer`), đây là quyết định chuẩn xác để lập tức dừng chạy và bộc lộ lỗi dữ liệu (`Fast-Fail`). Tuy nhiên, ở tầng khớp lệnh thực tế (`Live Execution Layer - Module G`), việc để một ngoại lệ không được xử lý làm crash toàn bộ vòng lặp trading là nguy hiểm. Do đó, theo thiết kế tổng thể, **Module J (`Circuit Breaker`)** sẽ bọc bên ngoài các lời gọi hàm này trong môi trường live: khi bắt được `ValueError` do suy thoái mô hình HMM/Kalman (nhả `NaN`), Module J sẽ chủ động kích hoạt quy trình hạ cấp (`Graceful Degradation` / `Flatten All Positions` / chuyển trạng thái `Circuit Breaker Tripped`) thay vì để bot sập đột ngột.
 
+
+
 #### C. Sơ Đồ Luồng Phân Loại Chế Độ Giao Dịch & Khóa Cổng An Toàn (`Trade Mode Classification Pipeline`)
 ```mermaid
 flowchart TD
@@ -348,7 +340,7 @@ else:
 ```
 - **Tham số hóa thông minh (`Parameterization`):**
   - `entry_price`: Giá khớp lệnh đầu vào.
-  - `side`: $+1$(Long) hoặc$-1$ (Short/Fade). Bọc thép chặn tuyệt đối `side == 0` (Neutral) để tránh nhiễm độc logic PnL!
+  - `side`: $+1$ (Long) hoặc $-1$ (Short/Fade). Bọc thép chặn tuyệt đối `side == 0` (Neutral) để tránh nhiễm độc logic PnL!
   - `sigma`: Biến động nội tại của thị trường ($\ge 0$, không cho phép số âm hay `NaN/Inf`).
   - `m_sl`: Hệ số nhân rào cản cắt lỗ (`Stop-loss multiplier`).
   - `c_trade_adj`: Phí giao dịch + Trượt giá dự kiến (`Slippage + Commission`).
@@ -466,37 +458,18 @@ Khi giao dịch phái sinh hợp đồng tương lai vĩnh cửu (`Perpetual Fut
 
 ### 2. Chứng Minh Toán Học Phương Trình Khép Kín (`Closed-Form Mathematical Derivation`)
 Để đảm bảo điểm Cắt Lỗ cách điểm Thanh Lý một lớp đệm $B = \text{safety-buffer-pct}$, ta thiết lập phương trình:
+$$\text{Khoảng cách đến SL} \le \text{Khoảng cách đến Liq} \times (1 - B)$$
 
-$$
-\text{Khoảng cách đến SL} \le \text{Khoảng cách đến Liq} \times (1 - B)
-$$
-
-Gọi $S = \frac{|\text{Entry} - \text{SL}|}{\text{Entry}}$là tỷ lệ % cắt lỗ (ví dụ Cắt lỗ `10%` thì$S = 0.10$).
+Gọi $S = \frac{|\text{Entry} - \text{SL}|}{\text{Entry}}$ là tỷ lệ % cắt lỗ (ví dụ Cắt lỗ `10%` thì $S = 0.10$).
 Với lệnh Long (`side = 1`), giá thanh lý là:
-
-$$
-P_{\text{liq}} = \text{Entry} \times \left(1 - \frac{1}{L} + M\right)
-$$
-
-Trong đó $L$là đòn bẩy,$M$ là `maintenance_margin_rate`. Khi đó khoảng cách đến điểm thanh lý là:
-
-$$
-\text{Entry} - P_{\text{liq}} = \text{Entry} \times \left(\frac{1}{L} - M\right)
-$$
+$$P_{\text{liq}} = \text{Entry} \times \left(1 - \frac{1}{L} + M\right)$$
+Trong đó $L$ là đòn bẩy, $M$ là `maintenance_margin_rate`. Khi đó khoảng cách đến điểm thanh lý là:
+$$\text{Entry} - P_{\text{liq}} = \text{Entry} \times \left(\frac{1}{L} - M\right)$$
 
 Thay vào bất phương trình an toàn:
-
-$$
-S \times \text{Entry} \le \text{Entry} \times \left(\frac{1}{L} - M\right) \times (1 - B)
-$$
-
-$$
-\frac{S}{1 - B} \le \frac{1}{L} - M \implies \frac{1}{L} \ge \frac{S}{1 - B} + M
-$$
-
-$$
-L_{\max} = \frac{1}{\frac{S}{1 - B} + M}
-$$
+$$S \times \text{Entry} \le \text{Entry} \times \left(\frac{1}{L} - M\right) \times (1 - B)$$
+$$\frac{S}{1 - B} \le \frac{1}{L} - M \implies \frac{1}{L} \ge \frac{S}{1 - B} + M$$
+$$L_{\max} = \frac{1}{\frac{S}{1 - B} + M}$$
 
 👉 Đây chính là công thức giải tích được cài đặt trong hàm `resolve_max_safe_leverage`, với độ chính xác tuyệt đối và thời gian thực thi $O(1)$.
 
@@ -505,7 +478,7 @@ $$
 ### 3. Kiểm Toán Kỹ Thuật & 4 Lớp Kiểm Sách An Toàn (`Strict Validation Guards v11.9`)
 1. **Kiểm tra Chia cho số 0 & Đòn bẩy không hợp lệ (`ZeroDivision / Negative Leverage Guard`):** Chặn đứng ngay `leverage < 1.0`, `0`, hoặc dữ liệu không hợp lệ `NaN/Inf`. Ngăn lỗi chia cho số 0 và ngăn giá thanh lý bị tính ra số âm vô lý.
 2. **Kiểm tra Cắt lỗ ngược chiều (`Inverted Stop-Loss Guard`):** Nếu `sl_initial` bị truyền vào sai chiều (ví dụ lệnh Long nhưng SL lại lớn hơn hoặc bằng giá mua), `sl_distance_frac` sẽ bị âm dẫn đến `denom < 0` và đòn bẩy ảo vọt lên vô lý. Hải quan lập tức phát hiện `sl_distance_frac <= 0` và ném lỗi `ValueError` (`Strict Rejection`).
-3. **Kiểm tra Lớp đệm ngoài biên (`Buffer Out-of-Bounds Guard`):** Chặn `safety_buffer_pct` ngoài đoạn $[0.0, 0.9]$, ngăn lỗi mẫu số bằng $0$(`Division-by-Zero`) khi$B = 1.0$.
+3. **Kiểm tra Lớp đệm ngoài biên (`Buffer Out-of-Bounds Guard`):** Chặn `safety_buffer_pct` ngoài đoạn $[0.0, 0.9]$, ngăn lỗi mẫu số bằng $0$ (`Division-by-Zero`) khi $B = 1.0$.
 4. **Kiểm tra `side == 0` (`Stand Aside Guard`):** Bắt buộc hướng lệnh phải là `+1` (Long) hoặc `-1` (Short).
 
 ---
@@ -535,12 +508,7 @@ flowchart TD
 Trong kiểm định chéo thời gian (`Purged Group Time-Series Cross-Validation`), một trong những lỗi vi phạm rò rỉ dữ liệu (`Data Leakage / Look-ahead bias`) phổ biến và khó phát hiện nhất là **cho phép hàm mô phỏng giao dịch nhìn thấy dữ liệu nằm ngoài biên Fold trong quá trình chạy tự do, sau đó mới sửa lại kết quả khi thoát hàm (`Post-Patching`)**.
 - Nếu hàm `compute_regime_aware_trailing_exit` được truyền vào toàn bộ chuỗi nến tương lai không giới hạn, bot có thể ra quyết định cắt lời `TRAIL` dựa trên những biến động giá thuộc Fold tiếp theo. Dù sau đó ta có ép kiểu lại thành `TIME_STOP` tại biên Fold cũ, toàn bộ quá trình mô phỏng đã bị ô nhiễm thông tin tương lai!
 - **Khắc phục ở Task B-1-5 (`simulate_trailing_exit_within_fold_bounds`):** Hệ thống thực thi chân lý "Phòng bệnh hơn chữa bệnh — Cắt phăng mảng dữ liệu ngay tại cửa trước khi đưa vào hàm (`Pre-Slice before calling exit logic`)".
-  
-
-$$
-\text{effective-end} = \min(\text{entry-idx} + 1 + t_{\max}, \text{test-window-end-idx}, \text{len}(\text{full-highs}))
-$$
-
+  $$\text{effective-end} = \min(\text{entry-idx} + 1 + t_{\max}, \text{test-window-end-idx}, \text{len}(\text{full-highs}))$$
   Khi mảng `future_highs` bị cắt cụt tuyệt đối tại `effective_end`, dù hàm mô phỏng bên trong có muốn nhìn xa hơn thì cũng **hoàn toàn không có dữ liệu để nhìn**! Đây là tiêu chuẩn định chế `Zero-Leakage`.
 
 ---
@@ -549,11 +517,7 @@ $$
 Khi một lệnh bị sàn phái sinh quét thanh lý (`LIQUIDATION`), cơ chế tính toán tổn thất hoàn toàn khác so với chốt lời/cắt lỗ thông thường:
 - **Sai lầm ngây thơ:** Dùng công thức PnL thường $\text{Loss} = \text{size-notional} \times (1 + \text{fee})$. Nếu `size_notional` là giá trị danh nghĩa USD (ví dụ đòn bẩy `10x` thì `size_notional` gấp 10 lần tiền cọc), việc trừ thẳng `size_notional` sẽ báo cáo quỹ bị lỗ gấp `10 lần` số vốn ký quỹ thực tế!
 - **Chuẩn hóa định chế (`compute_realized_pnl`):** Khi thanh lý, số tiền bị mất chính là toàn bộ tiền thế chấp (`Margin = size_notional / leverage`) cộng với phí phạt thanh lý mà sàn thu trên tổng giá trị lệnh (`size_notional * liquidation_fee_rate`).
-  
-
-$$
-\text{Loss}_{\text{Liq}} = -\left( \frac{\text{size-notional}}{\text{leverage}} + \text{size-notional} \times \text{liquidation-fee-rate} \right) - \text{funding-accrued}
-$$
+  $$\text{Loss}_{\text{Liq}} = -\left( \frac{\text{size-notional}}{\text{leverage}} + \text{size-notional} \times \text{liquidation-fee-rate} \right) - \text{funding-accrued}$$
 
 ---
 
@@ -609,28 +573,25 @@ Hệ thống hiện đã sở hữu một bộ khung xương dữ liệu và qu�
 
 ### 2. Bản Chất Trực Quan Qua Ví Dụ Thực Tế: "Bài Toán Kèo Cược 100 Triệu"
 Để hiểu rõ nguyên lý toán học của Kelly, hãy xét bài toán phân bổ vốn sau:
-Giả sử quỹ có **100 triệu đồng** vốn. Quỹ sở hữu một chiến lược giao dịch có xác suất thắng $p = 60\%$(lợi suất$+100\%$vốn cược) và xác suất thua$q = 40\%$(tổn thất$-100\%$vốn cược). Tỷ lệ thắng$60\% > 50\%$ khẳng định chiến lược có lợi thế kỳ vọng dương ($E[r] > 0$).
+Giả sử quỹ có **100 triệu đồng** vốn. Quỹ sở hữu một chiến lược giao dịch có xác suất thắng $p = 60\%$ (lợi suất $+100\%$ vốn cược) và xác suất thua $q = 40\%$ (tổn thất $-100\%$ vốn cược). Tỷ lệ thắng $60\% > 50\%$ khẳng định chiến lược có lợi thế kỳ vọng dương ($E[r] > 0$).
 
 **Bài toán phân bổ:** *Quỹ nên trích tỷ lệ bao nhiêu % vốn ($f$) cho mỗi lần giao dịch để tối đa hóa tốc độ tăng trưởng log kỳ vọng?*
 
 - **Trường hợp 1 — Phân bổ quá thấp ($f = 1\%$ vốn - 1 triệu đồng):**  
   Tốc độ tăng trưởng vốn cực kỳ chậm ($E[r]$ thấp). Sau chuỗi thời gian dài, quỹ bỏ lỡ phần lớn tiềm năng tích lũy kép từ lợi thế thống kê.
 - **Trường hợp 2 — Phân bổ quá liều (`Over-betting`, ví dụ $f = 80\%$ vốn - 80 triệu đồng):**  
-  Mặc dù xác suất thắng là $60\%$, biến động ngẫu nhiên chắc chắn sẽ tạo ra các chuỗi **2 hoặc 3 lần thua liên tiếp** tại một thời điểm nào đó. Nếu phân bổ $80\%$vốn mỗi lệnh, chỉ cần gặp 2 lệnh thua liên tiếp là giá trị tài sản ròng (`NAV`) sụt giảm từ$100 \to 20 \to 4$ triệu đồng (Drawdown `96%`), dẫn đến tổn thất vĩnh viễn không thể phục hồi (`Absorbing Barrier / Ruin`).
+  Mặc dù xác suất thắng là $60\%$, biến động ngẫu nhiên chắc chắn sẽ tạo ra các chuỗi **2 hoặc 3 lần thua liên tiếp** tại một thời điểm nào đó. Nếu phân bổ $80\%$ vốn mỗi lệnh, chỉ cần gặp 2 lệnh thua liên tiếp là giá trị tài sản ròng (`NAV`) sụt giảm từ $100 \to 20 \to 4$ triệu đồng (Drawdown `96%`), dẫn đến tổn thất vĩnh viễn không thể phục hồi (`Absorbing Barrier / Ruin`).
 
 **Lời Giải Tối Ưu Từ Định Lý Kelly:**  
 Công thức Kelly xác định chính xác tỷ lệ phân bổ tối đa hóa kỳ vọng logarithm:
-
-$$
-f^* = p - \frac{q}{b} = 60\% - \frac{40\%}{1} = 20\% \text{ (Phân bổ chính xác 20 triệu đồng cho mỗi lệnh)}
-$$
+$$f^* = p - \frac{q}{b} = 60\% - \frac{40\%}{1} = 20\% \text{ (Phân bổ chính xác 20 triệu đồng cho mỗi lệnh)}$$
 
 > [!TIP]
-> **Quy Luật Tăng Trưởng Kelly:** Nếu phân bổ đúng $f^* = 20\%$vốn cho mỗi lệnh, đường cong tăng trưởng dài hạn của tài khoản sẽ đạt tốc độ dốc cực đại. Phân bổ vượt quá$f^*$(`Over-betting`), rủi ro cháy tài khoản tăng vọt trong khi mức lợi suất kỳ vọng dài hạn thực tế lại suy giảm theo đường parabol; ngược lại, phân bổ thấp hơn$f^*$(`Under-betting`, như Half-Kelly$f^*/2$) giúp giảm đáng kể biến động Drawdown với cái giá là tốc độ tích lũy vốn chậm hơn một mức tỷ lệ thuần tuý toán học.
+> **Quy Luật Tăng Trưởng Kelly:** Nếu phân bổ đúng $f^* = 20\%$ vốn cho mỗi lệnh, đường cong tăng trưởng dài hạn của tài khoản sẽ đạt tốc độ dốc cực đại. Phân bổ vượt quá $f^*$ (`Over-betting`), rủi ro cháy tài khoản tăng vọt trong khi mức lợi suất kỳ vọng dài hạn thực tế lại suy giảm theo đường parabol; ngược lại, phân bổ thấp hơn $f^*$ (`Under-betting`, như Half-Kelly $f^*/2$) giúp giảm đáng kể biến động Drawdown với cái giá là tốc độ tích lũy vốn chậm hơn một mức tỷ lệ thuần tuý toán học.
 
 ### 3. Tại Sao Kelly Là Nền Tảng Quản Trị Vốn Định Chế (`Institutional Sizing Basis`)?
 Trong các tổ chức định chế quant trading như Renaissance Technologies, Two Sigma hay AQR, nguyên lý tối thượng được thiết lập là:
-> *"Một mô hình dự báo xác suất xu hướng chính xác đến $90\%$nhưng phân bổ vốn sai lệch (`Over-betting / Leverage abuse`) vẫn có xác suất cao dẫn đến phá sản ròng. Ngược lại, một mô hình có độ chính xác chỉ$53\%$ nhưng tuân thủ đúng kỷ luật tối ưu hóa tỷ lệ cược Kelly thực nghiệm (`Empirical Kelly Fraction`) sẽ tích lũy khối tài sản khổng lồ và kiên cố trong dài hạn."*
+> *"Một mô hình dự báo xác suất xu hướng chính xác đến $90\%$ nhưng phân bổ vốn sai lệch (`Over-betting / Leverage abuse`) vẫn có xác suất cao dẫn đến phá sản ròng. Ngược lại, một mô hình có độ chính xác chỉ $53\%$ nhưng tuân thủ đúng kỷ luật tối ưu hóa tỷ lệ cược Kelly thực nghiệm (`Empirical Kelly Fraction`) sẽ tích lũy khối tài sản khổng lồ và kiên cố trong dài hạn."*
 
 ### 4. Sự Khác Biệt Giữa Kelly Lý Thuyết và Kelly Thực Nghiệm (`kelly_empirical.py`)
 - **Kelly Lý Thuyết Cổ Điển (`Classical Kelly`):** Giả định mức tỷ lệ lời/lỗ ($b = \text{win/loss}$) là hằng số cố định cho mỗi lệnh. Mô hình này chỉ áp dụng chính xác cho các trò chơi xác suất rời rạc có tỷ lệ cược cố định (cược đồng xu, casino).

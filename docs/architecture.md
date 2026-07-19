@@ -136,7 +136,7 @@ $$\max_{t \in [t_i - 500\text{ms}, t_i + 500\text{ms}]} |P^{\text{ref}}(t) - P_{
 
 Khi gộp nến theo Dollar-Volume ($V_{\text{dollar}} = \sum P_k V_k \ge \theta_{\text{PIT}}$), một nến hoàn thành trong số lượng tick quá nhỏ ($N_{\text{ticks}} \ll \text{median}$) đồng nghĩa với việc có các lệnh thị trường (Market Orders) quy mô lớn ăn thẳng vào sổ lệnh, gây sốc thanh khoản (Toxic Order Flow).
 
-$$\text{tick\_count\_to\_fill}_t < 0.5 \times \text{median}\left( \text{tick\_count\_to\_fill}_{t-100:t-1} \right) \implies \text{is\_high\_toxicity\_bar} = \text{True}$$
+$$\text{tick-count-to-fill}_t < 0.5 \times \text{median}\left( \text{tick-count-to-fill}_{t-100:t-1} \right) \implies \text{is-high-toxicity-bar} = \text{True}$$
 
 #### 1.0.3 Kalman Tick-Level Replacer (Giao thức Predict-Only v11.2)
 
@@ -194,9 +194,9 @@ class TickLevelKalmanReplacer:
 
 #### 1.1.1 Toán Học Ngưỡng Động Point-in-Time (PIT)
 
-Để ngăn chặn tuyệt đối hiện tượng rò rỉ thông tin tương lai (Look-ahead Bias / Data Leakage) khi tính ngưỡng tạo nến Dollar-Volume, ngưỡng $\theta_{\text{PIT}}$ cho ngày $T$ chỉ được phép sử dụng tổng Dollar-Volume của 21 ngày giao dịch hoàn tất **trước đó** ($T-21$ đến $T-1$), chia cho tần suất mục tiêu $\text{target\_freq} = 50$ nến/ngày:
+Để ngăn chặn tuyệt đối hiện tượng rò rỉ thông tin tương lai (Look-ahead Bias / Data Leakage) khi tính ngưỡng tạo nến Dollar-Volume, ngưỡng $\theta_{\text{PIT}}$ cho ngày $T$ chỉ được phép sử dụng tổng Dollar-Volume của 21 ngày giao dịch hoàn tất **trước đó** ($T-21$ đến $T-1$), chia cho tần suất mục tiêu $\text{target-freq} = 50$ nến/ngày:
 
-$$\theta_{\text{PIT}}(T) = \frac{1}{\text{target\_freq}} \times \frac{1}{21} \sum_{k=1}^{21} \text{Daily\_Dollar\_Volume}(T-k)$$
+$$\theta_{\text{PIT}}(T) = \frac{1}{\text{target-freq}} \times \frac{1}{21} \sum_{k=1}^{21} \text{Daily-Dollar-Volume}(T-k)$$
 
 ```python
 import polars as pl
@@ -245,7 +245,7 @@ def map_daily_threshold_to_ticks(ticks_df: pl.DataFrame, daily_threshold_df: pl.
 
 #### 1.1.3 Đặc Tả Hai Bước (Two-Pass) Tính `median_ticks_to_fill` PIT-Safe
 
-Để phát hiện Bar Toxicity (`is_high_toxicity_bar`), cần trung vị số tick hoàn thành nến trong 100 nến trước đó ($\text{median\_ticks\_pit}$). Để đảm bảo PIT-Safe tuyệt đối và không phát sinh lỗi cấp phát bộ nhớ động trong Numba (`np.append`), ta tách thành **2 bước (Two-Pass Worst-Case Allocation)**:
+Để phát hiện Bar Toxicity (`is_high_toxicity_bar`), cần trung vị số tick hoàn thành nến trong 100 nến trước đó ($\text{median-ticks-pit}$). Để đảm bảo PIT-Safe tuyệt đối và không phát sinh lỗi cấp phát bộ nhớ động trong Numba (`np.append`), ta tách thành **2 bước (Two-Pass Worst-Case Allocation)**:
 
 ```python
 from numba import njit
@@ -642,7 +642,7 @@ $$\hat{\mathbf{x}}_{j, t|t-1} = \mathbf{F} \hat{\mathbf{x}}_{0j}, \qquad \mathbf
 $$S_j = \mathbf{H} \mathbf{P}_{j, t|t-1} \mathbf{H}^T + R_t, \qquad K_j = \mathbf{P}_{j, t|t-1} \mathbf{H}^T S_j^{-1}$$
 $$\hat{\mathbf{x}}_{j, t|t} = \hat{\mathbf{x}}_{j, t|t-1} + K_j (y_t - \mathbf{H} \hat{\mathbf{x}}_{j, t|t-1})$$
 $$\mathbf{P}_{j, t|t}^{\text{raw}} = (\mathbf{I} - K_j \mathbf{H}) \mathbf{P}_{j, t|t-1}$$
-$$\mathbf{P}_{j, t|t} = \text{sanitize\_covariance\_matrix}\left( \mathbf{P}_{j, t|t}^{\text{raw}}, 10^{-10} \right)$$
+$$\mathbf{P}_{j, t|t} = \text{sanitize-covariance-matrix}\left( \mathbf{P}_{j, t|t}^{\text{raw}}, 10^{-10} \right)$$
 
 5. **Master Regime Probability Injection (Đồng bộ xác suất chế độ từ Causal HMM)**:
 Thay vì cập nhật xác suất IMM bằng hàm hợp lý chuẩn hóa riêng rẽ dễ bị drift, ta inject trực tiếp xác suất hậu nghiệm nhân quả từ Module B.1:
@@ -652,7 +652,7 @@ $$p_{j, t} \equiv p_{\text{HMM}, j}(t)$$
 $$\hat{\mathbf{x}}_{t|t} = \sum_{j=1}^2 p_{j, t} \hat{\mathbf{x}}_{j, t|t} = \begin{bmatrix} \hat{P}_{t|t} \\ \hat{\nu}_{t|t} \end{bmatrix}$$
 
 7. **Trend Score Output (Chỉ báo Động lượng Chuẩn hóa theo ATR)**:
-$$\text{Trend\_Score}_t = \frac{\hat{\nu}_{t|t}}{\text{ATR}_{14, t} + 10^{-8}}$$
+$$\text{Trend-Score}_t = \frac{\hat{\nu}_{t|t}}{\text{ATR}_{14, t} + 10^{-8}}$$
 
 #### 2.3.3 Mã Nguồn Rust `sanitize_covariance_2x2` (Nghiệm Đóng Dạng Tường Minh)
 
@@ -715,10 +715,10 @@ Khi $S_t^+ > h_{\text{CUSUM}}$ hoặc $S_t^- < -h_{\text{CUSUM}}$, một sự ki
 Một sự kiện CUSUM tại bar $t$ chỉ được phép trở thành điểm vào lệnh chính thức nếu thỏa mãn **ĐỒNG THỜI 2 điều kiện**:
 
 1. **Temporal Cooldown Check**: Số bar trôi qua kể từ sự kiện trước đó vượt ngưỡng $k_{\text{cooldown}}$:
-$$t - t_{\text{prev\_event}} \ge k_{\text{cooldown}}$$
+$$t - t_{\text{prev-event}} \ge k_{\text{cooldown}}$$
 
 2. **Spatial Deviation Check**: Khoảng cách giá tuyệt đối so với mức giá vào lệnh trước đó phải vượt mức biến động nội tại:
-$$\left| P_t - P_{t_{\text{prev\_event}}} \right| > \delta_{\text{spatial}} \times \text{ATR}_{14, t}$$
+$$\left| P_t - P_{t_{\text{prev-event}}} \right| > \delta_{\text{spatial}} \times \text{ATR}_{14, t}$$
 
 **Quy ước v11.6 C.4 (Lưu metadata sự kiện)**: Mỗi bản ghi sự kiện CUSUM hợp lệ bắt buộc phải lưu trữ đồng thời `trade_mode` (xác định bởi hàm `classify_trade_mode` tại thời điểm mở lệnh) và `side` (`side_follow = np.sign(Trend_Score_t)`, `side_fade = -side_follow`), đảm bảo khả năng tái tạo chính xác tuyệt đối trong quy trình validation Module F.
 
@@ -733,7 +733,7 @@ $$\left| P_t - P_{t_{\text{prev\_event}}} \right| > \delta_{\text{spatial}} \tim
 $$m_{pt, i} = p_{\text{chop}, i} \times 1.5 + p_{\text{trend}, i} \times 3.0, \qquad m_{sl, i} = p_{\text{chop}, i} \times 1.5 + p_{\text{trend}, i} \times 2.0$$
 
 Để bù đắp rủi ro trượt giá khi nến hiện tại có độc tính cao (`is_high_toxicity_bar`), chi phí giao dịch ước tính được nới rộng 50%:
-$$c_{\text{trade}, i}^{\text{adj}} = c_{\text{trade}, i} \times \left( 1 + 0.5 \cdot \mathbb{1}[\text{is\_high\_toxicity\_bar}_i] \right)$$
+$$c_{\text{trade}, i}^{\text{adj}} = c_{\text{trade}, i} \times \left( 1 + 0.5 \cdot \mathbb{1}[\text{is-high-toxicity-bar}_i] \right)$$
 
 **Công Thức Cắt Lỗ Ban Đầu Đối Xứng Long/Short (v11.6 Patch A.1)**:
 $$SL_{\text{initial}, i} = \begin{cases} P_{\text{entry}, i} \times \left( 1 - m_{sl, i} \cdot \sigma_i - c_{\text{trade}, i}^{\text{adj}} \right) & \text{khi } \text{side}_i > 0 \\ P_{\text{entry}, i} \times \left( 1 + m_{sl, i} \cdot \sigma_i + c_{\text{trade}, i}^{\text{adj}} \right) & \text{khi } \text{side}_i < 0 \end{cases}$$
@@ -1194,7 +1194,7 @@ Mọi nơi trong pipeline (Module F, Module G, `filter_boundary_truncated_for_ke
 - `side`: int (`+1` hoặc `-1`, ĐÃ resolve, KHÔNG phải `side_primary` chưa đảo dấu)
 - `sl_initial`: float (giá cắt lỗ ban đầu tính chính xác cho `side` thực tế)
 - **`exit_idx_relative`**: int (offset tương đối $k \ge 0$ tính từ nến kế tiếp sau điểm vào lệnh, tức `entry_idx + 1`, đúng bằng giá trị `exit_idx` thô trả về từ `compute_regime_aware_trailing_exit_v2`)
-- **`exit_idx_absolute`**: int ($= \text{entry\_idx} + 1 + \text{exit\_idx\_relative}$, **chỉ số bar tuyệt đối trên toàn bộ chuỗi thời gian đầy đủ**, bắt buộc phải dùng để tra cứu giá fill từ `simulate_market_fill`/`simulate_limit_fill_with_queue` của Module G, cũng như tra cứu timestamp thật để tính `funding_accrued` trong Module K.1)
+- **`exit_idx_absolute`**: int ($= \text{entry-idx} + 1 + \text{exit-idx-relative}$, **chỉ số bar tuyệt đối trên toàn bộ chuỗi thời gian đầy đủ**, bắt buộc phải dùng để tra cứu giá fill từ `simulate_market_fill`/`simulate_limit_fill_with_queue` của Module G, cũng như tra cứu timestamp thật để tính `funding_accrued` trong Module K.1)
 - `exit_reason`: str (`"SL"`, `"TRAIL"`, `"REGIME_FLIP"`, `"TIME_STOP"`)
 - `boundary_truncated`: bool (`True` nếu lệnh bị cắt bởi ranh giới fold CPCV)
 - `realized_return`: float (% return $= \text{PnL} / \text{notional}$, gắn vào SAU bước tra cứu giá tuyệt đối qua `finalize_trade_record`)
@@ -1411,7 +1411,7 @@ $$\frac{1}{81} \sum_{k=1}^{81} \widehat{SR}(\theta_k) \ge 0.80 \times \widehat{S
 $$\Delta t_{\text{lat}} \sim \text{Lognormal}\left( \ln\left( 15.0\text{ms} \times (1 + 1.5 \cdot \mathbb{1}[\text{toxic}]) \times (1 + \text{Percentile}(\sigma_{\text{realized}})) \right), 0.3 \right)$$
 
 Định luật tác động thị trường căn bậc hai (Square-Root Market Impact Model - Almgren, Thales, Bouchaud):
-$$P_{\text{fill\_market}} = P_{\text{post\_latency}} \times \left( 1 + \text{side} \times \kappa \cdot \sigma_{\text{daily}} \sqrt{\frac{\text{Size}_{\text{notional}}}{\text{ADV}}} \right)$$
+$$P_{\text{fill-market}} = P_{\text{post-latency}} \times \left( 1 + \text{side} \times \kappa \cdot \sigma_{\text{daily}} \sqrt{\frac{\text{Size}_{\text{notional}}}{\text{ADV}}} \right)$$
 
 #### 5.1.2 Hàng Đợi Lệnh Giới Hạn (Resting Limit Queue Position Simulation)
 
@@ -1475,7 +1475,7 @@ def full_chain_parity_check(python_output: np.ndarray, rust_output: np.ndarray, 
 
 Trước khi rót vốn thực tế, hệ thống phải chạy trong chế độ Shadow Mode thực thi song song và chỉ được phép thăng hạng lên giao dịch vốn thật khi thỏa mãn **Gate Kép**:
 
-$$\left( N_{\text{events\_observed}} \ge 30 \right) \land \left( T_{\text{weeks\_elapsed}} \ge 2.0 \right)$$
+$$\left( N_{\text{events-observed}} \ge 30 \right) \land \left( T_{\text{weeks-elapsed}} \ge 2.0 \right)$$
 
 ```python
 def check_shadow_mode_readiness(n_events_observed: int, weeks_elapsed: float, min_events: int = 30, min_weeks: float = 2.0) -> bool:
@@ -1501,7 +1501,7 @@ def check_shadow_mode_readiness(n_events_observed: int, weeks_elapsed: float, mi
 $$\boldsymbol{\Sigma}_{\text{shrunk}} = (1 - \delta) \mathbf{S} + \delta \mathbf{F}$$
 
 Khi thị trường rơi vào trạng thái hoảng loạn (danh mục sụt giảm dưới phân vị $5\%$), hệ thống áp dụng Lớp phủ tương quan căng thẳng (Stressed Correlation Overlay):
-$$\mathbf{R}_{\text{final}} = \max \left( \mathbf{R}_{\text{normal}}, \mathbf{R}_{\text{stressed\_tail}} \right)$$
+$$\mathbf{R}_{\text{final}} = \max \left( \mathbf{R}_{\text{normal}}, \mathbf{R}_{\text{stressed-tail}} \right)$$
 
 ```python
 from sklearn.covariance import LedoitWolf
@@ -1533,7 +1533,7 @@ $$e_i = (p_i - o_i)^2, \qquad o_i \in \{0, 1\}$$
 CUSUM sai số dự báo (theo chuẩn Page 1954 - tự động reset về $0$ khi báo động vượt ngưỡng):
 $$G_t = \max \left( 0, G_{t-1} + e_t - \bar{e}_{\text{OOS}} \right), \qquad \text{Alarm if } G_t > h_{\text{Brier}}$$
 
-**Chính sách Refresh Ngưỡng Tái Sinh (`refresh_cusum_thresholds`)**: Ngưỡng $\bar{e}_{\text{OOS}}$ và $h_{\text{Brier}} = 2 \cdot \sigma_{\text{Brier\_OOS}}$ không được khóa cứng vĩnh viễn từ lần backtest đầu tiên, mà phải được tái sinh ngay lập tức sau mỗi lần `production_fit` mới:
+**Chính sách Refresh Ngưỡng Tái Sinh (`refresh_cusum_thresholds`)**: Ngưỡng $\bar{e}_{\text{OOS}}$ và $h_{\text{Brier}} = 2 \cdot \sigma_{\text{Brier-OOS}}$ không được khóa cứng vĩnh viễn từ lần backtest đầu tiên, mà phải được tái sinh ngay lập tức sau mỗi lần `production_fit` mới:
 
 ```python
 def update_prediction_error_cusum(G_prev: float, e_i: float, e_bar_oos: float, h_brier: float) -> tuple:

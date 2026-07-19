@@ -103,7 +103,7 @@ def check_absolute_index_logic(df: pd.DataFrame) -> pd.Series:
     return df["exit_idx_absolute"] == (df["entry_idx"] + 1 + df["exit_idx_relative"])
 ```
 - **Ý nghĩa & Lý do:** Đây là **bản vá khắc phục điểm mù v11.8**. Khóa cứng phương trình:
-  $$\text{exit\_idx\_absolute} = \text{entry\_idx} + 1 + \text{exit\_idx\_relative}$$
+  $$\text{exit-idx-absolute} = \text{entry-idx} + 1 + \text{exit-idx-relative}$$
   Đảm bảo khi Module G tra cứu giá khớp lệnh (`fill_price_exit`) và chi phí qua đêm (`funding_accrued`), hệ thống luôn tra vào đúng cây nến tuyệt đối trên dòng thời gian, loại bỏ hoàn toàn sai lệch giữa backtest và live.
 
 ---

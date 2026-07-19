@@ -53,6 +53,97 @@ flowchart TD
 > [!NOTE]
 > **Trạng Thái Hoàn Thành & Phạm Vi Kiến Trúc (`Architectural Scope & Reality Check`):** Cấu trúc 3 trụ cột (Data Gatekeeper -> Regime Gate -> Kelly Sizing) tạo ra nền tảng phòng thủ kiên cố cho hệ thống. Tuy nhiên, tính đến thời điểm báo cáo, chúng ta mới xây dựng và hoàn thiện kiểm định TDD cho khoảng ~8 module/hàm cốt lõi (schemas, trade\_mode, sl\_initial, trailing\_exit v3, liquidation\_layer, kelly solver). Các trụ cột xử lý dữ liệu tick (Module A), bộ lọc Kalman/HMM (Module B), phát hiện sự kiện CUSUM (Module C), chọn đặc trưng (Module D), kiểm định chéo CPCV/PBO (Module F), khớp lệnh thực tế (Module G) và Circuit Breaker (Module J) là phần việc lớn nằm trong lộ trình ~80 task tiếp theo cần kiên trì hoàn thiện.
 
+### Sơ Đồ Trạng Thái Kiến Trúc Toàn Hệ Thống (v11.8 Status Map)
+
+```mermaid
+flowchart TD
+    %% Định nghĩa các lớp CSS biểu diễn trạng thái
+    classDef default fill:#15151a,stroke:#3a3a4a,stroke-width:1px,color:#d4d4d4,font-size:12px;
+    classDef completed fill:#1a3c22,stroke:#50fa7b,stroke-width:2px,color:#50fa7b;
+    classDef inprogress fill:#34241a,stroke:#ffb86c,stroke-width:1.5px,color:#ffb86c,stroke-dasharray: 4 4;
+    classDef roadmap fill:#16161d,stroke:#444454,stroke-width:1px,color:#7a7a8a,stroke-dasharray: 5 5;
+
+    subgraph RAW_DATA ["LỚP DỮ LIỆU ĐẦU VÀO"]
+        RAW["Dữ liệu Raw Tick / 1s OHLCV<br/>(PIT Manifest & Hash Verified)"]:::completed
+    end
+
+    subgraph PRE_PROCESSING ["GIAI ĐOẠN 0: LỌC NHIỄU & TẠO NẾN DOLLAR-VOLUME (MODULE A & A.0)"]
+        MAD["0. Lọc Outlier Tick-Level:<br/>MAD 5σ + Spike + Reversal<br/>+ Cross-Venue Parity"]:::inprogress
+        KALMAN["0.1 TickLevelKalmanReplacer:<br/>Predict-Only vs Update Protocol"]:::completed
+        A1["1. PIT-Safe Threshold θ_t:<br/>SMA_21(shift(1) Daily Volume) / target_freq"]:::completed
+        A2["1.1 map_daily_threshold_to_ticks:<br/>ASOF Backward Join O(N)"]:::completed
+        A3["1.2 Median Ticks to Fill (Two-Pass):<br/>Worst-Case Allocation n_ticks"]:::completed
+        A4["2. Dollar-Volume Bar Generator:<br/>Numba JIT O(N) Float64 Safe Reset"]:::completed
+        A5["3. Tick Rule Classification:<br/>OFI_t = (V_buy - V_sell)/(V_buy + V_sell)"]:::completed
+        A6["4. Bar Toxicity Flag:<br/>tick_count < 0.5 * median -> is_high_toxicity"]:::completed
+    end
+
+    subgraph MODULE_A3 ["GIAI ĐOẠN 1: SAI PHÂN PHÂN SỐ BẢO TOÀN BỘ NHỚ (MODULE A.3)"]
+        FFD_DECIDE["select_ffd_production_engine<br/>(Auto Decision Logic)"]:::inprogress
+        FFD_W["FFD Phương án 1 (Mặc định):<br/>Windowed FFD (τ=1e-5 -> W* [80, 150])"]:::inprogress
+        FFD_P["FFD Phương án 2 (Approved):<br/>Prony Sum-of-Exponentials (ρ < 0)"]:::inprogress
+    end
+
+    subgraph ALPHA_GENERATION ["GIAI ĐOẠN 2: TÍN HIỆU SƠ CẤP & CƠ CHẾ GÁN NHÃN ĐỘNG"]
+        subgraph MODULE_B ["MODULE B: PRIMARY SIGNAL ENGINE"]
+            B0["B.0 Parametric Bootstrap LRT (N=1 vs N=2)"]:::roadmap
+            B1["B.1 Causal HMM 2D Emission (Zero-Var Clamp)"]:::inprogress
+            B2["B.2 IMM Kalman 2D + sanitize_covariance_matrix"]:::completed
+            B3["B.3 GHE (W=168, Lags [2, 4, 8, 16])"]:::inprogress
+        end
+
+        subgraph MODULE_C ["MODULE C: EVENT GENERATION & LABELS"]
+            C1["C.1 CUSUM Event Filter & Gating<br/>(Lưu trade_mode & side OOS)"]:::completed
+            C2["C.2 Dynamic HMM Triple-Barrier"]:::completed
+            C3["Tầng 1 (Dán nhãn): compute_sl_initial ĐỐI XỨNG<br/>(nới biên c_trade_adj khi toxic)"]:::completed
+            C4["Tầng 2 (Thoát lệnh Live): trailing_exit_v2 ĐỐI XỨNG<br/>(t_max_live_fade=40 vs follow=120)"]:::completed
+        end
+    end
+
+    subgraph SIZING_ENGINE ["GIAI ĐOẠN 3: ĐỒNG THUẬN TÍNH NĂNG & TỐI ƯU HÓA KELLY THỰC NGHIỆM"]
+        D1["D.1 Triple Consensus Selection:<br/>MDI + MDA + SFI"]:::roadmap
+        D2["D.2 Hierarchical Clustering:<br/>Correlations |ρ| > 0.70 Clamped"]:::roadmap
+        E1["E.1 PurgedKFold + CalibratedClassifierCV"]:::completed
+        E2["E.2 Weighted Bootstrap Forest (u_weights)"]:::inprogress
+        E3["E.3 Empirical Kelly Sizing:<br/>Follow/Fade tables & confidence discount"]:::completed
+    end
+
+    subgraph VALIDATION_FRAMEWORK ["GIAI ĐOẠN 4: KHUNG KIỂM ĐỊNH CPCV & QUY TRÌNH 5 BƯỚC v11.8"]
+        F0["F.0 THỨ TỰ BẮT BUỘC 5 BƯỚC v11.8:<br/>1. CPCV 15-Fold OOS Generation<br/>2. run_trailing_exit_for_oos_event (Symmetric Exit)<br/>3. resolve_absolute_exit_idx (Đồng bộ tuyệt đối)<br/>4. filter_boundary_truncated (Kelly Filter)<br/>5. Tính Sharpe OOS & DSR >= 0.95 / PBO <= 0.40"]:::completed
+    end
+
+    subgraph PRODUCTION_HARDENING ["GIAI ĐOẠN 5: KIỂM ĐỊNH LÂM SÀNG & KHÓA VẬN HÀNH PRODUCTION"]
+        G_K["Modules G, H, I, J, K:<br/>Execution Simulator + 8-Component Parity + Shadow Mode Gate<br/>+ Drawdown Breaker + Funding Accrual tuyệt đối"]:::inprogress
+    end
+
+    subgraph RTK_HANDOFF ["LỚP BÀN GIAO NHỊ PHÂN (RUST RTK HANDOFF)"]
+        RTK["Xuất thư mục /artifacts:<br/>ffd_weights.bin, kalman_matrices.json, HMM transitions,<br/>RF ONNX Model, Kelly tables (Follow/Fade), CUSUM thresholds"]:::roadmap
+    end
+
+    %% Kết nối đường đi dữ liệu
+    RAW --> MAD
+    MAD --> KALMAN
+    KALMAN --> A1
+    A1 --> A2
+    A2 --> A3
+    A3 --> A4
+    A4 --> A5
+    A5 --> A6
+    A6 --> FFD_DECIDE
+    FFD_DECIDE --> FFD_W & FFD_P
+    FFD_W & FFD_P --> B0 & B1 & B2 & B3
+    FFD_W & FFD_P --> C1 & C2
+    B0 & B1 & B2 & B3 --> D1
+    C1 & C2 & C3 & C4 --> D1
+    D1 --> D2
+    D2 --> E1
+    E1 --> E2
+    E2 --> E3
+    E3 --> F0
+    F0 --> G_K
+    G_K --> RTK
+```
+
 ---
 
 ## PHẦN II: GIẢI PHẪU CHI TIẾT MÃ NGUỒN `schemas.py` & TASK B-1-10 (`TradeRecord TypedDict`)

@@ -14,4 +14,6 @@
   ```bash
   python main.py --config config/environments/paper.yaml --strategy config/strategies/trend_following_v1.yaml
   ```
-Xem chi tiết tài liệu kỹ thuật tại `docs/architecture.md` và hướng dẫn xử lý sự cố tại `docs/runbook.md`.
+- Xem thiết kế kỹ thuật, lý thuyết toán học AFML và mã nguồn lõi tại `docs/architecture.md` (Master Blueprint v11.8).
+- Xem hợp đồng dữ liệu giữa Track A (Signal) và Track B (Labeling) tại `CONSTRACT.md` (Data Contracts v11.9).
+- Xem hướng dẫn xử lý sự cố khẩn cấp tại `docs/runbook.md`.

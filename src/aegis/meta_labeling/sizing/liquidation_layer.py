@@ -11,7 +11,7 @@ from typing import Dict, Any
 # [TASK v11.9] TÍNH TOÁN GIÁ THANH LÝ VỚI BỌC THÉP BẢO MẬT
 # ============================================================================
 def compute_liquidation_price(
-    entry_price: float, side: int, leverage: float, maintenance_margin_rate: float
+    entry_price: float, side: int, leverage: float, maintenance_margin_rate: float, fee_rate: float = 0.0004
 ) -> float:
     """
     [v11.9] Xấp xỉ giá thanh lý cho Isolated Margin Perpetual Futures.
@@ -57,10 +57,10 @@ def compute_liquidation_price(
         )
 
     if side > 0:
-        p_liq = entry_price * (1.0 - 1.0 / leverage + maintenance_margin_rate)
+        p_liq = entry_price * (1.0 - 1.0 / leverage + maintenance_margin_rate + 2.0 * fee_rate)
         return float(max(p_liq, 1e-4))
     else:
-        p_liq = entry_price * (1.0 + 1.0 / leverage - maintenance_margin_rate)
+        p_liq = entry_price * (1.0 + 1.0 / leverage - maintenance_margin_rate - 2.0 * fee_rate)
         return float(p_liq)
 
 
@@ -71,6 +71,7 @@ def validate_leverage_against_sl(
     leverage: float,
     maintenance_margin_rate: float,
     safety_buffer_pct: float = 0.15,
+    fee_rate: float = 0.0004,
 ) -> Dict[str, Any]:
     """
     [v11.9] Pre-Flight Check: Đảm bảo khoảng cách Cắt Lỗ (SL) đủ an toàn trước khi chạm giá thanh lý.
@@ -100,7 +101,7 @@ def validate_leverage_against_sl(
         )
 
     liq_price = compute_liquidation_price(
-        entry_price, side, leverage, maintenance_margin_rate
+        entry_price, side, leverage, maintenance_margin_rate, fee_rate
     )
 
     if side > 0:
@@ -142,10 +143,11 @@ def resolve_max_safe_leverage(
     maintenance_margin_rate: float,
     safety_buffer_pct: float = 0.15,
     leverage_cap: float = 20.0,
+    fee_rate: float = 0.0004,
 ) -> float:
     """
     [v11.9] Giải closed-form đòn bẩy tối đa cho phép để đảm bảo SL luôn nằm trong vùng an toàn.
-    Công thức giải tích chính xác: L_max = 1 / [ (SL_frac / (1 - buffer)) + MaintRate ]
+    Công thức giải tích chính xác: L_max = 1 / [ (SL_frac / (1 - buffer)) + MaintRate + 2*fee_rate ]
 
     [ARMOR-PLATED GUARDS — HẢI QUAN BỌC THÉP]:
     - Chặn sl_initial ngược chiều gây mẫu số âm dẫn đến đòn bẩy ảo khổng lồ.
@@ -202,7 +204,7 @@ def resolve_max_safe_leverage(
             f"Lỗi hải quan v11.9: Điểm Cắt Lỗ sl_initial ({sl_initial}) đặt sai chiều hoặc bằng Entry ({entry_price}) cho lệnh side={side}!"
         )
 
-    denom = (sl_distance_frac / (1.0 - safety_buffer_pct)) + maintenance_margin_rate
+    denom = (sl_distance_frac / (1.0 - safety_buffer_pct)) + maintenance_margin_rate + 2.0 * fee_rate
     max_leverage = 1.0 / max(denom, 1e-6)
     return float(min(max_leverage, leverage_cap))
 
@@ -221,32 +223,32 @@ def test_liquidation_layer_armor_plated():
     maint = 0.005  # 0.5%
 
     # 1. Test case Long chuẩn
-    # Liq = 100 * (1 - 0.2 + 0.005) = 80.5
+    # Liq = 100 * (1 - 0.2 + 0.005 + 0.0008) = 80.58
     check_long = validate_leverage_against_sl(
-        entry, 1, sl_long, lev, maint, safety_buffer_pct=0.15
+        entry, 1, sl_long, lev, maint, safety_buffer_pct=0.15, fee_rate=0.0004
     )
     assert check_long["is_safe"] is True, f"Long safe check failed: {check_long}"
     assert (
-        abs(check_long["liq_price"] - 80.5) < 1e-6
+        abs(check_long["liq_price"] - 80.58) < 1e-4
     ), f"Sai giá thanh lý Long: {check_long['liq_price']}"
 
     # 2. Test case Short chuẩn
-    # Liq = 100 * (1 + 0.2 - 0.005) = 119.5
+    # Liq = 100 * (1 + 0.2 - 0.005 - 0.0008) = 119.42
     check_short = validate_leverage_against_sl(
-        entry, -1, sl_short, lev, maint, safety_buffer_pct=0.15
+        entry, -1, sl_short, lev, maint, safety_buffer_pct=0.15, fee_rate=0.0004
     )
     assert check_short["is_safe"] is True, f"Short safe check failed: {check_short}"
     assert (
-        abs(check_short["liq_price"] - 119.5) < 1e-6
+        abs(check_short["liq_price"] - 119.42) < 1e-4
     ), f"Sai giá thanh lý Short: {check_short['liq_price']}"
 
     # 3. Test giải closed-form đòn bẩy tối đa cho Long
-    # denom = (0.10 / 0.85) + 0.005 = 0.117647 + 0.005 = 0.122647
-    # L_max = 1 / 0.122647 = 8.153478
+    # denom = (0.10 / 0.85) + 0.005 + 0.0008 = 0.117647 + 0.0058 = 0.123447
+    # L_max = 1 / 0.123447 = 8.1006
     max_lev_long = resolve_max_safe_leverage(
-        entry, 1, sl_long, maint, safety_buffer_pct=0.15, leverage_cap=20.0
+        entry, 1, sl_long, maint, safety_buffer_pct=0.15, leverage_cap=20.0, fee_rate=0.0004
     )
-    assert abs(max_lev_long - 8.153478) < 1e-4, f"Sai max safe leverage: {max_lev_long}"
+    assert abs(max_lev_long - 8.1006) < 1e-4, f"Sai max safe leverage: {max_lev_long}"
 
     # 4. [ARMOR-PLATED GUARDS] Khóa lỗi chia cho số 0 (leverage < 1.0 hoặc 0)
     try:

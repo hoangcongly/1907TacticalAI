@@ -296,8 +296,7 @@ def compute_regime_aware_trailing_exit_v2(
             if lows[k] <= sl_initial:
                 return {"exit_idx": k, "reason": "SL", "boundary_truncated": False}
 
-            # Cập nhật mức cao nhất và tính khoảng cách Trailing
-            extreme_price = max(extreme_price, highs[k])
+            # Tính Trailing Stop TỪ extreme_price HIỆN TẠI (của nến trước)
             trail_stop = (
                 extreme_price - m_trail_base * (1 + gamma * p_trend[k]) * atr[k]
             )
@@ -305,6 +304,10 @@ def compute_regime_aware_trailing_exit_v2(
             # Kiểm tra Trailing Stop
             if lows[k] <= trail_stop:
                 return {"exit_idx": k, "reason": "TRAIL", "boundary_truncated": False}
+
+            # Cập nhật mức cao nhất cho vòng lặp nến tiếp theo
+            extreme_price = max(extreme_price, highs[k])
+
 
             # Kiểm tra Regime-Flip (Thoát sớm dựa trên HMM)
             consecutive_flip_count = _update_regime_flip(
@@ -327,8 +330,7 @@ def compute_regime_aware_trailing_exit_v2(
             if highs[k] >= sl_initial:
                 return {"exit_idx": k, "reason": "SL", "boundary_truncated": False}
 
-            # Cập nhật mức thấp nhất và tính Trailing nằm bên TRÊN giá
-            extreme_price = min(extreme_price, lows[k])
+            # Tính Trailing nằm bên TRÊN giá TỪ extreme_price HIỆN TẠI
             trail_stop = (
                 extreme_price + m_trail_base * (1 + gamma * p_trend[k]) * atr[k]
             )
@@ -336,6 +338,10 @@ def compute_regime_aware_trailing_exit_v2(
             # Kiểm tra Trailing Stop
             if highs[k] >= trail_stop:
                 return {"exit_idx": k, "reason": "TRAIL", "boundary_truncated": False}
+
+            # Cập nhật mức thấp nhất cho vòng lặp nến tiếp theo
+            extreme_price = min(extreme_price, lows[k])
+
 
             # Kiểm tra Regime-Flip (Thoát sớm dựa trên HMM)
             consecutive_flip_count = _update_regime_flip(
@@ -565,13 +571,15 @@ def compute_regime_aware_trailing_exit_v3_liquidation_aware(
             # 1. Kiểm tra Stop-loss cứng
             if lows[k] <= sl_initial:
                 return {"exit_idx": k, "reason": "SL", "boundary_truncated": False}
-            # 2. Cập nhật cực đại & kiểm tra Trailing
-            extreme_price = max(extreme_price, highs[k])
+            # 2. Tính Trailing Stop TỪ extreme_price của nến trước
             trail_stop = (
                 extreme_price - m_trail_base * (1 + gamma * p_trend[k]) * atr[k]
             )
             if lows[k] <= trail_stop:
                 return {"exit_idx": k, "reason": "TRAIL", "boundary_truncated": False}
+            # 2.1 Cập nhật cực đại cho nến sau
+            extreme_price = max(extreme_price, highs[k])
+
             # 3. Kiểm tra Regime-Flip
             consecutive_flip_count = _update_regime_flip(
                 p_trend[k], trade_mode, threshold, consecutive_flip_count
@@ -599,13 +607,15 @@ def compute_regime_aware_trailing_exit_v3_liquidation_aware(
             # 1. Kiểm tra Stop-loss cứng
             if highs[k] >= sl_initial:
                 return {"exit_idx": k, "reason": "SL", "boundary_truncated": False}
-            # 2. Cập nhật cực tiểu & kiểm tra Trailing
-            extreme_price = min(extreme_price, lows[k])
+            # 2. Tính Trailing Stop TỪ extreme_price của nến trước
             trail_stop = (
                 extreme_price + m_trail_base * (1 + gamma * p_trend[k]) * atr[k]
             )
             if highs[k] >= trail_stop:
                 return {"exit_idx": k, "reason": "TRAIL", "boundary_truncated": False}
+            # 2.1 Cập nhật cực tiểu cho nến sau
+            extreme_price = min(extreme_price, lows[k])
+
             # 3. Kiểm tra Regime-Flip
             consecutive_flip_count = _update_regime_flip(
                 p_trend[k], trade_mode, threshold, consecutive_flip_count

@@ -10,14 +10,14 @@
 
 ---
 
-## PHẦN I: TỔNG QUAN HỆ THỐNG & TRIẾT LÝ THIẾT KẾ ĐỊNH LƯỢNG (HỆ THỐNG 3 TRỤ CỘT)
+## PHẦN I: TỔNG QUAN HỆ THỐNG & TRIẾT LÝ THIẾT KẾ ĐỊNH LƯỢNG (HỆ THỐNG 3 THÀNH PHẦN)
 
-Trong các định chế tài chính quant trading hàng đầu thế giới (như Renaissance Technologies, Two Sigma, AQR), một hệ thống giao dịch tự động không chỉ cần thuật toán dự báo giá chính xác, mà còn đòi hỏi **Hệ Thống 3 Trụ Cột Phòng Thủ & Ra Quyết Định Kiên Cố (`3-Pillar Defensive Architecture`)**:
+Trong các định chế tài chính quant trading hàng đầu thế giới (như Renaissance Technologies, Two Sigma, AQR), một hệ thống giao dịch tự động không chỉ cần thuật toán dự báo giá chính xác, mà còn đòi hỏi **Hệ Thống 3 Thành Phần Phòng Thủ & Ra Quyết Định Kiên Cố (`3-Pillar Defensive Architecture`)**:
 
 1. **Trụ Cột 1 — Lớp Kiểm Soát Dữ Liệu & Hợp Đồng Giao Dịch (`Data Gatekeeper — schemas.py / Task B-1-10`)**:  
    Sử dụng mô hình kiểm duyệt kép (`TypedDict` trên RAM cho từng lệnh lẻ và `Pandera DataFrameSchema` cho lô lớn), kết hợp cơ chế Tem Niêm Phong `dataset_manifest_hash` (SHA-256). Trụ cột này đảm bảo 100% dữ liệu đầu vào sạch tuyệt đối, ngăn chặn triệt để các lỗi vi cấu trúc số học trước khi bước vào tính toán.
 2. **Trụ Cột 2 — Lớp Phân Loại Chế Độ & Khóa Cổng An Toàn (`Regime Gate — trade_mode.py / Task B-1-2`)**:  
-   Là hàm định tuyến duy nhất (`Single Source of Truth`) phân chia thị trường thành 3 nhánh: `Follow` (khi xu hướng mạnh $p\_i \ge 0.50$), `Fade` (khi xu hướng yếu $p\_i < 0.20$ VÀ thị trường đi ngang $p\_{\text{chop}} > 0.60$), và `none` (vùng Deadzone $[0.20, 0.50)$ hoặc khi thị trường hỗn mang). Trụ cột này giúp lọc bỏ $>40\%$ lệnh rác, bảo toàn lực lượng cho quỹ.
+   Là hàm định tuyến duy nhất (`Single Source of Truth`) phân chia thị trường thành 3 nhánh: `Follow` (khi xu hướng mạnh $p\_i \ge 0.50$), `Fade` (khi xu hướng yếu $p\_i < 0.20$ VÀ thị trường đi ngang $p\_{\text{chop}} > 0.60$), và `none` (vùng Deadzone $[0.20, 0.50)$ hoặc khi thị trường hỗn mang). Tính năng này giúp giảm thiểu rủi ro khi thị trường không rõ xu hướng.
 3. **Trụ Cột 3 — Lớp Quản Trị Vốn Động Phi Tuyến (`Non-Linear Kelly Sizing — kelly_empirical.py / Task B-1-1`)**:  
    Động cơ giải tích phi tuyến (`brentq`) giải trực tiếp bài toán cực đại hóa tốc độ tăng trưởng log kỳ vọng $E[\ln(1 + f \cdot r)] \to \max$ trên phân phối thực nghiệm của chiến lược, tích hợp phanh khẩn cấp `Singularity Guard` ngăn rủi ro cháy tài khoản ($1 + f \cdot r\_i \le 0$).
 
@@ -486,7 +486,7 @@ Một trong những nghịch lý lớn nhất của giao dịch định chế l�
 - Khi thị trường đang có xu hướng mạnh (`Follow mode`), nếu dùng rào cản thoát lệnh tĩnh hoặc thoát quá sớm, bạn sẽ vứt bỏ những siêu sóng $500\% - 1000\%$.
 - Ngược lại, khi thị trường đi ngang hoặc đảo chế độ đột ngột sang sideway giật lắc (`Regime Flip`), nếu vẫn cố chấp gồng Trailing Stop theo kiểu cũ, toàn bộ phần lãi vừa gồng được sẽ bị thị trường nuốt chửng sạch sẽ chỉ trong vài cây nến nổ ngược!
 
-👉 **Task B-1-4 ([src/aegis/labeling/trailing_exit.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/labeling/trailing_exit.py)) giải quyết triệt để bài toán này với 3 trụ cột thiết kế định chế (`3-Pillar Quant Design`):**
+👉 **Task B-1-4 ([src/aegis/labeling/trailing_exit.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/labeling/trailing_exit.py)) giải quyết bài toán này với 3 thành phần thiết kế:**
 1. **Thứ tự ưu tiên rủi ro (`Risk Hierarchy — SL trước TRAIL`):** Trong vòng lặp từng nến tương lai, hệ thống luôn kiểm tra `SL` ban đầu trước khi tính toán cắt theo `TRAIL`. Điều này bảo vệ tính minh bạch khi thống kê: Nếu nến sập mạnh thủng cả 2 mốc, nguyên nhân thoát lệnh phải ghi nhận là rủi ro cực đại (`SL`), không bị lẫn lộn vào thống kê gồng lãi (`TRAIL`).
 2. **Đối xứng gương tuyệt đối (`Symmetric Mirroring for Long/Short`):**
    - Với lệnh Mua (`side > 0`): `extreme_price` liên tục cập nhật đỉnh cao nhất (`highest high`), và `trail_stop` bám theo bên dưới bằng cách trừ đi `m_trail_base * (1 + gamma * p_trend) * ATR`.
@@ -518,11 +518,13 @@ flowchart TD
     CheckLiq -->|No| CheckSL{"Check Hard SL: Lows <= SL (Long) or Highs >= SL (Short)?"}
     CheckSL -->|Yes| ExitSL["Return Exit: idx=k, reason='SL'"]
     
-    CheckSL -->|No| CalcTrail["Update extreme_price & Calculate trail_stop = extreme +/- m_trail * (1 + gamma*p_trend) * ATR"]
+    CheckSL -->|No| CalcTrail["Calculate trail_stop = extreme_price_from_prev_bar +/- m_trail * (1 + gamma*p_trend) * ATR"]
     CalcTrail --> CheckTrail{"Check Trailing Stop: Lows <= trail (Long) or Highs >= trail (Short)?"}
     CheckTrail -->|Yes| ExitTrail["Return Exit: idx=k, reason='TRAIL'"]
     
-    CheckTrail -->|No| CheckFlip{"Regime Flip Check: (Follow & p < thres) OR (Fade & p > thres)?"}
+    CheckTrail -->|No| UpdateExtreme["Update extreme_price with current bar high/low"]
+    
+    UpdateExtreme --> CheckFlip{"Regime Flip Check: (Follow & p < thres) OR (Fade & p > thres)?"}
     CheckFlip -->|Yes| IncFlip["consecutive_flip_count += 1"]
     CheckFlip -->|No| ResetFlip["consecutive_flip_count = 0"]
     
@@ -666,10 +668,10 @@ flowchart TD
     CheckZero -->|"Yes (At fold boundary)"| InstantExit["Return Exit: idx_rel=0, reason='TIME_STOP', boundary_truncated=True"]
     
     CheckZero -->|No| CallV3["Call compute_regime_aware_trailing_exit_v3_liquidation_aware(future_bars)"]
-    CallV3 --> CheckReason{"What is exit_reason?"}
+    CallV3 --> InitExtreme["Initialize extreme_price (from n-1 bar if trailing)"]
     
-    CheckReason -->|SL / TRAIL / REGIME_FLIP / TIME_STOP| NormalPnL["compute_realized_pnl (Normal Branch): PnL = side * ((fill_price_exit - fill_price_entry) / fill_price_entry) * size_notional - fee_cost - funding_accrued"]
-    CheckReason -->|LIQUIDATION| LiqPnL["compute_realized_pnl (LIQUIDATION Branch): Loss_Liq = - (size_notional / leverage + size_notional * liquidation_fee_rate) - funding_accrued"]
+    InitExtreme --> CheckReason{"What is exit_reason?"}
+    CheckReason -->|LIQUIDATION| LiqPnL["compute_realized_pnl (LIQUIDATION Branch): Loss_Liq = - (size_notional / leverage) - funding_accrued (Max Loss Bounded by Initial Margin)"]
 ```
 
 ---

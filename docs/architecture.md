@@ -8,104 +8,137 @@ Tài liệu này **PHỤC HỒI TRỌN VẸN VÀ TĂNG CƯỜNG TOÀN BỘ CÁC 
 
 ## BẢN ĐỒ KIẾN TRÚC TOÀN HỆ THỐNG & ĐƯỜNG ĐI DỮ LIỆU (v11.8 DEFINITIVE)
 
-```text
-========================================================================================================================
-                                     PHA NGHIÊN CỨU & HUẤN LUYỆN (PYTHON CORE)
-========================================================================================================================
-[ Dữ liệu Raw Tick / 1s OHLCV (Đã xác minh PIT Manifest & Hash) ]
-         │
-         ├── 0. Tick-Level Outlier Filter: Lọc MAD 5σ + Spike + Reversal + Cross-Venue Parity (Module A.0)
-         │      └── 0.1 TickLevelKalmanReplacer: Predict-Only khi gặp Bad Tick, Update khi Good Tick
-         ▼
-┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ MODULE A: PRE-PROCESSING, DOLLAR-VOLUME BARS & MICROSTRUCTURE OFI (Giai đoạn 0)                                     │
-│  ├── 1. PIT-Safe Threshold: θ_t = SMA_21(shift(1) Daily Volume) / target_freq                                       │
-│  ├── 1.1 map_daily_threshold_to_ticks: join_asof backward O(N)                                                      │
-│  ├── 1.2 compute_median_ticks_to_fill_per_tick (Two-Pass): Worst-Case Allocation n_ticks                             │
-│  ├── 2. Dollar-Volume Bar Generator: Numba JIT O(N) Worst-Case Allocation, Float64 Safe Reset                       │
-│  ├── 3. Tick Rule Classification: b_i -> OFI_t = (V_buy - V_sell)/(V_buy + V_sell)                                  │
-│  └── 4. Bar Toxicity Flag: tick_count_to_fill < 0.5 * median -> is_high_toxicity_bar = True                         │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-         │
-         ▼ (Dollar-Volume Bars sạch OHLCV + OFI_t + Toxicity Flag)
-┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ MODULE A.3: FRACTIONAL DIFFERENTIATION (WINDOWED FFD O(W*) MẶC ĐỊNH / SUM-OF-EXP O(M) NẾU APPROVED - v11.5)        │
-│  ├── select_ffd_production_engine: Quy tắc quyết định tự động (Windowed mặc định, Prony chỉ khi approved)          │
-│  ├── Phương án 1 (MẶC ĐỊNH): Cắt trọng số τ=1e-5 -> W* in [80, 150]                                                │
-│  └── Phương án 2 (Chỉ khi approved): fit_sum_of_exponentials_v2 (cho phép ρ ÂM - v11.5)                             │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-         │
-         ├──────────────────────────────────────────────────────────────────────────────┐
-         ▼                                                                              ▼
-┌──────────────────────────────────────────────────────────────────────────────────────────┐  ┌──────────────────────────────────────┐
-│ MODULE B: PRIMARY SIGNAL ENGINE                                                           │  │ MODULE C: EVENT GENERATION & LABELS  │
-│  ├── B.0 Parametric Bootstrap LRT N=1 vs N=2                                               │  │  ├── C.1 CUSUM Event Filter + Gating │
-│  ├── B.1 Causal HMM 2D Emission (N=2, Forward Alpha, Zero-Var Clamp)                      │  │  │   + Lưu trade_mode & side cùng     │
-│  ├── B.2 IMM Kalman 2D + sanitize_covariance_matrix (v11.5 Patch D)                       │  │  │     bản ghi sự kiện (v11.6 C.4)    │
-│  │    └── sanitize sau mỗi Update (eigenvalue_floor=1e-10)                                 │  │  └── C.2 Dynamic HMM Triple-Barrier  │
-│  └── B.3 GHE (W=168, Lags [2,4,8,16])                                                     │  │      ├── Tầng 1 [DÁN NHÃN]: m_pt/sl  │
-└──────────────────────────────────────────────────────────────────────────────────────────┘  │      │   + compute_sl_initial ĐỐI XỨNG│
-         │                                                                                    │      │     Long/Short (v11.6 A.1)     │
-         └───────────────────────────────────┬────────────────────────────────────────────────┘      │   + c_trade_adj nới khi toxic   │
-                                             │                                                      └── Tầng 2 [THOÁT LỆNH LIVE]:    │
-                                             │                                                          trailing_exit_v2 ĐỐI XỨNG   │
-                                             │                                                          side<0 + Regime-Flip đảo     │
-                                             │                                                          chiều theo trade_mode (v11.6)│
-                                             │                                                          + Tách t_max_live_fade=40 vs │
-                                             │                                                            t_max_live_follow=120 (v11.7)│
-                                             ▼
-┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ MODULE D & E: CONSENSUS FEATURE SELECTION, META-LABELING & EMPIRICAL KELLY SIZING (v11.5+v11.6+v11.7+v11.8)         │
-│  ├── D.1 Triple Consensus: MDI + MDA + SFI                                                                          │
-│  ├── D.2 Hierarchical Clustering: |ρ| > 0.70                                                                        │
-│  ├── E.1 PurgedKFold(t1=integer bar-index) + CalibratedClassifierCV (v11.5 Patch G)                                │
-│  ├── E.2 Weighted Bootstrap Forest thủ công (u_weights sampling prob)                                                │
-│  └── E.3 EMPIRICAL KELLY SIZING (v11.5 Patch A + v11.6 Patch C + v11.7 Patch B + v11.8):                             │
-│       ├── classify_trade_mode(): HÀM DUY NHẤT phân loại follow/fade/none (v11.6 C.1)                               │
-│       ├── trade_records_to_kelly_table_inputs(): Chuyển đổi clean list[dict] -> 3 np.ndarray (v11.7 B.3)           │
-│       ├── build_empirical_kelly_tables_v2: Tách Follow/Fade qua classify_trade_mode trên tập clean (v11.6 B.2)       │
-│       ├── compute_bi_directional_kelly_v14_unified: Tra bảng qua classify_trade_mode, KHÔNG viết lại mask (v11.6 C.3)│
-│       ├── apply_toxicity_and_confidence_discount: Đấu nối cờ toxicity/degraded                                      │
-│       └── Portfolio Vol-Targeting Overlay                                                                             │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-         │
-         ▼
-┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ MODULE F: VALIDATION FRAMEWORK & WIRING THỐNG NHẤT (v11.6 + v11.7 + v11.8 ABSOLUTE INDEX RESOLUTION)                │
-│  ├── F.0 THỨ TỰ BẮT BUỘC 5 BƯỚC v11.8:                                                                              │
-│  │    Bước 1: CPCV 15-Fold (F.1) -> sinh p_i, p_chop_i, side_primary cho tập OOS.                                   │
-│  │    Bước 2 [v11.7 A & v11.8]: Với mỗi sự kiện OOS, gọi run_trailing_exit_for_oos_event ->                         │
-│  │           resolve_trade_execution_params (đảo dấu side & tính lại sl_initial cho Fade) ->                        │
-│  │           simulate_trailing_exit_within_fold_bounds (giới hạn biên fold) ->                                      │
-│  │           resolve_absolute_exit_idx (chuyển offset k tương đối -> exit_idx_absolute = entry_idx + 1 + k) ->      │
-│  │           finalize_trade_record (gắn realized_return theo TRADE_RECORD_SCHEMA chuẩn dựa trên exit_idx_absolute). │
-│  │    Bước 2.5 [v11.6 B.2]: Gộp toàn bộ trade_record -> filter_boundary_truncated_for_kelly_table -> (clean, diag). │
-│  │    Bước 3 [v11.7 B.3]: Gọi trade_records_to_kelly_table_inputs(clean) -> build_empirical_kelly_tables_v2.        │
-│  │    Bước 4 [v11.6 B.3]: Sharpe OOS/DSR/PBO tính trên TOÀN BỘ trade_record OOS (bao gồm boundary_truncated).       │
-│  ├── F.1 CPCV (M=6, 15 Folds): Purged + Embargoed (24 bars)                                                         │
-│  ├── F.2 ExperimentTracker: N_DSR (+ n_buckets, min_samples_per_bucket, f_max, t_max_live_fade=40 - v11.7 C.2)       │
-│  ├── F.3 DSR >= 0.95, F.4 PBO <= 0.40                                                                               │
-│  └── F.5 Flat Plateau >= 80% peak (cân nhắc t_max_live_fade nếu Fade đóng góp PnL đáng kể - v11.7 C.3)                │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-         │
-         ▼
-┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ MODULE G, H, I, J, K: PRODUCTION HARDENING (v11.5 + v11.6 + v11.7 + v11.8)                                          │
-│  ├── G: Execution Simulator (tra cứu fill_price tại exit_idx_absolute chuẩn xác + compute_realized_pnl)             │
-│  ├── H: Parity (8 thành phần + Full-Chain + PurgedKFold CI + trailing_exit symmetry CI + resolve_symmetry CI)       │
-│  ├── I: Shadow Mode Gate Kép (>=30 events VÀ >=2 tuần)                                                              │
-│  ├── J: Portfolio Risk (Drawdown Breaker, Ledoit-Wolf+Stressed Corr, CUSUM Brier Reset+Refresh)                     │
-│  └── K: Data Governance + K.1 Funding Accrual tại đúng exit_time tuyệt đối + K.5 L2 Order Book Depth Source         │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-         │
-         ▼
-========================================================================================================================
-                                     GIAO THỨC BÀN GIAO NHỊ PHÂN SANG RUST RTK
-========================================================================================================================
-[ /artifacts: ffd_weights.bin|ffd_prony.json, kalman_matrices.json, hmm_transitions.json,
-  meta_labeler_raw.onnx, iso_knots.json, kelly_lookup_table_follow.json,
-  kelly_lookup_table_fade.json, cusum_thresholds.json, dataset_manifest.json ]
+```mermaid
+flowchart TD
+    %% Custom Styling for Premium Look
+    classDef default fill:#15151a,stroke:#3a3a4a,stroke-width:1px,color:#d4d4d4,font-size:12px;
+    classDef input fill:#14232c,stroke:#00a3ff,stroke-width:1.5px,color:#8be9fd,font-weight:bold;
+    classDef process fill:#1f1924,stroke:#bd93f9,stroke-width:1.5px,color:#f8f8f2;
+    classDef signal fill:#1f1f2e,stroke:#ff79c6,stroke-width:1.5px,color:#ff79c6;
+    classDef logic fill:#2d2015,stroke:#ffb86c,stroke-width:1.5px,color:#ffb86c;
+    classDef validation fill:#232b1f,stroke:#50fa7b,stroke-width:1.5px,color:#50fa7b;
+    classDef output fill:#182c25,stroke:#8be9fd,stroke-width:2px,color:#50fa7b,font-weight:bold;
+
+    subgraph RAW_DATA ["LỚP DỮ LIỆU ĐẦU VÀO"]
+        RAW["Dữ liệu Raw Tick / 1s OHLCV<br/>(PIT Manifest & Hash Verified)"]:::input
+    end
+
+    subgraph PRE_PROCESSING ["GIAI ĐOẠN 0: LỌC NHIỄU & TẠO NẾN DOLLAR-VOLUME (MODULE A & A.0)"]
+        MAD["0. Lọc Outlier Tick-Level:<br/>MAD 5σ + Spike + Reversal<br/>+ Cross-Venue Parity"]:::process
+        KALMAN["0.1 TickLevelKalmanReplacer:<br/>Predict-Only vs Update Protocol"]:::process
+        A1["1. PIT-Safe Threshold θ_t:<br/>SMA_21(shift(1) Daily Volume) / target_freq"]:::logic
+        A2["1.1 map_daily_threshold_to_ticks:<br/>ASOF Backward Join O(N)"]:::logic
+        A3["1.2 Median Ticks to Fill (Two-Pass):<br/>Worst-Case Allocation n_ticks"]:::logic
+        A4["2. Dollar-Volume Bar Generator:<br/>Numba JIT O(N) Float64 Safe Reset"]:::logic
+        A5["3. Tick Rule Classification:<br/>OFI_t = (V_buy - V_sell)/(V_buy + V_sell)"]:::logic
+        A6["4. Bar Toxicity Flag:<br/>tick_count < 0.5 * median -> is_high_toxicity"]:::logic
+    end
+
+    subgraph MODULE_A3 ["GIAI ĐOẠN 1: SAI PHÂN PHÂN SỐ BẢO TOÀN BỘ NHỚ (MODULE A.3)"]
+        FFD_DECIDE["select_ffd_production_engine<br/>(Auto Decision Logic)"]:::process
+        FFD_W["FFD Phương án 1 (Mặc định):<br/>Windowed FFD (τ=1e-5 -> W* [80, 150])"]:::process
+        FFD_P["FFD Phương án 2 (Approved):<br/>Prony Sum-of-Exponentials (ρ < 0)"]:::process
+    end
+
+    subgraph ALPHA_GENERATION ["GIAI ĐOẠN 2: TÍN HIỆU SƠ CẤP & CƠ CHẾ GÁN NHÃN ĐỘNG"]
+        subgraph MODULE_B ["MODULE B: PRIMARY SIGNAL ENGINE"]
+            B0["B.0 Parametric Bootstrap LRT (N=1 vs N=2)"]:::signal
+            B1["B.1 Causal HMM 2D Emission (Zero-Var Clamp)"]:::signal
+            B2["B.2 IMM Kalman 2D + sanitize_covariance_matrix"]:::signal
+            B3["B.3 GHE (W=168, Lags [2, 4, 8, 16])"]:::signal
+        end
+
+        subgraph MODULE_C ["MODULE C: EVENT GENERATION & LABELS"]
+            C1["C.1 CUSUM Event Filter & Gating<br/>(Lưu trade_mode & side OOS)"]:::logic
+            C2["C.2 Dynamic HMM Triple-Barrier"]:::logic
+            C3["Tầng 1 (Dán nhãn): compute_sl_initial ĐỐI XỨNG<br/>(nới biên c_trade_adj khi toxic)"]:::logic
+            C4["Tầng 2 (Thoát lệnh Live): trailing_exit_v2 ĐỐI XỨNG<br/>(t_max_live_fade=40 vs follow=120)"]:::logic
+        end
+    end
+
+    subgraph SIZING_ENGINE ["GIAI ĐOẠN 3: ĐỒNG THUẬN TÍNH NĂNG & TỐI ƯU HÓA KELLY THỰC NGHIỆM"]
+        D1["D.1 Triple Consensus Selection:<br/>MDI + MDA + SFI"]:::process
+        D2["D.2 Hierarchical Clustering:<br/>Correlations |ρ| > 0.70 Clamped"]:::process
+        E1["E.1 PurgedKFold + CalibratedClassifierCV"]:::logic
+        E2["E.2 Weighted Bootstrap Forest (u_weights)"]:::logic
+        E3["E.3 Empirical Kelly Sizing:<br/>Follow/Fade tables & confidence discount"]:::logic
+    end
+
+    subgraph VALIDATION_FRAMEWORK ["GIAI ĐOẠN 4: KHUNG KIỂM ĐỊNH CPCV & QUY TRÌNH 5 BƯỚC v11.8"]
+        F0["F.0 THỨ TỰ BẮT BUỘC 5 BƯỚC v11.8:<br/>1. CPCV 15-Fold OOS Generation<br/>2. run_trailing_exit_for_oos_event (Symmetric Exit)<br/>3. resolve_absolute_exit_idx (Đồng bộ tuyệt đối)<br/>4. filter_boundary_truncated (Kelly Filter)<br/>5. Tính Sharpe OOS & DSR >= 0.95 / PBO <= 0.40"]:::validation
+    end
+
+    subgraph PRODUCTION_HARDENING ["GIAI ĐOẠN 5: KIỂM ĐỊNH LÂM SÀNG & KHÓA VẬN HÀNH PRODUCTION"]
+        G_K["Modules G, H, I, J, K:<br/>Execution Simulator + 8-Component Parity + Shadow Mode Gate<br/>+ Drawdown Breaker + Funding Accrual tuyệt đối"]:::validation
+    end
+
+    subgraph RTK_HANDOFF ["LỚP BÀN GIAO NHỊ PHÂN (RUST RTK HANDOFF)"]
+        RTK["Xuất thư mục /artifacts:<br/>ffd_weights.bin, kalman_matrices.json, HMM transitions,<br/>RF ONNX Model, Kelly tables (Follow/Fade), CUSUM thresholds"]:::output
+    end
+
+    %% Data Flow Connections
+    RAW --> MAD
+    MAD --> KALMAN
+    KALMAN --> A1
+    A1 --> A2
+    A2 --> A3
+    A3 --> A4
+    A4 --> A5
+    A5 --> A6
+    A6 --> FFD_DECIDE
+    FFD_DECIDE --> FFD_W & FFD_P
+    FFD_W & FFD_P --> B0 & B1 & B2 & B3
+    FFD_W & FFD_P --> C1 & C2
+    B0 & B1 & B2 & B3 --> D1
+    C1 & C2 & C3 & C4 --> D1
+    D1 --> D2
+    D2 --> E1
+    E1 --> E2
+    E2 --> E3
+    E3 --> F0
+    F0 --> G_K
+    G_K --> RTK
 ```
+
+---
+
+### GIẢI THÍCH & CHÚ THÍCH ĐƯỜNG ĐI DỮ LIỆU (v11.8 DEFINITIVE)
+
+Dòng chảy dữ liệu của hệ thống Aegis Trading System được thiết kế theo mô hình **Point-in-Time (PIT) khép kín**, đảm bảo dữ liệu đi từ vi cấu trúc sổ lệnh đến phân bổ vốn thực nghiệm không bị look-ahead bias và hoàn toàn đồng bộ giữa các module:
+
+1. **Lớp Dữ liệu Đầu vào & Tiền xử lý (Giai đoạn 0):**
+   * **Dữ liệu thô:** Ticks thô (giá, khối lượng) và nến 1s OHLCV được nạp vào, đối chiếu với tệp PIT Manifest và mã Hash SHA-256 để xác minh tính toàn vẹn.
+   * **Bộ lọc vi cấu trúc (Module A.0):** Áp dụng bộ lọc độ lệch tuyệt đối trung vị ($5\sigma$ MAD) và Cross-Venue Parity để loại bỏ Bad Tick. Nếu là Bad Tick, `TickLevelKalmanReplacer` kích hoạt giao thức **Predict-Only** (chỉ dự báo trạng thái tiếp theo dựa trên ma trận chuyển tiếp $\mathbf{F}$, bỏ qua bước cập nhật giá trị quan sát để tránh làm đứt gãy hoặc méo mó động lượng).
+   * **Tạo nến Dollar-Volume (Module A):** Tính toán ngưỡng tạo nến an toàn $\theta_t = \text{SMA}_{21}(\text{Daily Volume}) / \text{target-freq}$ (lùi đi 1 ngày giao dịch để tránh Look-ahead Bias). Ánh xạ xuống tick-level bằng thuật toán **ASOF Backward Join $O(N)$**. Sử dụng động cơ **Numba JIT** để gom nến Dollar-Volume hiệu năng cao với cấu trúc Worst-Case Allocation tĩnh.
+   * **Tính toán đặc trưng sổ lệnh:** Phân loại tick mua/bán theo Tick Rule để tính toán Order Flow Imbalance ($\text{OFI}_t$). Gắn cờ độc tính bar `is_high_toxicity_bar` nếu bar được lấp đầy quá nhanh (số lượng tick thực tế $< 50\%$ trung vị lịch sử).
+
+2. **Sai phân phân số bảo toàn bộ nhớ (Giai đoạn 1 - Module A.3):**
+   * Dòng nến Dollar-Volume cùng các đặc trưng $\text{OFI}_t$ và chỉ báo độc tính được đưa qua bộ quyết định tự động `select_ffd_production_engine`.
+   * Tùy thuộc vào cấu hình nghiên cứu, dữ liệu được xử lý qua **Windowed FFD** (cắt đuôi trọng số tại sai số $\tau = 10^{-5}$ để giữ bộ nhớ dài hạn của chuỗi giá) hoặc **Prony Sum-of-Exponentials** để chuyển đổi chuỗi giá không dừng về dừng mà không làm mất thông tin lịch sử.
+
+3. **Phát tín hiệu sơ cấp & Dán nhãn động (Giai đoạn 2 - Module B & C):**
+   * **Module B (Primary Signals):** Tạo các tín hiệu sơ cấp song song từ bộ lọc IMM Kalman 2D (đã áp dụng khử suy biến ma trận hiệp phương sai `sanitize_covariance_matrix`), mô hình Causal HMM 2D (khóa cứng 2 trạng thái phân cực) và chỉ báo biến động Hurst lũy tiến (GHE).
+   * **Module C (Event Generation & Labels):** Sử dụng bộ lọc sự kiện CUSUM động để xác định các thời điểm biến động nhảy vọt.
+     * **Tầng 1 (Dán nhãn):** Dán nhãn sự kiện bằng Triple-Barrier. Điểm cắt lỗ ban đầu được tính qua hàm đối xứng `compute_sl_initial` gương cho cả hai phe Long/Short, tự động nới rộng biên rủi ro bằng phí giao dịch và trượt giá điều chỉnh độc tính $c_{\text{trade}}^{\text{adj}}$.
+     * **Tầng 2 (Thoát lệnh Live):** Thiết lập cơ chế thoát lệnh Regime-Flip đối xứng gương, tự động đảo chiều điều kiện thoát dựa trên việc phân biệt rõ chế độ hoạt động `trade_mode` (Follow vs Fade) và tách biệt thời gian nắm giữ tối đa ($t_{\text{max-live-follow}} = 120$ vs $t_{\text{max-live-fade}} = 40$).
+
+4. **Đồng thuận tính năng & Tối ưu hóa Kelly thực nghiệm (Giai đoạn 3 - Module D & E):**
+   * Các đặc trưng sơ cấp đi qua quy trình chọn lọc tính năng đồng thuận 3 tầng (MDI + MDA + SFI) và phân cụm phân cấp (Hierarchical Clustering) để triệt tiêu tính đa cộng tuyến.
+   * Mô hình rừng cây Weighted Bootstrap Forest được huấn luyện dựa trên xác suất lấy mẫu theo trọng số duy nhất trung bình ($\bar{u}_i$) để chống Overfitting.
+   * Xác suất dự báo OOS ($p_i$) và xác suất đi ngang ($p_{\text{chop}, i}$) được đưa qua hàm phân loại chế độ duy nhất `classify_trade_mode()` để định tuyến luồng xử lý vốn. Bộ tính toán **Empirical Kelly Sizing** giải phương trình tối ưu hóa phi tuyến thực nghiệm để sinh ra 2 bảng phân bổ vốn độc lập: `kelly_lookup_table_follow.json` và `kelly_lookup_table_fade.json`.
+
+5. **Khung kiểm định chéo CPCV & Quy trình 5 bước v11.8 (Giai đoạn 4 - Module F):**
+   * Khung kiểm định chéo CPCV 15-Fold (`PurgedKFold` hoạt động trên chỉ số bar tuyệt đối) chạy mô phỏng giả lập kiểm định OOS.
+   * Để triệt tiêu rò rỉ dữ liệu qua biên fold, quy trình bắt buộc phải đi qua 5 bước nghiêm ngặt:
+     1. Chạy CPCV sinh xác suất OOS ($p_i, p_{\text{chop}, i}$) và hướng giao dịch sơ cấp.
+     2. Mô phỏng trailing exit động giới hạn nghiêm ngặt trong biên fold (`simulate_trailing_exit_within_fold_bounds`).
+     3. **Đồng bộ hóa Offset Tuyệt Đối:** Chuyển đổi offset tương đối $k$ thành chỉ số bar tuyệt đối trên dòng thời gian: $\text{exit-idx-absolute} = \text{entry-idx} + 1 + k$.
+     4. Áp dụng bộ lọc loại bỏ các sự kiện bị cắt ngắn do chạm biên fold (`filter_boundary_truncated_for_kelly_table`) trước khi đưa dữ liệu sạch vào tối ưu hóa bảng Kelly.
+     5. Thống kê Sharpe OOS, DSR và xác suất overfitting PBO trên toàn bộ tập dữ liệu (bao gồm cả các mẫu bị cắt ngắn).
+
+6. **Kiểm định lâm sàng & Bàn giao nhị phân sang Rust RTK (Giai đoạn 5):**
+   * Dữ liệu mô phỏng được chuyển qua **Execution Simulator** (Module G) để đối chiếu giá khớp lệnh thực tế tại đúng chỉ số tuyệt đối `exit_idx_absolute`, chạy kiểm định Parity 8 thành phần, kiểm tra Shadow Mode Gate (chạy nền $\ge 30$ sự kiện và $\ge 2$ tuần) và bộ ngắt cầu dao khẩn cấp Portfolio Risk.
+   * Sau khi đạt chuẩn, hệ thống tự động xuất các cấu hình nhị phân và tệp tham số JSON sạch vào thư mục `/artifacts`, đóng vai trò là giao thức bàn giao duy nhất sang động cơ khớp lệnh tần số cao **Rust RTK (Real-Time Kernel)**.
 
 ---
 

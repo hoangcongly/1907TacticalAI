@@ -143,7 +143,9 @@ $$\text{tick-count-to-fill}_t < 0.5 \times \text{median}\left( \text{tick-count-
 Khi phát hiện Bad Tick, thay vì loại bỏ làm đứt gãy chỉ số thời gian hoặc điền phương pháp Naive Forward Fill (tạo sai lệch động lượng = 0), hệ thống sử dụng bộ lọc Kalman 2 trạng thái $[P_t, \nu_t]^T$ với **Giao thức Predict-Only**:
 
 **Trạng thái hệ thống**:
-$$\mathbf{x}_t = \begin{bmatrix} P_t \\ \nu_t \end{bmatrix}, \qquad \mathbf{F} = \begin{bmatrix} 1 & 1 \\ 0 & 1 \end{bmatrix}, \qquad \mathbf{H} = \begin{bmatrix} 1 & 0 \end{bmatrix}$$
+$$
+\mathbf{x}_t = \begin{bmatrix} P_t \\ \nu_t \end{bmatrix}, \qquad \mathbf{F} = \begin{bmatrix} 1 & 1 \\ 0 & 1 \end{bmatrix}, \qquad \mathbf{H} = \begin{bmatrix} 1 & 0 \end{bmatrix}
+$$
 
 **Khi gặp Good Tick (Bình thường)** — Thực hiện cả bước Dự báo và Cập nhật:
 $$\hat{\mathbf{x}}_{t|t-1} = \mathbf{F} \hat{\mathbf{x}}_{t-1|t-1}, \qquad \mathbf{P}_{t|t-1} = \mathbf{F} \mathbf{P}_{t-1|t-1} \mathbf{F}^T + \mathbf{Q}$$
@@ -151,7 +153,9 @@ $$K_t = \mathbf{P}_{t|t-1} \mathbf{H}^T \left( \mathbf{H} \mathbf{P}_{t|t-1} \ma
 $$\hat{\mathbf{x}}_{t|t} = \hat{\mathbf{x}}_{t|t-1} + K_t \left( y_t - \mathbf{H} \hat{\mathbf{x}}_{t|t-1} \right), \qquad \mathbf{P}_{t|t} = (\mathbf{I} - K_t \mathbf{H}) \mathbf{P}_{t|t-1}$$
 
 **Khi gặp Bad Tick (`is_bad_tick = True`)** — **Bỏ qua bước Cập nhật (Predict-Only Protocol)**:
-$$\hat{\mathbf{x}}_{t|t} \equiv \hat{\mathbf{x}}_{t|t-1} = \begin{bmatrix} \hat{P}_{t-1|t-1} + \hat{\nu}_{t-1|t-1} \\ \hat{\nu}_{t-1|t-1} \end{bmatrix}, \qquad \mathbf{P}_{t|t} \equiv \mathbf{P}_{t|t-1}$$
+$$
+\hat{\mathbf{x}}_{t|t} \equiv \hat{\mathbf{x}}_{t|t-1} = \begin{bmatrix} \hat{P}_{t-1|t-1} + \hat{\nu}_{t-1|t-1} \\ \hat{\nu}_{t-1|t-1} \end{bmatrix}, \qquad \mathbf{P}_{t|t} \equiv \mathbf{P}_{t|t-1}
+$$
 $$\tilde{y}_t = \mathbf{H} \hat{\mathbf{x}}_{t|t} = \hat{P}_{t-1|t-1} + \hat{\nu}_{t-1|t-1}$$
 
 ```python
@@ -301,7 +305,9 @@ def compute_median_ticks_to_fill_per_tick(ticks: np.ndarray, daily_thresholds: n
 
 Lấy cảm hứng từ lý thuyết vi cấu trúc dòng lệnh của Easley, López de Prado và O'Hara (VPIN / Order Flow Imbalance), với mỗi tick $i$, quy tắc Tick Rule $b_i \in \{-1, +1\}$ xác định hướng lệnh chủ động dựa trên biến động giá cận biên:
 
-$$b_i = \begin{cases} +1 & \text{nếu } P_i > P_{i-1} \\ -1 & \text{nếu } P_i < P_{i-1} \\ b_{i-1} & \text{nếu } P_i = P_{i-1} \end{cases}$$
+$$
+b_i = \begin{cases} +1 & \text{nếu } P_i > P_{i-1} \\ -1 & \text{nếu } P_i < P_{i-1} \\ b_{i-1} & \text{nếu } P_i = P_{i-1} \end{cases}
+$$
 
 Trong quá trình tích lũy một nến Dollar-Volume từ tick $j = 1 \dots N_t$, khối lượng mua và bán chủ động được phân tách:
 $$V_{\text{buy}, t} = \sum_{j=1}^{N_t} V_j \cdot \mathbb{1}[b_j = +1], \qquad V_{\text{sell}, t} = \sum_{j=1}^{N_t} V_j \cdot \mathbb{1}[b_j = -1]$$
@@ -552,7 +558,9 @@ def validate_two_regime_architecture_bootstrap(O_full: np.ndarray, n_bootstrap: 
 #### 2.2.2 Causal HMM 2D Emission & Zero-Variance Clamp
 
 Hệ HMM được khóa cứng $N = 2$ trạng thái (`Trending` và `Choppy/Mean-Reverting`). Véctơ quan sát 2 chiều kết hợp giữa biến động giá và thông tin vi cấu trúc:
-$$\mathbf{O}_t = \begin{bmatrix} r_t \\ \text{OFI}_t \times \sigma_{\text{realized}, 24, t} \end{bmatrix}$$
+$$
+\mathbf{O}_t = \begin{bmatrix} r_t \\ \text{OFI}_t \times \sigma_{\text{realized}, 24, t} \end{bmatrix}
+$$
 
 **Zero-Variance Trap Safe Clamp**: Để tránh tràn số (`NaN` hoặc `Inf`) khi ma trận hiệp phương sai của trạng thái $j$ bị suy biến (tiệm cận ma trận đơn lẻ), định thức luôn được kẹp sàn:
 $$\det(\boldsymbol{\Sigma}_j)_{\text{safe}} = \max \left( \det(\boldsymbol{\Sigma}_j), 10^{-12} \right)$$
@@ -625,7 +633,13 @@ def sanitize_covariance_matrix(P: np.ndarray, eigenvalue_floor: float = 1e-10) -
 
 #### 2.3.2 Trọn Bộ 7 Bước Toán Học IMM Kalman 2D (P-Matrix Trực Tiếp)
 
-Với trạng thái $\hat{\mathbf{x}}_i = [P_i, \nu_i]^T$ và ma trận chuyển tiếp $\mathbf{F} = \begin{bmatrix} 1 & 1 \\ 0 & 1 \end{bmatrix}, \mathbf{H} = \begin{bmatrix} 1 & 0 \end{bmatrix}$:
+Với trạng thái $\hat{\mathbf{x}}_i = [P_i, \nu_i]^T$ và ma trận chuyển tiếp
+
+$$
+\mathbf{F} = \begin{bmatrix} 1 & 1 \\ 0 & 1 \end{bmatrix}, \mathbf{H} = \begin{bmatrix} 1 & 0 \end{bmatrix}
+$$
+
+:
 
 1. **Mixing Probabilities (Tính xác suất trộn đầu vào)**:
 $$c_j = \sum_{i=1}^2 a_{ij} p_{i, t-1}, \qquad \mu_{i|j} = \frac{a_{ij} p_{i, t-1}}{c_j}$$
@@ -649,7 +663,9 @@ Thay vì cập nhật xác suất IMM bằng hàm hợp lý chuẩn hóa riêng 
 $$p_{j, t} \equiv p_{\text{HMM}, j}(t)$$
 
 6. **Combined Output (Cập nhật trạng thái tổng hợp toàn hệ thống)**:
-$$\hat{\mathbf{x}}_{t|t} = \sum_{j=1}^2 p_{j, t} \hat{\mathbf{x}}_{j, t|t} = \begin{bmatrix} \hat{P}_{t|t} \\ \hat{\nu}_{t|t} \end{bmatrix}$$
+$$
+\hat{\mathbf{x}}_{t|t} = \sum_{j=1}^2 p_{j, t} \hat{\mathbf{x}}_{j, t|t} = \begin{bmatrix} \hat{P}_{t|t} \\ \hat{\nu}_{t|t} \end{bmatrix}
+$$
 
 7. **Trend Score Output (Chỉ báo Động lượng Chuẩn hóa theo ATR)**:
 $$\text{Trend-Score}_t = \frac{\hat{\nu}_{t|t}}{\text{ATR}_{14, t} + 10^{-8}}$$
@@ -736,7 +752,9 @@ $$m_{pt, i} = p_{\text{chop}, i} \times 1.5 + p_{\text{trend}, i} \times 3.0, \q
 $$c_{\text{trade}, i}^{\text{adj}} = c_{\text{trade}, i} \times \left( 1 + 0.5 \cdot \mathbb{1}[\text{is-high-toxicity-bar}_i] \right)$$
 
 **Công Thức Cắt Lỗ Ban Đầu Đối Xứng Long/Short (v11.6 Patch A.1)**:
-$$SL_{\text{initial}, i} = \begin{cases} P_{\text{entry}, i} \times \left( 1 - m_{sl, i} \cdot \sigma_i - c_{\text{trade}, i}^{\text{adj}} \right) & \text{khi } \text{side}_i > 0 \\ P_{\text{entry}, i} \times \left( 1 + m_{sl, i} \cdot \sigma_i + c_{\text{trade}, i}^{\text{adj}} \right) & \text{khi } \text{side}_i < 0 \end{cases}$$
+$$
+SL_{\text{initial}, i} = \begin{cases} P_{\text{entry}, i} \times \left( 1 - m_{sl, i} \cdot \sigma_i - c_{\text{trade}, i}^{\text{adj}} \right) & \text{khi } \text{side}_i > 0 \\ P_{\text{entry}, i} \times \left( 1 + m_{sl, i} \cdot \sigma_i + c_{\text{trade}, i}^{\text{adj}} \right) & \text{khi } \text{side}_i < 0 \end{cases}
+$$
 
 ```python
 def compute_sl_initial(entry_price: float, side: int, m_sl: float, sigma: float, c_trade_adj: float) -> float:
@@ -1590,7 +1608,7 @@ Artifacts (`/artifacts`) khi đạt $\text{DSR} \ge 0.95$, $\text{PBO} \le 0.40$
 3. `hmm_transitions.json`: $A, \boldsymbol{\mu}_j, \boldsymbol{\Sigma}_j^{-1}, \det(\boldsymbol{\Sigma}_j)$.
 4. `meta_labeler_raw.onnx`: Random Forest ONNX (chạy qua Microsoft `ort` crate).
 5. `iso_knots.json`: Mảng điểm nút isotonic cho `interpolate_isotonic`.
-6. `kelly_lookup_table_follow.json`: Bảng Empirical Kelly Follow (cùng format iso_knots, dùng lại `interpolate_isotonic`).
+6. `kelly_lookup_table_follow.json`: Bảng Empirical Kelly Follow (cùng format iso\_knots, dùng lại `interpolate_isotonic`).
 7. `kelly_lookup_table_fade.json`: Bảng Empirical Kelly Fade.
 8. `cusum_thresholds.json`: `e_bar_oos`, `h_brier` (tái sinh mỗi `production_fit`).
 9. `dataset_manifest.json`: SHA-256 + `ffd_engine_type` + `orderbook_feed_source`.
@@ -1669,7 +1687,7 @@ impl FfdStateApprox {
 - [ ] **[v11.8 Patch — ABSOLUTE INDEX RESOLUTION]** Triển khai hàm `resolve_absolute_exit_idx` và cập nhật `TRADE_RECORD_SCHEMA` phân định minh bạch `exit_idx_relative` vs `exit_idx_absolute`. Đảm bảo `finalize_trade_record` và `accrue_funding_cost` (Module K.1) tra cứu giá fill/tick/timestamp tại đúng chỉ số bar tuyệt đối `exit_idx_absolute` và dùng chung biến `size_notional`.
 - [ ] **[v11.7 Patch A — WIRING GLUE]** Triển khai hàm `resolve_trade_execution_params` và `run_trailing_exit_for_oos_event`. Thay mọi lời gọi trực tiếp `simulate_trailing_exit_within_fold_bounds` trong quy trình Module F bằng `run_trailing_exit_for_oos_event`. Chạy unit test bắt buộc `test_resolve_trade_execution_params_symmetry` pass 100%.
 - [ ] **[v11.7 Patch B — SCHEMA CHUẨN]** Thống nhất `TRADE_RECORD_SCHEMA` xuyên suốt Module F/G. Triển khai `finalize_trade_record` và `trade_records_to_kelly_table_inputs`. Cập nhật quy trình Mục 4.0 theo đúng thứ tự 5 bước v11.8 (1 -> 2 -> 2.5 -> 3 -> 4).
-- [ ] **[v11.7 Patch C — TÁCH T_MAX_LIVE]** Thêm tham số `t_max_live_fade` (mặc định khởi điểm $40$) tách khỏi `t_max_live_follow` ($120$). Đăng ký vào `ExperimentTracker` (`strategy_selection`). Cân nhắc đưa vào Flat Plateau Check nếu Fade đóng góp PnL đáng kể.
+- [ ] **[v11.7 Patch C — TÁCH T\_MAX\_LIVE]** Thêm tham số `t_max_live_fade` (mặc định khởi điểm $40$) tách khỏi `t_max_live_follow` ($120$). Đăng ký vào `ExperimentTracker` (`strategy_selection`). Cân nhắc đưa vào Flat Plateau Check nếu Fade đóng góp PnL đáng kể.
 - [ ] **[v11.6 Patch A — NGHIÊM TRỌNG]** Thay `compute_regime_aware_trailing_exit` bằng `compute_regime_aware_trailing_exit_v2` (đối xứng hóa `side<0`, đảo chiều Regime-Flip theo `trade_mode`). Bổ sung `compute_sl_initial` đối xứng. `test_regime_aware_trailing_exit_symmetry` CI test bắt buộc pass 100%. Golden Fixture chứa Fade SL/Trail fixtures.
 - [ ] **[v11.6 Patch B]** Triển khai `simulate_trailing_exit_within_fold_bounds` (giới hạn biên fold CPCV). `filter_boundary_truncated_for_kelly_table` (bước 2.5). Sharpe OOS dùng toàn bộ record, Kelly table chỉ dùng "clean". Cảnh báo nếu truncation > 15%.
 - [ ] **[v11.6 Patch C]** Hàm `classify_trade_mode` duy nhất. `build_empirical_kelly_tables_v2`. `compute_bi_directional_kelly_v14_unified`. Lưu `trade_mode`/`side` cùng sự kiện CUSUM (C.4).
@@ -1681,8 +1699,8 @@ impl FfdStateApprox {
 - [ ] **[v11.5 Patch G]** `PurgedKFold` (`t1` = integer bar-index), `test_purged_kfold_toy_example` CI test bắt buộc pass.
 - [ ] **A.0 & A.5**: Bộ lọc 4 điều kiện Raw Ticks + Bar Toxicity Flag (`is_high_toxicity_bar`).
 - [ ] **TickLevelKalmanReplacer** Predict-Only Protocol.
-- [ ] **map_daily_threshold_to_ticks** (`join_asof backward`) + **compute_median_ticks_to_fill** Worst-Case Two-Pass.
-- [ ] **validate_two_regime_architecture_bootstrap** Parametric Bootstrap LRT ($p < 0.01$).
+- [ ] **map\_daily\_threshold\_to\_ticks** (`join_asof backward`) + **compute\_median\_ticks\_to\_fill** Worst-Case Two-Pass.
+- [ ] **validate\_two\_regime\_architecture\_bootstrap** Parametric Bootstrap LRT ($p < 0.01$).
 - [ ] Đăng ký `n_buckets`, `min_samples_per_bucket`, `f_max` vào $N_{\text{DSR}}$ tracker.
 - [ ] Module F: CPCV 15-Fold theo đúng quy trình tuần tự Mục 4.0 (v11.8). $\text{DSR} \ge 0.95$, $\text{PBO} \le 0.40$, Flat Plateau $\ge 80\%$.
 - [ ] Module G: Execution Simulator (`sample_latency_regime_aware`, `simulate_limit_fill_with_queue`, `compute_realized_pnl`).

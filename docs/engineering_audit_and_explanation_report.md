@@ -51,7 +51,7 @@ flowchart TD
 ```
 
 > [!NOTE]
-> **Trạng Thái Hoàn Thành & Phạm Vi Kiến Trúc (`Architectural Scope & Reality Check`):** Cấu trúc 3 trụ cột (Data Gatekeeper -> Regime Gate -> Kelly Sizing) tạo ra nền tảng phòng thủ kiên cố cho hệ thống. Tuy nhiên, tính đến thời điểm báo cáo, chúng ta mới xây dựng và hoàn thiện kiểm định TDD cho khoảng ~8 module/hàm cốt lõi (schemas, trade_mode, sl_initial, trailing_exit v3, liquidation_layer, kelly solver). Các trụ cột xử lý dữ liệu tick (Module A), bộ lọc Kalman/HMM (Module B), phát hiện sự kiện CUSUM (Module C), chọn đặc trưng (Module D), kiểm định chéo CPCV/PBO (Module F), khớp lệnh thực tế (Module G) và Circuit Breaker (Module J) là phần việc lớn nằm trong lộ trình ~80 task tiếp theo cần kiên trì hoàn thiện.
+> **Trạng Thái Hoàn Thành & Phạm Vi Kiến Trúc (`Architectural Scope & Reality Check`):** Cấu trúc 3 trụ cột (Data Gatekeeper -> Regime Gate -> Kelly Sizing) tạo ra nền tảng phòng thủ kiên cố cho hệ thống. Tuy nhiên, tính đến thời điểm báo cáo, chúng ta mới xây dựng và hoàn thiện kiểm định TDD cho khoảng ~8 module/hàm cốt lõi (schemas, trade\_mode, sl\_initial, trailing\_exit v3, liquidation\_layer, kelly solver). Các trụ cột xử lý dữ liệu tick (Module A), bộ lọc Kalman/HMM (Module B), phát hiện sự kiện CUSUM (Module C), chọn đặc trưng (Module D), kiểm định chéo CPCV/PBO (Module F), khớp lệnh thực tế (Module G) và Circuit Breaker (Module J) là phần việc lớn nằm trong lộ trình ~80 task tiếp theo cần kiên trì hoàn thiện.
 
 ---
 
@@ -118,6 +118,9 @@ TradeRecordSchema = DataFrameSchema(..., strict=True, checks=[...])
 
 ```python
 def compute_dataset_manifest_hash(bar_df, generation_params) -> str:
+    ...
+```
+
 ### 3. Mô Hình Kiểm Soát Kép Trong Track B: Task B-1-10 (`class TradeRecord TypedDict`) vs `TradeRecordSchema`
 Để hiểu rõ sự phối hợp giữa `TradeRecord (TypedDict)` và `TradeRecordSchema (Pandera)`, hãy hình dung quy trình kiểm duyệt dữ liệu giao dịch qua hai khâu kiểm soát tuần tự:
 
@@ -140,8 +143,8 @@ flowchart TD
     Schema -->|Pass Logic & Lineage| CleanDF["Clean Trade DataFrame"]
     Schema -->|Check Fail| Error["Pandera SchemaError Raised"]
     
-    CleanDF --> Extract["Extract df['realized_return'].values"]
-    Extract --> KellyEngine["Task B-1-1: solve_empirical_kelly_fraction(returns)"]
+    CleanDF --> Extract["Extract df['realized\_return'].values"]
+    Extract --> KellyEngine["Task B-1-1: solve\_empirical\_kelly\_fraction(returns)"]
     KellyEngine --> Output["Optimal Kelly Fraction f*"]
 ```
 
@@ -162,13 +165,13 @@ Trong kiến trúc Master Blueprint v11.8, `solve_empirical_kelly_fraction` đ�
 
 ### 2. Giải Phẫu Hàm Lõi `solve_empirical_kelly_fraction`
 ```python
-def solve_empirical_kelly_fraction(returns_sample: np.ndarray, f_max: float = 1.0) -> float:
+def solve\_empirical\_kelly\_fraction(returns\_sample: np.ndarray, f\_max: float = 1.0) -> float:
 ```
 
 #### A. Lọc Dữ Liệu và Kiểm Tra Kích Thước Mẫu (`Sample Size Guard`)
 ```python
-returns_sample = returns_sample[np.isfinite(returns_sample)]
-if len(returns_sample) < 30:
+returns\_sample = returns\_sample[np.isfinite(returns\_sample)]
+if len(returns\_sample) < 30:
     return 0.0
 ```
 - Lọc bỏ các số `NaN` hoặc `Inf` để bảo đảm đạo hàm hợp lệ.
@@ -178,11 +181,11 @@ if len(returns_sample) < 30:
 
 #### B. Phương Trình Đạo Hàm Tăng Trưởng Log Kỳ Vọng (`growth_derivative`)
 ```python
-def growth_derivative(f):
-    denom = 1.0 + f * returns_sample
+def growth\_derivative(f):
+    denom = 1.0 + f * returns\_sample
     if np.any(denom <= 1e-6):
         return -1e6
-    return np.mean(returns_sample / denom)
+    return np.mean(returns\_sample / denom)
 ```
 - **Nền tảng Toán học:**  
   Mục tiêu là cực đại hóa hàm tăng trưởng: $G(f) = E\left[ \ln(1 + f \cdot r) \right]$. Đạo hàm bậc nhất theo $f$ là $G'(f) = E\left[ \frac{r}{1 + f \cdot r} \right] = 0$.
@@ -191,9 +194,9 @@ def growth_derivative(f):
 
 #### C. Chốt Chặn Hai Đầu Mút & Thuật Toán Brent's Method (`brentq`)
 ```python
-if growth_derivative(0.0) <= 0: return 0.0
-if growth_derivative(f_max) > 0: return f_max
-return brentq(growth_derivative, 0.0, f_max, xtol=1e-6)
+if growth\_derivative(0.0) <= 0: return 0.0
+if growth\_derivative(f\_max) > 0: return f\_max
+return brentq(growth\_derivative, 0.0, f\_max, xtol=1e-6)
 ```
 - **Chốt 1 ($f = 0.0$):** Tại $f=0$, $G'(0) = E[r]$. Nếu trung bình lợi suất của chiến lược $E[r] \le 0$ (chiến lược không có kỳ vọng dương), hệ thống khóa nghiệm tại `0.0` (Không cược tiền).
 - **Chốt 2 ($f = f_{\max}$):** Nếu tại mức cược tối đa (ví dụ $100\%$ hoặc $25\%$), đường cong tăng trưởng vẫn dốc lên ($G'(f_{\max}) > 0$), khóa nghiệm tại trần $f_{\max}$ để tuân thủ giới hạn quản trị rủi ro.
@@ -201,11 +204,11 @@ return brentq(growth_derivative, 0.0, f_max, xtol=1e-6)
 
 ### 3. Kiểm Thử TDD Phân Phối Bernoulli (`test_solve_empirical_kelly_fraction` & Coin Toss)
 ```python
-def test_b_1_1_kelly_classical_coin_toss():
+def test\_b\_1\_1\_kelly\_classical\_coin\_toss():
     np.random.seed(42)
     sample = np.random.choice([1.0, -1.0], p=[0.6, 0.4], size=10000)
-    f_star = solve_empirical_kelly_fraction(sample, f_max=1.0)
-    assert abs(f_star - 0.2) < 0.05
+    f\_star = solve\_empirical\_kelly\_fraction(sample, f\_max=1.0)
+    assert abs(f\_star - 0.2) < 0.05
 ```
 - **Kiểm chứng bằng toán học nhị thức Bernoulli:** Với phân phối nhị thức ($60\%$ lệnh thắng $+100\%$, $40\%$ lệnh thua $-100\%$), công thức Kelly kinh điển cho kết quả lời giải chuẩn xác là:
   $$f^* = p - \frac{1-p}{b} = 0.6 - \frac{0.4}{1.0} = 0.20 \quad (20\%)$$
@@ -214,17 +217,17 @@ def test_b_1_1_kelly_classical_coin_toss():
 #### Sơ Đồ Luồng Tối Ưu Hóa Kelly Phi Tuyến (`Empirical Kelly Solver Pipeline`)
 ```mermaid
 flowchart TD
-    Input["Input: returns_sample Array"] --> Filter["Filter: Remove NaN/Inf & check len >= 30"]
+    Input["Input: returns\_sample Array"] --> Filter["Filter: Remove NaN/Inf & check len >= 30"]
     Filter -->|len < 30| ReturnZero["Return f* = 0.0 (Data Insufficient Guard)"]
-    Filter -->|len >= 30| EvalZero["Eval growth_derivative(f=0.0)"]
+    Filter -->|len >= 30| EvalZero["Eval growth\_derivative(f=0.0)"]
     
     EvalZero -->|E[r] <= 0| ReturnZero
-    EvalZero -->|E[r] > 0| EvalMax["Eval growth_derivative(f=f_max)"]
+    EvalZero -->|E[r] > 0| EvalMax["Eval growth\_derivative(f=f\_max)"]
     
-    EvalMax -->|Deriv > 0| ReturnMax["Return f* = f_max (Cap at Max Risk)"]
-    EvalMax -->|Deriv <= 0| Brentq["scipy.optimize.brentq(growth_derivative, 0, f_max)"]
+    EvalMax -->|Deriv > 0| ReturnMax["Return f* = f\_max (Cap at Max Risk)"]
+    EvalMax -->|Deriv <= 0| Brentq["scipy.optimize.brentq(growth\_derivative, 0, f\_max)"]
     
-    Brentq --> CheckSing["growth_derivative checks denom <= 1e-6"]
+    Brentq --> CheckSing["growth\_derivative checks denom <= 1e-6"]
     CheckSing -->|Singularity Risk| Penalty["Return -1e6 (Singularity Guard - Prevent Ruin)"]
     CheckSing -->|Safe| Mean["Return E[r / (1 + f*r)]"]
     Mean -->|Iterate until = 0| Optimal["Found Optimal Fraction f*"]
@@ -246,20 +249,20 @@ Trong thị trường tài chính, không phải lúc nào hệ thống cũng đ
 ### 2. Giải Phẫu Từng Dòng Quy Tắc Phân Loại & Vùng Đệm
 
 ```python
-def classify_trade_mode(p_i: float, p_chop_i: float, fade_enabled: bool,
-                        fade_regime_gate_threshold: float = 0.60) -> Literal["follow", "fade", "none"]:
+def classify\_trade\_mode(p\_i: float, p\_chop\_i: float, fade\_enabled: bool,
+                        fade\_regime\_gate\_threshold: float = 0.60) -> Literal["follow", "fade", "none"]:
 ```
 
 #### A. Nhánh 1 — Đánh Theo Xu Hướng (`Follow Mode`)
 ```python
-if p_i >= 0.5:
+if p\_i >= 0.5:
     return "follow"
 ```
 - **Ý nghĩa:** Khi xác suất xu hướng sơ cấp $p_i \ge 50\%$, tín hiệu động lượng đang chiếm ưu thế. Hệ thống kích hoạt chế độ `Follow` (mua khi phá vỡ kháng cự, bán khi thủng hỗ trợ).
 
 #### B. Nhánh 2 — Khóa Cổng Đánh Đảo Chiều (`Fade Mode with Regime Gate`)
 ```python
-if fade_enabled and p_i < 0.2 and p_chop_i > fade_regime_gate_threshold:
+if fade\_enabled and p\_i < 0.2 and p\_chop\_i > fade\_regime\_gate\_threshold:
     return "fade"
 ```
 - **Tại sao cần 3 điều kiện đồng thời (`fade_enabled`, `p_i < 0.2`, `p_chop_i > 0.60`)?**
@@ -293,18 +296,18 @@ Kết quả `✅ PASSED!` xác nhận bộ phân loại chế độ giao dịch 
 #### C. Sơ Đồ Luồng Phân Loại Chế Độ Giao Dịch & Khóa Cổng An Toàn (`Trade Mode Classification Pipeline`)
 ```mermaid
 flowchart TD
-    Input["Input: p_i (Trend Prob), p_chop_i (Chop Prob), fade_enabled"] --> Guard["Armor Guard: Check not NaN/Inf AND 0 <= p, p_chop <= 1"]
+    Input["Input: p\_i (Trend Prob), p\_chop\_i (Chop Prob), fade\_enabled"] --> Guard["Armor Guard: Check not NaN/Inf AND 0 <= p, p\_chop <= 1"]
     Guard -->|Invalid / NaN| Error["Raise ValueError (Alert Model Degradation)"]
-    Guard -->|Valid| FollowCheck{"Is p_i >= 0.5?"}
+    Guard -->|Valid| FollowCheck{"Is p\_i >= 0.5?"}
     
     FollowCheck -->|Yes| Follow["Mode: follow (Trend Following Strong)"]
-    FollowCheck -->|No| FadeCondCheck{"Is p_i < 0.2 AND fade_enabled == True?"}
+    FollowCheck -->|No| FadeCondCheck{"Is p\_i < 0.2 AND fade\_enabled == True?"}
     
-    FadeCondCheck -->|No| Deadzone["Mode: none (Deadzone: 0.2 <= p_i < 0.5 or Fade Disabled)"]
-    FadeCondCheck -->|Yes| GateCheck{"Regime Gate: Is p_chop_i > 0.60?"}
+    FadeCondCheck -->|No| Deadzone["Mode: none (Deadzone: 0.2 <= p\_i < 0.5 or Fade Disabled)"]
+    FadeCondCheck -->|Yes| GateCheck{"Regime Gate: Is p\_chop\_i > 0.60?"}
     
     GateCheck -->|Yes| Fade["Mode: fade (Mean Reversion - Sideway Confirmed)"]
-    GateCheck -->|No| ChopLock["Mode: none (Locked by Regime Gate: p_chop_i <= 0.60)"]
+    GateCheck -->|No| ChopLock["Mode: none (Locked by Regime Gate: p\_chop\_i <= 0.60)"]
 ```
 
 ---
@@ -324,16 +327,16 @@ Rào cản cắt lỗ ban đầu (`SL Initial`) không bao giờ là một con s
 ### 2. Giải Phẫu Công Thức Toán Học & Đối Xứng Gương (`Symmetric Mirroring`)
 
 ```python
-def compute_sl_initial(entry_price: float, side: int, m_sl: float, sigma: float, c_trade_adj: float) -> float:
+def compute\_sl\_initial(entry\_price: float, side: int, m\_sl: float, sigma: float, c\_trade\_adj: float) -> float:
 ```
 
 #### A. Công Thức Trục Phân Cực Long/Short & Lính Gác Bọc Thép
 ```python
-total_cushion = m_sl * sigma + c_trade_adj
+total\_cushion = m\_sl * sigma + c\_trade\_adj
 if side > 0:
-    sl = entry_price * (1.0 - total_cushion)
+    sl = entry\_price * (1.0 - total\_cushion)
 else:
-    sl = entry_price * (1.0 + total_cushion)
+    sl = entry\_price * (1.0 + total\_cushion)
 ```
 - **Tham số hóa thông minh (`Parameterization`):**
   - `entry_price`: Giá khớp lệnh đầu vào.
@@ -342,7 +345,7 @@ else:
   - `m_sl`: Hệ số nhân rào cản cắt lỗ (`Stop-loss multiplier`).
   - `c_trade_adj`: Phí giao dịch + Trượt giá dự kiến (`Slippage + Commission`).
 - **Tính đối xứng gương (`Symmetric Mirroring`):**
-  - **Với lệnh Mua (`side > 0`):** Giá cắt lỗ nằm bên dưới giá mua một khoảng cách bằng đúng $(m_{sl} \cdot \sigma + c_{\text{trade\_adj}}) \cdot \text{Entry}$. Nếu tổng rủi ro $\ge 100\%$, hệ thống ném ngoại lệ `ValueError` để chặn đứng lỗi rủi ro cắt lỗ âm (`Inverted/Negative Stop-Loss: SL <= 0`).
+  - **Với lệnh Mua (`side > 0`):** Giá cắt lỗ nằm bên dưới giá mua một khoảng cách bằng đúng $(m_{sl} \cdot \sigma + c_{\text{trade-adj}}) \cdot \text{Entry}$. Nếu tổng rủi ro $\ge 100\%$, hệ thống ném ngoại lệ `ValueError` để chặn đứng lỗi rủi ro cắt lỗ âm (`Inverted/Negative Stop-Loss: SL <= 0`).
   - **Với lệnh Bán (`side < 0`):** Giá cắt lỗ nằm bên trên giá bán đúng bằng khoảng cách đó!
   - Việc đưa `c_trade_adj` vào công thức đảm bảo khi lệnh bị cắt lỗ, số tiền thực tế bạn mất sau khi trừ sạch phí và trượt giá **chính xác bằng đúng mức rủi ro tối đa đã định trước**!
 
@@ -358,18 +361,18 @@ Kết quả `✅ PASSED!` xác nhận bộ tính toán cắt lỗ ban đầu c�
 #### C. Sơ Đồ Luồng Rào Cản Cắt Lỗ Đối Xứng (`Symmetric Initial Stop-Loss Pipeline`)
 ```mermaid
 flowchart TD
-    Input["Input: entry_price, side, m_sl, sigma, c_trade_adj"] --> Guard["Armor Guard: Check side in (1, -1) & inputs >= 0 & not NaN/Inf"]
+    Input["Input: entry\_price, side, m\_sl, sigma, c\_trade\_adj"] --> Guard["Armor Guard: Check side in (1, -1) & inputs >= 0 & not NaN/Inf"]
     Guard -->|Invalid| Error["Raise ValueError (Prevent PnL Poisoning/Negative SL)"]
-    Guard -->|Valid| RiskCalc["Calculate Total Risk Cushion: R = (m_sl * sigma) + c_trade_adj"]
+    Guard -->|Valid| RiskCalc["Calculate Total Risk Cushion: R = (m\_sl * sigma) + c\_trade\_adj"]
     
     RiskCalc --> SideCheck{"Check Trade Direction: side > 0 (Long vs Short)?"}
     
-    SideCheck -->|side > 0 (Long)| LongSL["SL_Long = entry_price * (1 - R)"]
-    SideCheck -->|side <= 0 (Short/Fade)| ShortSL["SL_Short = entry_price * (1 + R)"]
+    SideCheck -->|side > 0 (Long)| LongSL["SL\_Long = entry\_price * (1 - R)"]
+    SideCheck -->|side <= 0 (Short/Fade)| ShortSL["SL\_Short = entry\_price * (1 + R)"]
     
-    LongSL --> CheckNeg{"Is SL_Long <= 0 (Risk >= 100%)?"}
+    LongSL --> CheckNeg{"Is SL\_Long <= 0 (Risk >= 100%)?"}
     CheckNeg -->|Yes| Error
-    CheckNeg -->|No| VerifySym["Symmetric Verification: dist_long == dist_short"]
+    CheckNeg -->|No| VerifySym["Symmetric Verification: dist\_long == dist\_short"]
     ShortSL --> VerifySym
     
     VerifySym -->|Mirror Confirmed| Output["Armor-Plated Initial Stop-Loss Ready for Trailing Logic"]
@@ -404,34 +407,34 @@ Qua đợt kiểm toán kỹ thuật khắt khe (`Rigorous Vulnerability Audit`)
 ### 3. Sơ Đồ Luồng Trailing Exit Động & Nhận Diện Chế Độ (`Regime-Aware Trailing Exit Pipeline`)
 ```mermaid
 flowchart TD
-    Input["Input: entry_price, side, trade_mode, future arrays, sl_initial"] --> Guard["Armor Guard: Check array length match, non-empty, side in (1, -1), ATR >= 0, no NaN/Inf"]
+    Input["Input: entry\_price, side, trade\_mode, future arrays, sl\_initial"] --> Guard["Armor Guard: Check array length match, non-empty, side in (1, -1), ATR >= 0, no NaN/Inf"]
     Guard -->|Invalid / NaN / Mismatch| Error["Raise ValueError (Prevent PnL Poisoning & Array Crash)"]
-    Guard -->|Valid| ModeCheck{"Check trade_mode: follow vs fade"}
+    Guard -->|Valid| ModeCheck{"Check trade\_mode: follow vs fade"}
     
-    ModeCheck --> LoopStart["Begin Future Bar Loop: k = 0 to effective_t_max"]
+    ModeCheck --> LoopStart["Begin Future Bar Loop: k = 0 to effective\_t\_max"]
     
-    LoopStart --> CheckLiq{"[v3] Check Liquidation: Lows <= P_liq (Long) or Highs >= P_liq (Short)?"}
+    LoopStart --> CheckLiq{"[v3] Check Liquidation: Lows <= P\_liq (Long) or Highs >= P\_liq (Short)?"}
     CheckLiq -->|Yes| ExitLiq["Return Exit: idx=k, reason='LIQUIDATION'"]
     
     CheckLiq -->|No| CheckSL{"Check Hard SL: Lows <= SL (Long) or Highs >= SL (Short)?"}
     CheckSL -->|Yes| ExitSL["Return Exit: idx=k, reason='SL'"]
     
-    CheckSL -->|No| CalcTrail["Update extreme_price & Calculate trail_stop = extreme +/- m_trail * (1 + gamma*p_trend) * ATR"]
+    CheckSL -->|No| CalcTrail["Update extreme\_price & Calculate trail\_stop = extreme +/- m\_trail * (1 + gamma*p\_trend) * ATR"]
     CalcTrail --> CheckTrail{"Check Trailing Stop: Lows <= trail (Long) or Highs >= trail (Short)?"}
     CheckTrail -->|Yes| ExitTrail["Return Exit: idx=k, reason='TRAIL'"]
     
     CheckTrail -->|No| CheckFlip{"Regime Flip Check: (Follow & p < thres) OR (Fade & p > thres)?"}
-    CheckFlip -->|Yes| IncFlip["consecutive_flip_count += 1"]
-    CheckFlip -->|No| ResetFlip["consecutive_flip_count = 0"]
+    CheckFlip -->|Yes| IncFlip["consecutive\_flip\_count += 1"]
+    CheckFlip -->|No| ResetFlip["consecutive\_flip\_count = 0"]
     
-    IncFlip --> FlipLimit{"consecutive_flip_count >= consecutive_bars_required (2)?"}
-    FlipLimit -->|Yes| ExitFlip["Return Exit: idx=k, reason='REGIME_FLIP'"]
+    IncFlip --> FlipLimit{"consecutive\_flip\_count >= consecutive\_bars\_required (2)?"}
+    FlipLimit -->|Yes| ExitFlip["Return Exit: idx=k, reason='REGIME\_FLIP'"]
     FlipLimit -->|No| NextBar["k += 1 (Next Future Bar)"]
     ResetFlip --> NextBar
     
-    NextBar --> CheckLoopEnd{"Is k >= effective_t_max or array end?"}
+    NextBar --> CheckLoopEnd{"Is k >= effective\_t\_max or array end?"}
     CheckLoopEnd -->|No| CheckLiq
-    CheckLoopEnd -->|Yes| ExitTime["Return Exit: idx=last_idx, reason='TIME_STOP'"]
+    CheckLoopEnd -->|Yes| ExitTime["Return Exit: idx=last\_idx, reason='TIME\_STOP'"]
 ```
 
 > [!NOTE]
@@ -454,7 +457,7 @@ Khi giao dịch phái sinh hợp đồng tương lai vĩnh cửu (`Perpetual Fut
 ---
 
 ### 2. Chứng Minh Toán Học Phương Trình Khép Kín (`Closed-Form Mathematical Derivation`)
-Để đảm bảo điểm Cắt Lỗ cách điểm Thanh Lý một lớp đệm $B = \text{safety\_buffer\_pct}$, ta thiết lập phương trình:
+Để đảm bảo điểm Cắt Lỗ cách điểm Thanh Lý một lớp đệm $B = \text{safety-buffer-pct}$, ta thiết lập phương trình:
 $$\text{Khoảng cách đến SL} \le \text{Khoảng cách đến Liq} \times (1 - B)$$
 
 Gọi $S = \frac{|\text{Entry} - \text{SL}|}{\text{Entry}}$ là tỷ lệ % cắt lỗ (ví dụ Cắt lỗ `10%` thì $S = 0.10$).
@@ -483,17 +486,17 @@ $$L_{\max} = \frac{1}{\frac{S}{1 - B} + M}$$
 ### 4. Sơ Đồ Luồng Bảo Vệ Đòn Bẩy & Xấp Xỉ Thanh Lý (`Liquidation Layer Pre-Flight Pipeline`)
 ```mermaid
 flowchart TD
-    Input["Input: entry_price, side, sl_initial, leverage, maint_rate, buffer"] --> Guard["Armor Guard: Check side in (1, -1), leverage >= 1.0, inputs > 0, buffer in [0, 0.9]"]
+    Input["Input: entry\_price, side, sl\_initial, leverage, maint\_rate, buffer"] --> Guard["Armor Guard: Check side in (1, -1), leverage >= 1.0, inputs > 0, buffer in [0, 0.9]"]
     Guard -->|Invalid / NaN / Out-of-Bounds| Error["Raise ValueError (Prevent Division by Zero & Inverted SL)"]
     
-    Guard -->|Valid| CalcLiq["compute_liquidation_price: P_liq = Entry * (1 -/+ 1/Lev +/- MaintRate)"]
+    Guard -->|Valid| CalcLiq["compute\_liquidation\_price: P\_liq = Entry * (1 -/+ 1/Lev +/- MaintRate)"]
     
-    CalcLiq --> CheckSafe{"validate_leverage_against_sl: dist_SL <= dist_Liq * (1 - buffer)?"}
-    CheckSafe -->|Yes (is_safe = True)| SafeOrder["Order Safe: Proceed to Kelly Execution"]
+    CalcLiq --> CheckSafe{"validate\_leverage\_against\_sl: dist\_SL <= dist\_Liq * (1 - buffer)?"}
+    CheckSafe -->|Yes (is\_safe = True)| SafeOrder["Order Safe: Proceed to Kelly Execution"]
     
-    CheckSafe -->|No (is_safe = False)| CapNeed["Leverage Too High: SL exceeds safe Liquidation buffer!"]
-    CapNeed --> CalcMax["resolve_max_safe_leverage: L_max = 1 / ( (SL_frac / (1-buffer)) + MaintRate )"]
-    CalcMax --> AutoAdjust["Auto-clamp Leverage = min(L_max, leverage_cap)"]
+    CheckSafe -->|No (is\_safe = False)| CapNeed["Leverage Too High: SL exceeds safe Liquidation buffer!"]
+    CapNeed --> CalcMax["resolve\_max\_safe\_leverage: L\_max = 1 / ( (SL\_frac / (1-buffer)) + MaintRate )"]
+    CalcMax --> AutoAdjust["Auto-clamp Leverage = min(L\_max, leverage\_cap)"]
     AutoAdjust --> SafeOrder
 ```
 
@@ -505,16 +508,16 @@ flowchart TD
 Trong kiểm định chéo thời gian (`Purged Group Time-Series Cross-Validation`), một trong những lỗi vi phạm rò rỉ dữ liệu (`Data Leakage / Look-ahead bias`) phổ biến và khó phát hiện nhất là **cho phép hàm mô phỏng giao dịch nhìn thấy dữ liệu nằm ngoài biên Fold trong quá trình chạy tự do, sau đó mới sửa lại kết quả khi thoát hàm (`Post-Patching`)**.
 - Nếu hàm `compute_regime_aware_trailing_exit` được truyền vào toàn bộ chuỗi nến tương lai không giới hạn, bot có thể ra quyết định cắt lời `TRAIL` dựa trên những biến động giá thuộc Fold tiếp theo. Dù sau đó ta có ép kiểu lại thành `TIME_STOP` tại biên Fold cũ, toàn bộ quá trình mô phỏng đã bị ô nhiễm thông tin tương lai!
 - **Khắc phục ở Task B-1-5 (`simulate_trailing_exit_within_fold_bounds`):** Hệ thống thực thi chân lý "Phòng bệnh hơn chữa bệnh — Cắt phăng mảng dữ liệu ngay tại cửa trước khi đưa vào hàm (`Pre-Slice before calling exit logic`)".
-  $$\text{effective\_end} = \min(\text{entry\_idx} + 1 + t_{\max}, \text{test\_window\_end\_idx}, \text{len}(\text{full\_highs}))$$
+  $$\text{effective-end} = \min(\text{entry-idx} + 1 + t_{\max}, \text{test-window-end-idx}, \text{len}(\text{full-highs}))$$
   Khi mảng `future_highs` bị cắt cụt tuyệt đối tại `effective_end`, dù hàm mô phỏng bên trong có muốn nhìn xa hơn thì cũng **hoàn toàn không có dữ liệu để nhìn**! Đây là tiêu chuẩn định chế `Zero-Leakage`.
 
 ---
 
 ### 2. Giải Phẫu Nhánh Phí Thanh Lý `LIQUIDATION PnL` (Module G)
 Khi một lệnh bị sàn phái sinh quét thanh lý (`LIQUIDATION`), cơ chế tính toán tổn thất hoàn toàn khác so với chốt lời/cắt lỗ thông thường:
-- **Sai lầm ngây thơ:** Dùng công thức PnL thường $\text{Loss} = \text{size\_notional} \times (1 + \text{fee})$. Nếu `size_notional` là giá trị danh nghĩa USD (ví dụ đòn bẩy `10x` thì `size_notional` gấp 10 lần tiền cọc), việc trừ thẳng `size_notional` sẽ báo cáo quỹ bị lỗ gấp `10 lần` số vốn ký quỹ thực tế!
+- **Sai lầm ngây thơ:** Dùng công thức PnL thường $\text{Loss} = \text{size-notional} \times (1 + \text{fee})$. Nếu `size_notional` là giá trị danh nghĩa USD (ví dụ đòn bẩy `10x` thì `size_notional` gấp 10 lần tiền cọc), việc trừ thẳng `size_notional` sẽ báo cáo quỹ bị lỗ gấp `10 lần` số vốn ký quỹ thực tế!
 - **Chuẩn hóa định chế (`compute_realized_pnl`):** Khi thanh lý, số tiền bị mất chính là toàn bộ tiền thế chấp (`Margin = size_notional / leverage`) cộng với phí phạt thanh lý mà sàn thu trên tổng giá trị lệnh (`size_notional * liquidation_fee_rate`).
-  $$\text{Loss}_{\text{Liq}} = -\left( \frac{\text{size\_notional}}{\text{leverage}} + \text{size\_notional} \times \text{liquidation\_fee\_rate} \right) - \text{funding\_accrued}$$
+  $$\text{Loss}_{\text{Liq}} = -\left( \frac{\text{size-notional}}{\text{leverage}} + \text{size-notional} \times \text{liquidation-fee-rate} \right) - \text{funding-accrued}$$
 
 ---
 
@@ -529,17 +532,17 @@ Khi một lệnh bị sàn phái sinh quét thanh lý (`LIQUIDATION`), cơ chế
 ### 4. Sơ Đồ Luồng Cắt Dữ Liệu & Định Tuyến Thoát Lệnh (`Pre-Slice Zero-Leakage & PnL Pipeline`)
 ```mermaid
 flowchart TD
-    Input["Input: full_bars, entry_idx, test_window_end_idx, t_max_live"] --> PreSlice["Pre-Slice Cut: effective_end = min(entry + 1 + t_max, fold_end, len)"]
-    PreSlice --> SliceArr["Slice Physical Arrays: future_bars = full_bars[entry+1 : effective_end]"]
+    Input["Input: full\_bars, entry\_idx, test\_window\_end\_idx, t\_max\_live"] --> PreSlice["Pre-Slice Cut: effective\_end = min(entry + 1 + t\_max, fold\_end, len)"]
+    PreSlice --> SliceArr["Slice Physical Arrays: future\_bars = full\_bars[entry+1 : effective\_end]"]
     
-    SliceArr --> CheckZero{"Is len(future_bars) == 0?"}
-    CheckZero -->|Yes (At fold boundary)| InstantExit["Return Exit: idx_rel=0, reason='TIME_STOP', boundary_truncated=True"]
+    SliceArr --> CheckZero{"Is len(future\_bars) == 0?"}
+    CheckZero -->|Yes (At fold boundary)| InstantExit["Return Exit: idx\_rel=0, reason='TIME\_STOP', boundary\_truncated=True"]
     
-    CheckZero -->|No| CallV3["Call compute_regime_aware_trailing_exit_v3_liquidation_aware(future_bars)"]
-    CallV3 --> CheckReason{"What is exit_reason?"}
+    CheckZero -->|No| CallV3["Call compute\_regime\_aware\_trailing\_exit\_v3\_liquidation\_aware(future\_bars)"]
+    CallV3 --> CheckReason{"What is exit\_reason?"}
     
-    CheckReason -->|SL / TRAIL / REGIME_FLIP / TIME_STOP| NormalPnL["compute_realized_pnl (Normal Branch): PnL = side * ((fill_price_exit - fill_price_entry) / fill_price_entry) * size_notional - fee_cost - funding_accrued"]
-    CheckReason -->|LIQUIDATION| LiqPnL["compute_realized_pnl (LIQUIDATION Branch): Loss_Liq = - (size_notional / leverage + size_notional * liquidation_fee_rate) - funding_accrued"]
+    CheckReason -->|SL / TRAIL / REGIME\_FLIP / TIME\_STOP| NormalPnL["compute\_realized\_pnl (Normal Branch): PnL = side * ((fill\_price\_exit - fill\_price\_entry) / fill\_price\_entry) * size\_notional - fee\_cost - funding\_accrued"]
+    CheckReason -->|LIQUIDATION| LiqPnL["compute\_realized\_pnl (LIQUIDATION Branch): Loss\_Liq = - (size\_notional / leverage + size\_notional * liquidation\_fee\_rate) - funding\_accrued"]
 ```
 
 ---

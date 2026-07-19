@@ -239,8 +239,8 @@ flowchart TD
     Schema -->|Pass Logic & Lineage| CleanDF["Clean Trade DataFrame"]
     Schema -->|Check Fail| Error["Pandera SchemaError Raised"]
     
-    CleanDF --> Extract["Extract df['realized\_return'].values"]
-    Extract --> KellyEngine["Task B-1-1: solve\_empirical\_kelly\_fraction(returns)"]
+    CleanDF --> Extract["Extract df['realized_return'].values"]
+    Extract --> KellyEngine["Task B-1-1: solve_empirical_kelly_fraction(returns)"]
     KellyEngine --> Output["Optimal Kelly Fraction f*"]
 ```
 
@@ -318,17 +318,17 @@ $$
 #### Sơ Đồ Luồng Tối Ưu Hóa Kelly Phi Tuyến (`Empirical Kelly Solver Pipeline`)
 ```mermaid
 flowchart TD
-    Input["Input: returns\_sample Array"] --> Filter["Filter: Remove NaN/Inf & check len >= 30"]
+    Input["Input: returns_sample Array"] --> Filter["Filter: Remove NaN/Inf & check len >= 30"]
     Filter -->|len < 30| ReturnZero["Return f* = 0.0 (Data Insufficient Guard)"]
-    Filter -->|len >= 30| EvalZero["Eval growth\_derivative(f=0.0)"]
+    Filter -->|len >= 30| EvalZero["Eval growth_derivative(f=0.0)"]
     
     EvalZero -->|E[r] <= 0| ReturnZero
-    EvalZero -->|E[r] > 0| EvalMax["Eval growth\_derivative(f=f\_max)"]
+    EvalZero -->|E[r] > 0| EvalMax["Eval growth_derivative(f=f_max)"]
     
-    EvalMax -->|Deriv > 0| ReturnMax["Return f* = f\_max (Cap at Max Risk)"]
-    EvalMax -->|Deriv <= 0| Brentq["scipy.optimize.brentq(growth\_derivative, 0, f\_max)"]
+    EvalMax -->|Deriv > 0| ReturnMax["Return f* = f_max (Cap at Max Risk)"]
+    EvalMax -->|Deriv <= 0| Brentq["scipy.optimize.brentq(growth_derivative, 0, f_max)"]
     
-    Brentq --> CheckSing["growth\_derivative checks denom <= 1e-6"]
+    Brentq --> CheckSing["growth_derivative checks denom <= 1e-6"]
     CheckSing -->|Singularity Risk| Penalty["Return -1e6 (Singularity Guard - Prevent Ruin)"]
     CheckSing -->|Safe| Mean["Return E[r / (1 + f*r)]"]
     Mean -->|Iterate until = 0| Optimal["Found Optimal Fraction f*"]
@@ -395,18 +395,18 @@ Kết quả `✅ PASSED!` xác nhận bộ phân loại chế độ giao dịch 
 #### C. Sơ Đồ Luồng Phân Loại Chế Độ Giao Dịch & Khóa Cổng An Toàn (`Trade Mode Classification Pipeline`)
 ```mermaid
 flowchart TD
-    Input["Input: p\_i (Trend Prob), p\_chop\_i (Chop Prob), fade\_enabled"] --> Guard["Armor Guard: Check not NaN/Inf AND 0 <= p, p\_chop <= 1"]
+    Input["Input: p_i (Trend Prob), p_chop_i (Chop Prob), fade_enabled"] --> Guard["Armor Guard: Check not NaN/Inf AND 0 <= p, p_chop <= 1"]
     Guard -->|Invalid / NaN| Error["Raise ValueError (Alert Model Degradation)"]
-    Guard -->|Valid| FollowCheck{"Is p\_i >= 0.5?"}
+    Guard -->|Valid| FollowCheck{"Is p_i >= 0.5?"}
     
     FollowCheck -->|Yes| Follow["Mode: follow (Trend Following Strong)"]
-    FollowCheck -->|No| FadeCondCheck{"Is p\_i < 0.2 AND fade\_enabled == True?"}
+    FollowCheck -->|No| FadeCondCheck{"Is p_i < 0.2 AND fade_enabled == True?"}
     
-    FadeCondCheck -->|No| Deadzone["Mode: none (Deadzone: 0.2 <= p\_i < 0.5 or Fade Disabled)"]
-    FadeCondCheck -->|Yes| GateCheck{"Regime Gate: Is p\_chop\_i > 0.60?"}
+    FadeCondCheck -->|No| Deadzone["Mode: none (Deadzone: 0.2 <= p_i < 0.5 or Fade Disabled)"]
+    FadeCondCheck -->|Yes| GateCheck{"Regime Gate: Is p_chop_i > 0.60?"}
     
     GateCheck -->|Yes| Fade["Mode: fade (Mean Reversion - Sideway Confirmed)"]
-    GateCheck -->|No| ChopLock["Mode: none (Locked by Regime Gate: p\_chop\_i <= 0.60)"]
+    GateCheck -->|No| ChopLock["Mode: none (Locked by Regime Gate: p_chop_i <= 0.60)"]
 ```
 
 ---
@@ -460,18 +460,18 @@ Kết quả `✅ PASSED!` xác nhận bộ tính toán cắt lỗ ban đầu c�
 #### C. Sơ Đồ Luồng Rào Cản Cắt Lỗ Đối Xứng (`Symmetric Initial Stop-Loss Pipeline`)
 ```mermaid
 flowchart TD
-    Input["Input: entry\_price, side, m\_sl, sigma, c\_trade\_adj"] --> Guard["Armor Guard: Check side in (1, -1) & inputs >= 0 & not NaN/Inf"]
+    Input["Input: entry_price, side, m_sl, sigma, c_trade_adj"] --> Guard["Armor Guard: Check side in (1, -1) & inputs >= 0 & not NaN/Inf"]
     Guard -->|Invalid| Error["Raise ValueError (Prevent PnL Poisoning/Negative SL)"]
-    Guard -->|Valid| RiskCalc["Calculate Total Risk Cushion: R = (m\_sl * sigma) + c\_trade\_adj"]
+    Guard -->|Valid| RiskCalc["Calculate Total Risk Cushion: R = (m_sl * sigma) + c_trade_adj"]
     
     RiskCalc --> SideCheck{"Check Trade Direction: side > 0 (Long vs Short)?"}
     
-    SideCheck -->|side > 0 (Long)| LongSL["SL\_Long = entry\_price * (1 - R)"]
-    SideCheck -->|side <= 0 (Short/Fade)| ShortSL["SL\_Short = entry\_price * (1 + R)"]
+    SideCheck -->|side > 0 (Long)| LongSL["SL_Long = entry_price * (1 - R)"]
+    SideCheck -->|side <= 0 (Short/Fade)| ShortSL["SL_Short = entry_price * (1 + R)"]
     
-    LongSL --> CheckNeg{"Is SL\_Long <= 0 (Risk >= 100%)?"}
+    LongSL --> CheckNeg{"Is SL_Long <= 0 (Risk >= 100%)?"}
     CheckNeg -->|Yes| Error
-    CheckNeg -->|No| VerifySym["Symmetric Verification: dist\_long == dist\_short"]
+    CheckNeg -->|No| VerifySym["Symmetric Verification: dist_long == dist_short"]
     ShortSL --> VerifySym
     
     VerifySym -->|Mirror Confirmed| Output["Armor-Plated Initial Stop-Loss Ready for Trailing Logic"]
@@ -506,34 +506,34 @@ Qua đợt kiểm toán kỹ thuật khắt khe (`Rigorous Vulnerability Audit`)
 ### 3. Sơ Đồ Luồng Trailing Exit Động & Nhận Diện Chế Độ (`Regime-Aware Trailing Exit Pipeline`)
 ```mermaid
 flowchart TD
-    Input["Input: entry\_price, side, trade\_mode, future arrays, sl\_initial"] --> Guard["Armor Guard: Check array length match, non-empty, side in (1, -1), ATR >= 0, no NaN/Inf"]
+    Input["Input: entry_price, side, trade_mode, future arrays, sl_initial"] --> Guard["Armor Guard: Check array length match, non-empty, side in (1, -1), ATR >= 0, no NaN/Inf"]
     Guard -->|Invalid / NaN / Mismatch| Error["Raise ValueError (Prevent PnL Poisoning & Array Crash)"]
-    Guard -->|Valid| ModeCheck{"Check trade\_mode: follow vs fade"}
+    Guard -->|Valid| ModeCheck{"Check trade_mode: follow vs fade"}
     
-    ModeCheck --> LoopStart["Begin Future Bar Loop: k = 0 to effective\_t\_max"]
+    ModeCheck --> LoopStart["Begin Future Bar Loop: k = 0 to effective_t_max"]
     
-    LoopStart --> CheckLiq{"[v3] Check Liquidation: Lows <= P\_liq (Long) or Highs >= P\_liq (Short)?"}
+    LoopStart --> CheckLiq{"[v3] Check Liquidation: Lows <= P_liq (Long) or Highs >= P_liq (Short)?"}
     CheckLiq -->|Yes| ExitLiq["Return Exit: idx=k, reason='LIQUIDATION'"]
     
     CheckLiq -->|No| CheckSL{"Check Hard SL: Lows <= SL (Long) or Highs >= SL (Short)?"}
     CheckSL -->|Yes| ExitSL["Return Exit: idx=k, reason='SL'"]
     
-    CheckSL -->|No| CalcTrail["Update extreme\_price & Calculate trail\_stop = extreme +/- m\_trail * (1 + gamma*p\_trend) * ATR"]
+    CheckSL -->|No| CalcTrail["Update extreme_price & Calculate trail_stop = extreme +/- m_trail * (1 + gamma*p_trend) * ATR"]
     CalcTrail --> CheckTrail{"Check Trailing Stop: Lows <= trail (Long) or Highs >= trail (Short)?"}
     CheckTrail -->|Yes| ExitTrail["Return Exit: idx=k, reason='TRAIL'"]
     
     CheckTrail -->|No| CheckFlip{"Regime Flip Check: (Follow & p < thres) OR (Fade & p > thres)?"}
-    CheckFlip -->|Yes| IncFlip["consecutive\_flip\_count += 1"]
-    CheckFlip -->|No| ResetFlip["consecutive\_flip\_count = 0"]
+    CheckFlip -->|Yes| IncFlip["consecutive_flip_count += 1"]
+    CheckFlip -->|No| ResetFlip["consecutive_flip_count = 0"]
     
-    IncFlip --> FlipLimit{"consecutive\_flip\_count >= consecutive\_bars\_required (2)?"}
-    FlipLimit -->|Yes| ExitFlip["Return Exit: idx=k, reason='REGIME\_FLIP'"]
+    IncFlip --> FlipLimit{"consecutive_flip_count >= consecutive_bars_required (2)?"}
+    FlipLimit -->|Yes| ExitFlip["Return Exit: idx=k, reason='REGIME_FLIP'"]
     FlipLimit -->|No| NextBar["k += 1 (Next Future Bar)"]
     ResetFlip --> NextBar
     
-    NextBar --> CheckLoopEnd{"Is k >= effective\_t\_max or array end?"}
+    NextBar --> CheckLoopEnd{"Is k >= effective_t_max or array end?"}
     CheckLoopEnd -->|No| CheckLiq
-    CheckLoopEnd -->|Yes| ExitTime["Return Exit: idx=last\_idx, reason='TIME\_STOP'"]
+    CheckLoopEnd -->|Yes| ExitTime["Return Exit: idx=last_idx, reason='TIME_STOP'"]
 ```
 
 > [!NOTE]
@@ -604,17 +604,17 @@ $$
 ### 4. Sơ Đồ Luồng Bảo Vệ Đòn Bẩy & Xấp Xỉ Thanh Lý (`Liquidation Layer Pre-Flight Pipeline`)
 ```mermaid
 flowchart TD
-    Input["Input: entry\_price, side, sl\_initial, leverage, maint\_rate, buffer"] --> Guard["Armor Guard: Check side in (1, -1), leverage >= 1.0, inputs > 0, buffer in [0, 0.9]"]
+    Input["Input: entry_price, side, sl_initial, leverage, maint_rate, buffer"] --> Guard["Armor Guard: Check side in (1, -1), leverage >= 1.0, inputs > 0, buffer in [0, 0.9]"]
     Guard -->|Invalid / NaN / Out-of-Bounds| Error["Raise ValueError (Prevent Division by Zero & Inverted SL)"]
     
-    Guard -->|Valid| CalcLiq["compute\_liquidation\_price: P\_liq = Entry * (1 -/+ 1/Lev +/- MaintRate)"]
+    Guard -->|Valid| CalcLiq["compute_liquidation_price: P_liq = Entry * (1 -/+ 1/Lev +/- MaintRate)"]
     
-    CalcLiq --> CheckSafe{"validate\_leverage\_against\_sl: dist\_SL <= dist\_Liq * (1 - buffer)?"}
-    CheckSafe -->|Yes (is\_safe = True)| SafeOrder["Order Safe: Proceed to Kelly Execution"]
+    CalcLiq --> CheckSafe{"validate_leverage_against_sl: dist_SL <= dist_Liq * (1 - buffer)?"}
+    CheckSafe -->|"Yes (is_safe = True)"| SafeOrder["Order Safe: Proceed to Kelly Execution"]
     
-    CheckSafe -->|No (is\_safe = False)| CapNeed["Leverage Too High: SL exceeds safe Liquidation buffer!"]
-    CapNeed --> CalcMax["resolve\_max\_safe\_leverage: L\_max = 1 / ( (SL\_frac / (1-buffer)) + MaintRate )"]
-    CalcMax --> AutoAdjust["Auto-clamp Leverage = min(L\_max, leverage\_cap)"]
+    CheckSafe -->|"No (is_safe = False)"| CapNeed["Leverage Too High: SL exceeds safe Liquidation buffer!"]
+    CapNeed --> CalcMax["resolve_max_safe_leverage: L_max = 1 / ( (SL_frac / (1-buffer)) + MaintRate )"]
+    CalcMax --> AutoAdjust["Auto-clamp Leverage = min(L_max, leverage_cap)"]
     AutoAdjust --> SafeOrder
 ```
 
@@ -659,17 +659,17 @@ $$
 ### 4. Sơ Đồ Luồng Cắt Dữ Liệu & Định Tuyến Thoát Lệnh (`Pre-Slice Zero-Leakage & PnL Pipeline`)
 ```mermaid
 flowchart TD
-    Input["Input: full\_bars, entry\_idx, test\_window\_end\_idx, t\_max\_live"] --> PreSlice["Pre-Slice Cut: effective\_end = min(entry + 1 + t\_max, fold\_end, len)"]
-    PreSlice --> SliceArr["Slice Physical Arrays: future\_bars = full\_bars[entry+1 : effective\_end]"]
+    Input["Input: full_bars, entry_idx, test_window_end_idx, t_max_live"] --> PreSlice["Pre-Slice Cut: effective_end = min(entry + 1 + t_max, fold_end, len)"]
+    PreSlice --> SliceArr["Slice Physical Arrays: future_bars = full_bars[entry+1 : effective_end]"]
     
-    SliceArr --> CheckZero{"Is len(future\_bars) == 0?"}
-    CheckZero -->|Yes (At fold boundary)| InstantExit["Return Exit: idx\_rel=0, reason='TIME\_STOP', boundary\_truncated=True"]
+    SliceArr --> CheckZero{"Is len(future_bars) == 0?"}
+    CheckZero -->|"Yes (At fold boundary)"| InstantExit["Return Exit: idx_rel=0, reason='TIME_STOP', boundary_truncated=True"]
     
-    CheckZero -->|No| CallV3["Call compute\_regime\_aware\_trailing\_exit\_v3\_liquidation\_aware(future\_bars)"]
-    CallV3 --> CheckReason{"What is exit\_reason?"}
+    CheckZero -->|No| CallV3["Call compute_regime_aware_trailing_exit_v3_liquidation_aware(future_bars)"]
+    CallV3 --> CheckReason{"What is exit_reason?"}
     
-    CheckReason -->|SL / TRAIL / REGIME\_FLIP / TIME\_STOP| NormalPnL["compute\_realized\_pnl (Normal Branch): PnL = side * ((fill\_price\_exit - fill\_price\_entry) / fill\_price\_entry) * size\_notional - fee\_cost - funding\_accrued"]
-    CheckReason -->|LIQUIDATION| LiqPnL["compute\_realized\_pnl (LIQUIDATION Branch): Loss\_Liq = - (size\_notional / leverage + size\_notional * liquidation\_fee\_rate) - funding\_accrued"]
+    CheckReason -->|SL / TRAIL / REGIME_FLIP / TIME_STOP| NormalPnL["compute_realized_pnl (Normal Branch): PnL = side * ((fill_price_exit - fill_price_entry) / fill_price_entry) * size_notional - fee_cost - funding_accrued"]
+    CheckReason -->|LIQUIDATION| LiqPnL["compute_realized_pnl (LIQUIDATION Branch): Loss_Liq = - (size_notional / leverage + size_notional * liquidation_fee_rate) - funding_accrued"]
 ```
 
 ---

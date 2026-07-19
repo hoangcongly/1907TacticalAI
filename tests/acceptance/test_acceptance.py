@@ -1,2 +1,2 @@
-import pytest
-def test_system_acceptance(): assert True
+def test_system_acceptance():
+    assert True

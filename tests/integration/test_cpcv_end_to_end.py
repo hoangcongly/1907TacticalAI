@@ -1,2 +1,2 @@
-import pytest
-def test_cpcv_end_to_end(): assert True
+def test_cpcv_end_to_end():
+    assert True

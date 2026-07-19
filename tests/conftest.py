@@ -1,6 +1,7 @@
 import pytest
 import numpy as np
 
+
 @pytest.fixture
 def dummy_ticks():
     np.random.seed(42)

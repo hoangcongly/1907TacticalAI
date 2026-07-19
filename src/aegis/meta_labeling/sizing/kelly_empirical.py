@@ -16,7 +16,7 @@ def solve_empirical_kelly_fraction(
     """
     # Lọc bỏ NaN/Inf để đảm bảo an toàn số học
     returns_sample = returns_sample[np.isfinite(returns_sample)]
-    if len(returns_sample) < 3:
+    if len(returns_sample) < 30:
         return 0.0
 
     def growth_derivative(f):

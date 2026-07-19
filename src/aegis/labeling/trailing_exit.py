@@ -1,5 +1,6 @@
 import math
 import numpy as np
+from typing import Optional
 
 
 # ============================================================================
@@ -756,8 +757,7 @@ def compute_realized_pnl(
 
     if exit_reason == "LIQUIDATION":
         margin_lost = size_notional / max(leverage, 1.0)
-        liq_penalty = size_notional * liquidation_fee_rate
-        return float(-(margin_lost + liq_penalty) - funding_accrued)
+        return float(-margin_lost - funding_accrued)
 
     if is_notional_in_usd:
         raw_pnl = (
@@ -829,8 +829,8 @@ def test_b_1_5_no_leakage_past_fold_boundary():
         liquidation_fee_rate=0.0125,
         leverage=10.0,
     )
-    # Kỳ vọng: Mất 10,000 (margin) + 1,250 (phí phạt) + 50 (funding) = -11300.0
-    assert abs(pnl_liq - (-11300.0)) < 1e-4, f"Sai tính toán PnL Liquidation: {pnl_liq}"
+    # Kỳ vọng: Mất 10,000 (margin_lost) + 50 (funding) = -10050.0 (phí phạt đã trừ thẳng vào margin còn lại)
+    assert abs(pnl_liq - (-10050.0)) < 1e-4, f"Sai tính toán PnL Liquidation: {pnl_liq}"
 
     print(
         "✅ [TASK B-1-5] test_b_1_5_no_leakage_past_fold_boundary & Liquidation PnL PASSED!"

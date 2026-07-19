@@ -46,11 +46,12 @@ def check_insufficient_history_nulls(df: pd.DataFrame) -> pd.Series:
       bắt buộc phải là Null (rỗng), tuyệt đối không được điền số ảo làm hệ thống ngộ nhận tín hiệu.
     """
     mask = df["insufficient_history"] == True
+    result = pd.Series(True, index=df.index)
     if not mask.any():
-        return pd.Series(True, index=df.index)
-    
-    invalid_rows = df[mask][["trend_score", "p_trend", "p_chop", "atr_14", "hurst_value"]].notna().any(axis=1)
-    return ~invalid_rows
+        return result
+    invalid = df.loc[mask, ["trend_score", "p_trend", "p_chop", "atr_14", "hurst_value"]].notna().any(axis=1)
+    result.loc[mask] = ~invalid
+    return result
 
 def check_absolute_index_logic(df: pd.DataFrame) -> pd.Series:
     """

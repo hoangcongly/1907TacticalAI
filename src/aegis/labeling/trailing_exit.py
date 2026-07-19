@@ -317,6 +317,263 @@ def test_b_1_4_regime_aware_trailing_exit_symmetry():
 
     print("✅ [TASK B-1-4] compute_regime_aware_trailing_exit_v2 PASSED! (Đối xứng hoàn hảo, Regime-Flip chuẩn & Chống 100% mảng rỗng/lệch/ATR âm/mode rác)")
 
+# ============================================================================
+# [v11.9 / v3] REGIME-AWARE TRAILING EXIT V3 (LIQUIDATION AWARE)
+# ============================================================================
+def compute_regime_aware_trailing_exit_v3_liquidation_aware(
+    entry_price: float, side: int, trade_mode: str,
+    future_highs: np.ndarray, future_lows: np.ndarray, future_atr: np.ndarray,
+    future_p_trend: np.ndarray, sl_initial: float,
+    liquidation_price: float = None,
+    m_trail_base: float = 2.0, gamma: float = 0.75,
+    p_trend_exit_threshold_follow: float = 0.35,
+    p_trend_exit_threshold_fade: float = 0.65,
+    consecutive_bars_required: int = 2,
+    t_max_live: int = 120,
+    max_lookforward_override: int = None
+) -> dict:
+    """
+    [v3 / v11.9] Nâng cấp từ v2: Tích hợp kiểm tra giá thanh lý (Liquidation Price).
+    Nếu nến xuyên phá qua cả Liquidation Price trước khi hoặc cùng lúc với SL/Trail, ưu tiên chốt LIQUIDATION hoặc SL.
+    """
+    if side not in (1, -1):
+        raise ValueError(f"Lỗi hải quan B-1-5 (v3): side bắt buộc phải là +1 hoặc -1, nhận {side}")
+        
+    if trade_mode not in ("follow", "fade"):
+        raise ValueError(f"Lỗi hải quan B-1-5 (v3): trade_mode bắt buộc phải là 'follow' hoặc 'fade', nhận {trade_mode}")
+
+    highs = np.asarray(future_highs, dtype=float)
+    lows = np.asarray(future_lows, dtype=float)
+    atr = np.asarray(future_atr, dtype=float)
+    p_trend = np.asarray(future_p_trend, dtype=float)
+
+    n_bars = len(highs)
+    if n_bars == 0:
+        raise ValueError("Lỗi B-1-5 (v3): Mảng future_highs rỗng (0 nến tương lai)!")
+        
+    if len(lows) != n_bars or len(atr) != n_bars or len(p_trend) != n_bars:
+        raise ValueError(f"Lỗi B-1-5 (v3): Độ dài các mảng tương lai lệch nhau: highs={n_bars}, lows={len(lows)}, atr={len(atr)}, p_trend={len(p_trend)}")
+
+    effective_t_max = min(t_max_live, max_lookforward_override) if max_lookforward_override is not None else t_max_live
+    if effective_t_max <= 0:
+        raise ValueError(f"Lỗi B-1-5 (v3): effective_t_max ({effective_t_max}) phải > 0!")
+
+    threshold = p_trend_exit_threshold_follow if trade_mode == "follow" else p_trend_exit_threshold_fade
+    consecutive_flip_count = 0
+
+    if side > 0:
+        extreme_price = entry_price
+        for k in range(min(effective_t_max, n_bars)):
+            # 0. Kiểm tra Liquidation trước (nếu có và hợp lệ)
+            if liquidation_price is not None and liquidation_price > 0 and lows[k] <= liquidation_price:
+                return {"exit_idx": k, "reason": "LIQUIDATION", "boundary_truncated": False}
+            # 1. Kiểm tra Stop-loss cứng
+            if lows[k] <= sl_initial:
+                return {"exit_idx": k, "reason": "SL", "boundary_truncated": False}
+            # 2. Cập nhật cực đại & kiểm tra Trailing
+            extreme_price = max(extreme_price, highs[k])
+            trail_stop = extreme_price - m_trail_base * (1 + gamma * p_trend[k]) * atr[k]
+            if lows[k] <= trail_stop:
+                return {"exit_idx": k, "reason": "TRAIL", "boundary_truncated": False}
+            # 3. Kiểm tra Regime-Flip
+            consecutive_flip_count = _update_regime_flip(p_trend[k], trade_mode, threshold, consecutive_flip_count)
+            if consecutive_flip_count >= consecutive_bars_required:
+                return {"exit_idx": k, "reason": "REGIME_FLIP", "boundary_truncated": False}
+    else:
+        extreme_price = entry_price
+        for k in range(min(effective_t_max, n_bars)):
+            # 0. Kiểm tra Liquidation cho Short (khi giá tăng lên vượt liq_price)
+            if liquidation_price is not None and liquidation_price > 0 and highs[k] >= liquidation_price:
+                return {"exit_idx": k, "reason": "LIQUIDATION", "boundary_truncated": False}
+            # 1. Kiểm tra Stop-loss cứng
+            if highs[k] >= sl_initial:
+                return {"exit_idx": k, "reason": "SL", "boundary_truncated": False}
+            # 2. Cập nhật cực tiểu & kiểm tra Trailing
+            extreme_price = min(extreme_price, lows[k])
+            trail_stop = extreme_price + m_trail_base * (1 + gamma * p_trend[k]) * atr[k]
+            if highs[k] >= trail_stop:
+                return {"exit_idx": k, "reason": "TRAIL", "boundary_truncated": False}
+            # 3. Kiểm tra Regime-Flip
+            consecutive_flip_count = _update_regime_flip(p_trend[k], trade_mode, threshold, consecutive_flip_count)
+            if consecutive_flip_count >= consecutive_bars_required:
+                return {"exit_idx": k, "reason": "REGIME_FLIP", "boundary_truncated": False}
+
+    last_idx = min(effective_t_max, n_bars) - 1
+    is_truncated = (max_lookforward_override is not None) and (effective_t_max < t_max_live)
+    return {"exit_idx": max(last_idx, 0), "reason": "TIME_STOP", "boundary_truncated": is_truncated}
+
+# Alias chuẩn hóa tên gọi
+compute_regime_aware_trailing_exit_v3 = compute_regime_aware_trailing_exit_v3_liquidation_aware
+
+# ============================================================================
+# [TASK B-1-5] SỬA LẠI — bound-trước-khi-tính, KHÔNG patch-sau-khi-tính
+# ============================================================================
+def simulate_trailing_exit_within_fold_bounds(
+    entry_idx: int,
+    entry_price: float,
+    side: int,
+    trade_mode: str,
+    test_window_end_idx: int,
+    full_highs: np.ndarray,
+    full_lows: np.ndarray,
+    full_atr: np.ndarray,
+    full_p_trend: np.ndarray,
+    sl_initial: float,
+    liquidation_price: float = None,
+    t_max_live: int = 120,
+    **trailing_exit_kwargs,
+) -> dict:
+    """
+    [TASK B-1-5] SỬA LỖI: quay lại đúng nguyên tắc gốc — CẮT mảng future_* theo
+    biên fold TRƯỚC KHI gọi hàm trailing-exit, để hàm tính toán không bao giờ có
+    khả năng đọc dữ liệu ngoài fold, thay vì để nó tính tự do rồi patch kết quả sau.
+
+    [ARMOR-PLATED GUARDS — BỌC THÉP CHỐNG RÒ RỈ & MẢNG RỖNG]:
+    - Cắt vật lý ngay tại min(entry_idx + 1 + t_max_live, test_window_end_idx, len(full_highs)).
+    - Xử lý mượt mà kịch bản mảng rỗng sát biên fold.
+    """
+    if not (0 <= entry_idx < len(full_highs)):
+        raise ValueError(f"Lỗi hải quan B-1-5: entry_idx ({entry_idx}) nằm ngoài độ dài mảng full_highs ({len(full_highs)})")
+
+    effective_end = min(entry_idx + 1 + t_max_live, test_window_end_idx, len(full_highs))
+    max_lookforward = max(test_window_end_idx - (entry_idx + 1), 0)
+
+    # Cắt mảng vật lý trước khi đưa vào hàm (Pre-Slice)
+    future_highs = full_highs[entry_idx + 1: effective_end]
+    future_lows = full_lows[entry_idx + 1: effective_end]
+    future_atr = full_atr[entry_idx + 1: effective_end]
+    future_p_trend = full_p_trend[entry_idx + 1: effective_end]
+
+    # Guard an toàn nếu lệnh vào đúng nến cuối của Fold hoặc vượt biên
+    if len(future_highs) == 0:
+        return {
+            "entry_idx": entry_idx,
+            "exit_idx_relative": 0,
+            "exit_idx_absolute": entry_idx,
+            "exit_reason": "TIME_STOP",
+            "boundary_truncated": True,
+        }
+
+    exit_result = compute_regime_aware_trailing_exit_v3_liquidation_aware(
+        entry_price=entry_price,
+        side=side,
+        trade_mode=trade_mode,
+        future_highs=future_highs,
+        future_lows=future_lows,
+        future_atr=future_atr,
+        future_p_trend=future_p_trend,
+        sl_initial=sl_initial,
+        liquidation_price=liquidation_price,
+        t_max_live=t_max_live,
+        max_lookforward_override=max_lookforward,
+        **trailing_exit_kwargs,
+    )
+
+    exit_idx_relative = int(exit_result["exit_idx"])
+    exit_idx_absolute = entry_idx + 1 + exit_idx_relative
+
+    return {
+        "entry_idx": entry_idx,
+        "exit_idx_relative": exit_idx_relative,
+        "exit_idx_absolute": exit_idx_absolute,
+        "exit_reason": exit_result["reason"],
+        "boundary_truncated": bool(exit_result["boundary_truncated"]),
+    }
+
+# ============================================================================
+# BỔ SUNG — Module G cần nhánh riêng cho LIQUIDATION, không dùng công thức PnL thường
+# ============================================================================
+def compute_realized_pnl(
+    side: int,
+    size_notional: float,
+    fill_price_entry: float,
+    fill_price_exit: float,
+    fee_entry_rate: float,
+    fee_exit_rate: float,
+    exit_reason: str,
+    funding_accrued: float = 0.0,
+    liquidation_fee_rate: float = 0.0125,
+    leverage: float = 1.0,
+    is_notional_in_usd: bool = True
+) -> float:
+    """
+    [BỔ SUNG] Nhánh LIQUIDATION: mất toàn bộ tiền ký quỹ (Margin = size_notional / leverage)
+    cộng phí thanh lý thu trên tổng giá trị danh nghĩa.
+    
+    [ARMOR-PLATED GUARDS]:
+    - Phân định rõ is_notional_in_usd (mặc định True là USD Notional) tránh nhầm lẫn đơn vị.
+    """
+    if side not in (1, -1):
+        raise ValueError(f"Lỗi hải quan B-1-5 (compute_realized_pnl): side phải là +1 hoặc -1, nhận {side}")
+        
+    if not isinstance(fill_price_entry, (int, float)) or fill_price_entry <= 0:
+        raise ValueError(f"Lỗi hải quan B-1-5: fill_price_entry phải > 0, nhận {fill_price_entry}")
+        
+    if not isinstance(size_notional, (int, float)) or size_notional < 0:
+        raise ValueError(f"Lỗi hải quan B-1-5: size_notional phải >= 0, nhận {size_notional}")
+        
+    if not isinstance(leverage, (int, float)) or leverage < 1.0:
+        raise ValueError(f"Lỗi hải quan B-1-5: leverage phải >= 1.0, nhận {leverage}")
+
+    if exit_reason == "LIQUIDATION":
+        margin_lost = size_notional / max(leverage, 1.0)
+        liq_penalty = size_notional * liquidation_fee_rate
+        return float(- (margin_lost + liq_penalty) - funding_accrued)
+
+    if is_notional_in_usd:
+        raw_pnl = side * ((fill_price_exit - fill_price_entry) / fill_price_entry) * size_notional
+    else:
+        raw_pnl = side * (fill_price_exit - fill_price_entry) * size_notional
+
+    fee_cost = (fee_entry_rate + fee_exit_rate) * size_notional
+    return float(raw_pnl - fee_cost - funding_accrued)
+
+# ============================================================================
+# UNIT TESTS (TASK B-1-5 & LIQUIDATION PnL ARMOR-PLATED TESTS)
+# ============================================================================
+def test_b_1_5_no_leakage_past_fold_boundary():
+    """
+    Xác nhận bản sửa không bao giờ nhìn thấy dữ liệu ngoài fold (Pre-Slice Zero-Leakage).
+    """
+    n = 60
+    highs = np.full(n, 100.5)
+    lows = np.full(n, 99.5)
+    atr = np.full(n, 1.0)
+    p_trend = np.full(n, 0.5)
+
+    full_highs = np.concatenate([[100.0], highs])
+    full_lows = np.concatenate([[100.0], lows])
+    full_atr = np.concatenate([[1.0], atr])
+    full_p_trend = np.concatenate([[0.5], p_trend])
+
+    entry_idx = 0
+    fold_end_idx = 30
+
+    result = simulate_trailing_exit_within_fold_bounds(
+        entry_idx=entry_idx, entry_price=100.0, side=1, trade_mode="follow",
+        test_window_end_idx=fold_end_idx,
+        full_highs=full_highs, full_lows=full_lows, full_atr=full_atr, full_p_trend=full_p_trend,
+        sl_initial=90.0, liquidation_price=80.0, t_max_live=120,
+    )
+
+    assert result["exit_idx_absolute"] <= fold_end_idx, (
+        f"LEAK: exit_idx_absolute={result['exit_idx_absolute']} vượt fold_end_idx={fold_end_idx}"
+    )
+    assert result["exit_reason"] == "TIME_STOP", f"Kỳ vọng TIME_STOP, nhận {result['exit_reason']}"
+    assert result["boundary_truncated"] is True
+
+    # Kiểm thử thêm PnL Liquidation không bị lỗ ảo gấp 10 lần đòn bẩy
+    pnl_liq = compute_realized_pnl(
+        side=1, size_notional=100000.0, fill_price_entry=100.0, fill_price_exit=80.0,
+        fee_entry_rate=0.0004, fee_exit_rate=0.0004, exit_reason="LIQUIDATION",
+        funding_accrued=50.0, liquidation_fee_rate=0.0125, leverage=10.0
+    )
+    # Kỳ vọng: Mất 10,000 (margin) + 1,250 (phí phạt) + 50 (funding) = -11300.0
+    assert abs(pnl_liq - (-11300.0)) < 1e-4, f"Sai tính toán PnL Liquidation: {pnl_liq}"
+
+    print("✅ [TASK B-1-5] test_b_1_5_no_leakage_past_fold_boundary & Liquidation PnL PASSED!")
+
 if __name__ == "__main__":
     test_b_1_3_compute_sl_initial()
     test_b_1_4_regime_aware_trailing_exit_symmetry()
+    test_b_1_5_no_leakage_past_fold_boundary()

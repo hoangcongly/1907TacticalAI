@@ -61,6 +61,26 @@ def test_behavioral_contract_insufficient_history_violation():
     with pytest.raises(pa.errors.SchemaError):
         SignalBarSchema.validate(df)
 
+def test_behavioral_contract_insufficient_history_mixed_violation():
+    # Kiểm thử dữ liệu trộn lẫn (mixed index): có cả insufficient_history = False (hợp lệ) và True (vi phạm ở dòng thứ 3)
+    df = pd.DataFrame({
+        "bar_idx": [0, 1, 2], "symbol": ["BTCUSDT"]*3, "timestamp_ms": [1600000000000, 1600000060000, 1600000120000],
+        "open": [100.0, 101.0, 102.0], "high": [105.0, 103.0, 104.0], "low": [99.0, 100.0, 101.0], "close": [101.0, 102.0, 103.0],
+        "volume": [10.0, 5.0, 8.0], "ofi": [0.1, -0.1, 0.2], "tick_count": [10, 15, 20],
+        "is_toxic_flag": [False]*3, "is_tail_event": [False]*3,
+        "insufficient_history": [False, True, True], 
+        "trend_score": [1.5, np.nan, 2.0],  # Dòng 0 hợp lệ (False -> có số), Dòng 1 hợp lệ (True -> Null), Dòng 2 VI PHẠM (True -> có số 2.0)
+        "p_trend": [0.8, np.nan, np.nan], "p_chop": [0.2, np.nan, np.nan], "atr_14": [2.5, np.nan, np.nan],
+        "hurst_value": [0.6, np.nan, np.nan], "d_star_used": [0.45, np.nan, np.nan]
+    })
+    
+    df["bar_idx"] = df["bar_idx"].astype("int64")
+    df["timestamp_ms"] = df["timestamp_ms"].astype("int64")
+    df["tick_count"] = df["tick_count"].astype("int64")
+
+    with pytest.raises(pa.errors.SchemaError):
+        SignalBarSchema.validate(df)
+
 def test_trade_record_schema_absolute_index_violation():
     df = pd.DataFrame({
         "schema_version": ["1.0.0"], "dataset_manifest_hash": ["dummy_hash"],

@@ -41,12 +41,6 @@ Trong môi trường giao dịch hệ thống, mỗi bộ tham số (ví dụ: `
 - Bằng cách đặt `sort_keys=True`, hệ thống đảm bảo 2 dictionary có thứ tự key truyền vào khác nhau vẫn tạo ra chuỗi string giống hệt nhau, từ đó băm ra cùng một chuỗi SHA-256 (Hash consistency).
 - Hàm băm này được dùng làm tem xác thực (Seal) kết nối giữa cấu hình tín hiệu (Track A) và kết quả PnL (Track B).
 
-#### C. Cơ chế Tracking Môi trường & Phiên bản (Reproducibility)
-Để đáp ứng nghiêm ngặt Mục 5 của SOP (Experiment Tracking), lớp này bổ sung 2 cơ chế tự động lấy metadata của môi trường:
-- **Git Commit Hash**: Dùng `subprocess.check_output(['git', 'rev-parse', 'HEAD'])` để đính kèm commit hash vào record.
-- **Environment Versions**: Dùng `importlib.metadata.version()` tự động quét phiên bản các thư viện lõi định lượng (`numpy`, `polars`, `numba`, `scikit-learn`). 
-=> **Mục đích**: Chống lại rủi ro sai lệch Sharpe/DSR khi môi trường hoặc mã nguồn thay đổi ngầm (silent changes) giữa các đợt backtest.
-
 ### 3. Sơ Đồ Luồng Hoạt Động Theo Dõi Thử Nghiệm (`Experiment Tracking Pipeline`)
 
 ```mermaid
@@ -62,8 +56,7 @@ flowchart TD
         Lock2["Lock: Write Queue"]
         
         Hasher["SHA-256 Param Hashing\n(json.dumps + sort_keys=True)"]
-        EnvTracker["Git Hash & Package Versions\n(importlib & subprocess)"]
-        Serializer["JSONL Record Serializer\n(Timestamp + TrialClass + Hash + Env)"]
+        Serializer["JSONL Record Serializer\n(Timestamp + TrialClass + Hash)"]
     end
 
     Thread1 -->|params, metrics| ExperimentTrackerNode
@@ -71,9 +64,7 @@ flowchart TD
     Thread3 -->|params, metrics| ExperimentTrackerNode
 
     ExperimentTrackerNode --> Hasher
-    ExperimentTrackerNode --> EnvTracker
     Hasher --> Serializer
-    EnvTracker --> Serializer
     Serializer --> Lock2
 
     subgraph LogStorage["Storage"]
@@ -87,3 +78,14 @@ flowchart TD
 - **Kiểm tra tính nhất quán Hash (`test_hash_consistency`)**: Đảo ngược thứ tự các key trong `dict` và xác nhận mã SHA-256 xuất ra giống nhau 100%.
 - **Kiểm tra An toàn Singleton (`test_singleton_identity`)**: Đảm bảo 2 lần khởi tạo object trả về chung một `id()`.
 - **Kiểm tra Ghi/Đọc File JSONL (`test_log_trial_jsonl_io`)**: Ghi 2 record thử nghiệm, sau đó đọc lại bằng bộ đọc dòng `f.readlines()`, dùng `json.loads` kiểm chứng tính toàn vẹn của dữ liệu và hash lưu lại khớp với dữ liệu gốc.
+
+---
+
+## PHẦN III: PHÁT HIỆN PHÁT SINH (BUG FIXES VÀ CẬP NHẬT CONTRACT V11.9)
+
+Trong quá trình rà soát toàn bộ dự án (`src/aegis/`), 5 lỗi tiềm ẩn nghiêm trọng liên quan đến Data Contract và các lớp bảo vệ đã được phát hiện và khắc phục:
+
+1. **Cập nhật `exit_reason` cho `LIQUIDATION`**: Hàm tính giá thanh lý `compute_regime_aware_trailing_exit_v3_liquidation_aware` trả về `exit_reason = "LIQUIDATION"`, nhưng giá trị này bị thiếu trong `CONSTRACT.md` và `TradeRecordSchema` (`schemas.py`). Đã bổ sung `"LIQUIDATION"` vào `Check.isin` và `TypedDict` để ngăn chặn lỗi `SchemaError` làm sập toàn bộ pipeline.
+2. **Khắc phục lỗi lệch `exit_idx_absolute` khi mảng tương lai rỗng**: Trong `trailing_exit.py` (dòng 452), khi mảng rỗng (nến cuối fold), hệ thống trả về sai `exit_idx_absolute = entry_idx` (đúng chuẩn theo Data Contract phải là `entry_idx + 1`). Đã sửa đổi để đồng bộ với định lý chỉ số tuyệt đối tuyệt đối tại `CONSTRACT.md`.
+3. **Bọc thép (Armor-Plated Guards) cho mảng giá ở `trailing_exit_v3`**: Hàm v3 vô tình loại bỏ các bước xác thực `NaN/Inf` từ v2. Đã phục hồi và chèn bổ sung các ngoại lệ (`ValueError`) chặn ngay đầu vào nếu mảng giá chứa rác (`NaN/Inf`) hoặc biểu đồ nến bị hỏng (`High < Low`), chặn rủi ro *silent corruption*.
+4. **Cảnh báo `ExperimentTracker` Singleton**: Thêm cảnh báo (`warnings.warn`) khi người dùng cố gắng gọi `ExperimentTracker(log_dir=...)` với một đường dẫn mới nhưng đối tượng Singleton đã được khởi tạo trước đó. Tránh hiểu nhầm về tính năng thay đổi thư mục lưu log.

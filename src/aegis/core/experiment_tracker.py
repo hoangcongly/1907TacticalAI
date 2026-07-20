@@ -29,6 +29,9 @@ class ExperimentTracker:
 
     def __init__(self, log_dir: str = "logs/experiments"):
         if getattr(self, '_initialized', False):
+            if self.log_dir != log_dir:
+                import warnings
+                warnings.warn(f"ExperimentTracker là Singleton. Đã khởi tạo với log_dir='{self.log_dir}'. Bỏ qua tham số log_dir='{log_dir}'.")
             return
             
         self.log_dir = log_dir

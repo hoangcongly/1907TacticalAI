@@ -828,3 +828,22 @@ Trong các tổ chức định chế quant trading như Renaissance Technologies
 ### 4. Sự Khác Biệt Giữa Kelly Lý Thuyết và Kelly Thực Nghiệm (`kelly_empirical.py`)
 - **Kelly Lý Thuyết Cổ Điển (`Classical Kelly`):** Giả định mức tỷ lệ lời/lỗ ($b = \text{win/loss}$) là hằng số cố định cho mỗi lệnh. Mô hình này chỉ áp dụng chính xác cho các trò chơi xác suất rời rạc có tỷ lệ cược cố định (cược đồng xu, casino).
 - **Kelly Thực Nghiệm trong Hệ thống Aegis (`Empirical Kelly — kelly_empirical.py`):** Trong giao dịch tài chính thực chiến, phân phối lợi suất của chiến lược là biến thiên liên tục (lệnh lời $+3.5\%$, lệnh lỗ $-0.8\%$, lệnh trailing $+1.2\%$). Thay vì sử dụng công thức gần đúng, `solve_empirical_kelly_fraction` sử dụng thuật toán tối ưu hóa phi tuyến (`scipy.optimize.brentq`) giải trực tiếp phương trình đạo hàm trên chính các mẫu lợi suất lịch sử thực tế, tìm ra nghiệm tỷ lệ phân bổ tối ưu $f^*$ khớp chính xác với đặc tính thống kê và rủi ro thực tế của thị trường.
+
+---
+
+## 6. Kiến Trúc Kiểm Thử (Testing Architecture) & Separation of Concerns
+
+Để tuân thủ chuẩn mực **Separation of Concerns (SoC)** nghiêm ngặt của tổ chức định chế, toàn bộ mã kiểm định (Unit Tests) đã được dời độc lập ra khỏi các module thuật toán trong `src/` và cấu trúc hóa chuẩn mực tại thư mục `tests/`.
+
+### Lợi ích cốt lõi:
+1. **Mã Nguồn Thuần Khiết (Purity of Source):** File thuật toán trong `src/` giờ đây chỉ chứa thuần túy toán học và logic giao dịch, giảm thiểu nhiễu loạn cho quá trình Audit.
+2. **Kiểm Thử Tập Trung (Centralized Testing):** Toàn bộ các mô-đun được bảo vệ bởi hàng rào test case tự động chạy qua framework `pytest`, không còn tình trạng chạy thủ công rời rạc (inline `if __name__ == "__main__":`).
+3. **Bảo Vệ Đa Lớp (Armor-Plated Guards):** Tất cả các bộ phận quan trọng như PnL Engine, Kelly Sizer, Liquidation Layer, Trailing Exit đều đi kèm các **Fault-Injection Stress Tests** mô phỏng bẻ gãy hệ thống (nhồi NaN, số âm, Inf, phân bổ vốn sai) để đảm bảo bộ giáp bảo vệ (Armor Guards) từ chối rủi ro hiệu quả 100%.
+
+### Cấu Trúc Mapping Tests:
+- `src/aegis/meta_labeling/sizing/kelly_empirical.py` $\implies$ `tests/meta_labeling/test_kelly_empirical.py`
+- `src/aegis/meta_labeling/sizing/liquidation_layer.py` $\implies$ `tests/meta_labeling/test_liquidation_layer.py`
+- `src/aegis/meta_labeling/sizing/trade_mode.py` $\implies$ `tests/meta_labeling/test_trade_mode.py`
+- `src/aegis/execution/pnl.py` $\implies$ `tests/execution/test_pnl.py`
+- `src/aegis/execution/position_sizer.py` $\implies$ `tests/execution/test_position_sizer.py`
+- `src/aegis/labeling/trailing_exit.py` $\implies$ `tests/labeling/test_trailing_exit.py`

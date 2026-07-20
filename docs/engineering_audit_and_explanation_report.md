@@ -17,9 +17,9 @@ Trong các định chế tài chính quant trading hàng đầu thế giới (nh
 1. **Trụ Cột 1 — Lớp Kiểm Soát Dữ Liệu & Hợp Đồng Giao Dịch (`Data Gatekeeper — schemas.py / Task B-1-10`)**:  
    Sử dụng mô hình kiểm duyệt kép (`TypedDict` trên RAM cho từng lệnh lẻ và `Pandera DataFrameSchema` cho lô lớn), kết hợp cơ chế Tem Niêm Phong `dataset_manifest_hash` (SHA-256). Trụ cột này đảm bảo 100% dữ liệu đầu vào sạch tuyệt đối, ngăn chặn triệt để các lỗi vi cấu trúc số học trước khi bước vào tính toán.
 2. **Trụ Cột 2 — Lớp Phân Loại Chế Độ & Khóa Cổng An Toàn (`Regime Gate — trade_mode.py / Task B-1-2`)**:  
-   Là hàm định tuyến duy nhất (`Single Source of Truth`) phân chia thị trường thành 3 nhánh: `Follow` (khi xu hướng mạnh $p\_i \ge 0.50$), `Fade` (khi xu hướng yếu $p\_i < 0.20$ VÀ thị trường đi ngang $p\_{\text{chop}} > 0.60$), và `none` (vùng Deadzone $[0.20, 0.50)$ hoặc khi thị trường hỗn mang). Tính năng này giúp giảm thiểu rủi ro khi thị trường không rõ xu hướng.
+   Là hàm định tuyến duy nhất (`Single Source of Truth`) phân chia thị trường thành 3 nhánh: `Follow` (khi xu hướng mạnh $p_i \ge 0.50$), `Fade` (khi xu hướng yếu $p_i < 0.20$ VÀ thị trường đi ngang $p_{\text{chop}} > 0.60$), và `none` (vùng Deadzone $[0.20, 0.50)$ hoặc khi thị trường hỗn mang). Tính năng này giúp giảm thiểu rủi ro khi thị trường không rõ xu hướng.
 3. **Trụ Cột 3 — Lớp Quản Trị Vốn Động Phi Tuyến (`Non-Linear Kelly Sizing — kelly_empirical.py / Task B-1-1`)**:  
-   Động cơ giải tích phi tuyến (`brentq`) giải trực tiếp bài toán cực đại hóa tốc độ tăng trưởng log kỳ vọng $E[\ln(1 + f \cdot r)] \to \max$ trên phân phối thực nghiệm của chiến lược, tích hợp phanh khẩn cấp `Singularity Guard` ngăn rủi ro cháy tài khoản ($1 + f \cdot r\_i \le 0$).
+   Động cơ giải tích phi tuyến (`brentq`) giải trực tiếp bài toán cực đại hóa tốc độ tăng trưởng log kỳ vọng $E[\ln(1 + f \cdot r)] \to \max$ trên phân phối thực nghiệm của chiến lược, tích hợp phanh khẩn cấp `Singularity Guard` ngăn rủi ro cháy tài khoản ($1 + f \cdot r_i \le 0$).
 
 ### Sơ Đồ Kiến Trúc Tổng Thể Hệ Thống (`Master System Architecture Pipeline`)
 ```mermaid
@@ -51,7 +51,7 @@ flowchart TD
 ```
 
 > [!NOTE]
-> **Trạng Thái Hoàn Thành & Phạm Vi Kiến Trúc (`Architectural Scope & Reality Check`):** Cấu trúc 3 trụ cột (Data Gatekeeper -> Regime Gate -> Kelly Sizing) tạo ra nền tảng phòng thủ kiên cố cho hệ thống. Tuy nhiên, tính đến thời điểm báo cáo, chúng ta mới xây dựng và hoàn thiện kiểm định TDD cho khoảng ~8 module/hàm cốt lõi (schemas, trade\_mode, sl\_initial, trailing\_exit v3, liquidation\_layer, kelly solver). Các trụ cột xử lý dữ liệu tick (Module A), bộ lọc Kalman/HMM (Module B), phát hiện sự kiện CUSUM (Module C), chọn đặc trưng (Module D), kiểm định chéo CPCV/PBO (Module F), khớp lệnh thực tế (Module G) và Circuit Breaker (Module J) là phần việc lớn nằm trong lộ trình ~80 task tiếp theo cần kiên trì hoàn thiện.
+> **Trạng Thái Hoàn Thành & Phạm Vi Kiến Trúc (`Architectural Scope & Reality Check`):** Cấu trúc 3 trụ cột (Data Gatekeeper -> Regime Gate -> Kelly Sizing) tạo ra nền tảng phòng thủ kiên cố cho hệ thống. Tuy nhiên, tính đến thời điểm báo cáo, chúng ta mới xây dựng và hoàn thiện kiểm định TDD cho khoảng ~8 module/hàm cốt lõi (schemas, trade_mode, sl_initial, trailing_exit v3, liquidation_layer, kelly solver). Các trụ cột xử lý dữ liệu tick (Module A), bộ lọc Kalman/HMM (Module B), phát hiện sự kiện CUSUM (Module C), chọn đặc trưng (Module D), kiểm định chéo CPCV/PBO (Module F), khớp lệnh thực tế (Module G) và Circuit Breaker (Module J) là phần việc lớn nằm trong lộ trình ~80 task tiếp theo cần kiên trì hoàn thiện.
 
 ### Sơ Đồ Trạng Thái Kiến Trúc Toàn Hệ Thống (v11.8 Status Map)
 
@@ -64,32 +64,32 @@ flowchart TD
     classDef roadmap fill:#16161d,stroke:#444454,stroke-width:1px,color:#7a7a8a,stroke-dasharray: 5 5;
 
     subgraph RAW_DATA ["LỚP DỮ LIỆU ĐẦU VÀO"]
-        RAW["Dữ liệu Raw Tick / 1s OHLCV<br/>(PIT Manifest & Hash Verified)"]:::inprogress
+        RAW["Dữ liệu Raw Tick / 1s OHLCV<br/>(PIT Manifest & Hash Verified)"]:::roadmap
     end
 
     subgraph PRE_PROCESSING ["GIAI ĐOẠN 0: LỌC NHIỄU & TẠO NẾN DOLLAR-VOLUME (MODULE A & A.0)"]
-        MAD["0. Lọc Outlier Tick-Level:<br/>MAD 5σ + Spike + Reversal<br/>+ Cross-Venue Parity"]:::inprogress
-        KALMAN["0.1 TickLevelKalmanReplacer:<br/>Predict-Only vs Update Protocol"]:::inprogress
-        A1["1. PIT-Safe Threshold θ_t:<br/>SMA_21(shift(1) Daily Volume) / target_freq"]:::inprogress
-        A2["1.1 map_daily_threshold_to_ticks:<br/>ASOF Backward Join O(N)"]:::inprogress
-        A3["1.2 Median Ticks to Fill (Two-Pass):<br/>Worst-Case Allocation n_ticks"]:::inprogress
-        A4["2. Dollar-Volume Bar Generator:<br/>Numba JIT O(N) Float64 Safe Reset"]:::inprogress
-        A5["3. Tick Rule Classification:<br/>OFI_t = (V_buy - V_sell)/(V_buy + V_sell)"]:::inprogress
-        A6["4. Bar Toxicity Flag:<br/>tick_count < 0.5 * median -> is_high_toxicity"]:::inprogress
+        MAD["0. Lọc Outlier Tick-Level:<br/>MAD 5σ + Spike + Reversal<br/>+ Cross-Venue Parity"]:::roadmap
+        KALMAN["0.1 TickLevelKalmanReplacer:<br/>Predict-Only vs Update Protocol"]:::roadmap
+        A1["1. PIT-Safe Threshold θ_t:<br/>SMA_21(shift(1) Daily Volume) / target_freq"]:::roadmap
+        A2["1.1 map_daily_threshold_to_ticks:<br/>ASOF Backward Join O(N)"]:::roadmap
+        A3["1.2 Median Ticks to Fill (Two-Pass):<br/>Worst-Case Allocation n_ticks"]:::roadmap
+        A4["2. Dollar-Volume Bar Generator:<br/>Numba JIT O(N) Float64 Safe Reset"]:::roadmap
+        A5["3. Tick Rule Classification:<br/>OFI_t = (V_buy - V_sell)/(V_buy + V_sell)"]:::roadmap
+        A6["4. Bar Toxicity Flag:<br/>tick_count < 0.5 * median -> is_high_toxicity"]:::roadmap
     end
 
     subgraph MODULE_A3 ["GIAI ĐOẠN 1: SAI PHÂN PHÂN SỐ BẢO TOÀN BỘ NHỚ (MODULE A.3)"]
-        FFD_DECIDE["select_ffd_production_engine<br/>(Auto Decision Logic)"]:::inprogress
-        FFD_W["FFD Phương án 1 (Mặc định):<br/>Windowed FFD (τ=1e-5 -> W* [80, 150])"]:::inprogress
-        FFD_P["FFD Phương án 2 (Approved):<br/>Prony Sum-of-Exponentials (ρ < 0)"]:::inprogress
+        FFD_DECIDE["select_ffd_production_engine<br/>(Auto Decision Logic)"]:::roadmap
+        FFD_W["FFD Phương án 1 (Mặc định):<br/>Windowed FFD (τ=1e-5 -> W* [80, 150])"]:::roadmap
+        FFD_P["FFD Phương án 2 (Approved):<br/>Prony Sum-of-Exponentials (ρ < 0)"]:::roadmap
     end
 
     subgraph ALPHA_GENERATION ["GIAI ĐOẠN 2: TÍN HIỆU SƠ CẤP & CƠ CHẾ GÁN NHÃN ĐỘNG"]
         subgraph MODULE_B ["MODULE B: PRIMARY SIGNAL ENGINE"]
             B0["B.0 Parametric Bootstrap LRT (N=1 vs N=2)"]:::roadmap
-            B1["B.1 Causal HMM 2D Emission (Zero-Var Clamp)"]:::inprogress
-            B2["B.2 IMM Kalman 2D + sanitize_covariance_matrix"]:::inprogress
-            B3["B.3 GHE (W=168, Lags [2, 4, 8, 16])"]:::inprogress
+            B1["B.1 Causal HMM 2D Emission (Zero-Var Clamp)"]:::roadmap
+            B2["B.2 IMM Kalman 2D + sanitize_covariance_matrix"]:::roadmap
+            B3["B.3 GHE (W=168, Lags [2, 4, 8, 16])"]:::roadmap
         end
 
         subgraph MODULE_C ["MODULE C: EVENT GENERATION & LABELS"]
@@ -103,17 +103,17 @@ flowchart TD
     subgraph SIZING_ENGINE ["GIAI ĐOẠN 3: ĐỒNG THUẬN TÍNH NĂNG & TỐI ƯU HÓA KELLY THỰC NGHIỆM"]
         D1["D.1 Triple Consensus Selection:<br/>MDI + MDA + SFI"]:::roadmap
         D2["D.2 Hierarchical Clustering:<br/>Correlations |ρ| > 0.70 Clamped"]:::roadmap
-        E1["E.1 PurgedKFold + CalibratedClassifierCV"]:::inprogress
-        E2["E.2 Weighted Bootstrap Forest (u_weights)"]:::inprogress
+        E1["E.1 PurgedKFold + CalibratedClassifierCV"]:::roadmap
+        E2["E.2 Weighted Bootstrap Forest (u_weights)"]:::roadmap
         E3["E.3 Empirical Kelly Sizing:<br/>Follow/Fade tables & confidence discount"]:::completed
     end
 
     subgraph VALIDATION_FRAMEWORK ["GIAI ĐOẠN 4: KHUNG KIỂM ĐỊNH CPCV & QUY TRÌNH 5 BƯỚC v11.8"]
-        F0["F.0 THỨ TỰ BẮT BUỘC 5 BƯỚC v11.8:<br/>1. CPCV 15-Fold OOS Generation<br/>2. run_trailing_exit_for_oos_event (Symmetric Exit)<br/>3. resolve_absolute_exit_idx (Đồng bộ tuyệt đối)<br/>4. filter_boundary_truncated (Kelly Filter)<br/>5. Tính Sharpe OOS & DSR >= 0.95 / PBO <= 0.40"]:::inprogress
+        F0["F.0 THỨ TỰ BẮT BUỘC 5 BƯỚC v11.8:<br/>1. CPCV 15-Fold OOS Generation<br/>2. run_trailing_exit_for_oos_event (Symmetric Exit)<br/>3. resolve_absolute_exit_idx (Đồng bộ tuyệt đối)<br/>4. filter_boundary_truncated (Kelly Filter)<br/>5. Tính Sharpe OOS & DSR >= 0.95 / PBO <= 0.40"]:::roadmap
     end
 
     subgraph PRODUCTION_HARDENING ["GIAI ĐOẠN 5: KIỂM ĐỊNH LÂM SÀNG & KHÓA VẬN HÀNH PRODUCTION"]
-        G_K["Modules G, H, I, J, K:<br/>Execution Simulator + 8-Component Parity + Shadow Mode Gate<br/>+ Drawdown Breaker + Funding Accrual tuyệt đối"]:::inprogress
+        G_K["Modules G, H, I, J, K:<br/>Execution Simulator + 8-Component Parity + Shadow Mode Gate<br/>+ Drawdown Breaker + Funding Accrual tuyệt đối"]:::roadmap
     end
 
     subgraph RTK_HANDOFF ["LỚP BÀN GIAO NHỊ PHÂN (RUST RTK HANDOFF)"]
@@ -175,17 +175,20 @@ def check_ohlc_logic(df: pd.DataFrame) -> pd.Series:
 ```python
 def check_insufficient_history_nulls(df: pd.DataFrame) -> pd.Series:
     mask = df["insufficient_history"] == True
+    result = pd.Series(True, index=df.index)
     if not mask.any():
-        return pd.Series(True, index=df.index)
-    
-    invalid_rows = df[mask][["trend_score", "p_trend", "p_chop", "atr_14", "hurst_value"]].notna().any(axis=1)
-    return ~invalid_rows
+        return result
+
+    cols = ["trend_score", "p_trend", "p_chop", "atr_14", "hurst_value"]
+    invalid = df.loc[mask, cols].notna().any(axis=1)
+    result.loc[mask] = ~invalid
+    return result
 ```
 - **Bóc tách từng bước xử lý:**
   1. `mask = df["insufficient_history"] == True`: Lọc ra danh sách (`mask`) chứa các cây nến thuộc giai đoạn khởi động ($W$ bar đầu tiên sau gap chưa đủ dữ liệu tính toán rolling).
-  2. `if not mask.any(): return pd.Series(True, ...)`: Bước đi tắt tối ưu hiệu năng! Nếu toàn bộ bảng nến đều đã đủ dữ liệu (`mask` toàn `False`), hàm lập tức trả về `True` cho tất cả các dòng mà không tốn CPU quét thêm.
-  3. `df[mask][["trend_score", ...]].notna().any(axis=1)`: Khoanh vùng các nến khởi động, chọn ra 5 cột chỉ báo rolling, hỏi xem có ô nào bị điền giá trị khác Null (`notna()`) theo từng hàng ngang (`any(axis=1)`) hay không.
-  4. `return ~invalid_rows`: Sử dụng toán tử đảo bit `~` (`Bitwise NOT`) để chuyển đổi: Nến nào bị phát hiện phạm luật điền số (`invalid_rows = True`) sẽ biến thành `False` (bị Pandera báo động hú còi loại bỏ).
+  2. `if not mask.any(): return result`: Bước đi tắt tối ưu hiệu năng! Nếu toàn bộ bảng nến đều đã đủ dữ liệu (`mask` toàn `False`), hàm lập tức trả về `True` cho tất cả các dòng mà không tốn CPU quét thêm.
+  3. `df.loc[mask, cols].notna().any(axis=1)`: Khoanh vùng các nến khởi động, chọn ra 5 cột chỉ báo rolling, hỏi xem có ô nào bị điền giá trị khác Null (`notna()`) theo từng hàng ngang (`any(axis=1)`) hay không.
+  4. `result.loc[mask] = ~invalid`: Sử dụng toán tử đảo bit `~` (`Bitwise NOT`) để chuyển đổi, và CHỈ ghi đè lên các hàng thuộc `mask` vào `result` có đầy đủ index như ban đầu. Bằng cách này, ta bảo toàn 100% độ dài và index của Series gốc.
 - **Lý do định chế:** Tránh lỗi "ngộ nhận tín hiệu" phổ biến ở các trader nghiệp dư (khi mới bật máy, bộ rolling chưa đủ dữ liệu thường tự điền `0.0`, khiến AI tưởng thị trường đang đi ngang `Chop` và vào lệnh sai).
 
 #### C. Hàm kiểm tra logic tra cứu tuyệt đối `check_absolute_index_logic(df)`
@@ -223,7 +226,7 @@ def compute_dataset_manifest_hash(bar_df, generation_params) -> str:
 1. **Khâu 1 — Kiểm tra tĩnh từng bản ghi đơn lẻ trên RAM (`Single Trade Record Validations`):**  
    Khi chạy mô phỏng giao dịch (tại Module G Execution Simulator hoặc Module B Meta-Labeling), mỗi khi có tín hiệu mua/bán, code Python sẽ tạo ra từng bản ghi giao dịch đơn lẻ (`Single Trade Record`) dưới dạng từ điển (`dict`).  
    - Nếu sử dụng `dict` thông thường (`{'entry_idx': 100, ...}`), lập trình viên có thể gõ nhầm tên key (`realized_retun` thay vì `realized_return`) hoặc truyền sai kiểu dữ liệu. Lỗi này sẽ tiềm ẩn bên trong và chỉ phát sinh lỗi sau thời gian dài mô phỏng.  
-   - 👉 **Task B-1-10 (`class TradeRecord(TypedDict)`) đóng vai trò khuôn chuẩn tĩnh cho từng bản ghi**: Nó buộc IDE và công cụ phân tích kiểu `mypy` tự động kiểm tra, gợi ý và nhắc nhở từng trường chuẩn (`entry_idx`, `p_i`, `realized_return`), giúp phát hiện sớm lỗi gõ nhầm trường dữ liệu ngay trong quá trình soạn thảo mã nguồn.
+   - 👉 **Task B-1-10 (`class TradeRecord(TypedDict)`) đóng vai trò khuôn chuẩn tĩnh cho từng bản ghi**: Nó buộc IDE và công cụ phân tích kiểu `mypy` tự động kiểm tra, gợi ý và nhắc nhở toàn bộ 22 trường chuẩn của bản ghi giao dịch (đồng bộ 100% với `TradeRecordSchema`), giúp phát hiện sớm lỗi gõ nhầm trường dữ liệu ngay trong quá trình soạn thảo mã nguồn.
 
 2. **Khâu 2 — Kiểm định batch lô lớn trên DataFrame (`Dynamic DataFrame Verification`):**  
    Sau khi các `TradeRecord` đơn lẻ được gom lại thành bảng lớn (`pandas.DataFrame`), hệ thống bật máy quét siêu tốc **`TradeRecordSchema` (Pandera)** để kiểm tra động toàn bộ mảng bằng C/Cython, đảm bảo tính hợp lệ tuyệt đối của logic toán học (`check_absolute_index_logic`) và dòng chảy kế thừa `dataset_manifest_hash`.
@@ -253,58 +256,94 @@ File [src/aegis/meta_labeling/sizing/kelly_empirical.py](file:///Users/hoangcong
 ### 1. Tại Sao Task B-1-1 Là Động Cơ Lõi Của Kiến Trúc Quản Trị Vốn?
 Trong kiến trúc Master Blueprint v11.8, `solve_empirical_kelly_fraction` đảm nhận 3 vai trò nền tảng:
 1. **Máy Tính Đạo Hàm & Dò Nghiệm Tối Ưu (`Non-linear Solver`):**  
-   Thay vì sử dụng các công thức tĩnh hay phán đoán cảm tính, hàm thực thi chính xác toán học cực đại hóa $E[\ln(1 + f \cdot r)] \to \max$ bằng thuật toán Brent's Method (`brentq`).
+   - **`assert np.all(returns_sample >= -1.0)`**: Đây là chốt chặn bảo vệ tính toàn vẹn của dữ liệu mô phỏng. Mảng `returns_sample` đưa vào Kelly BẮT BUỘC phải là **Lợi suất Cơ sở Chưa dùng đòn bẩy (Unleveraged Return)**. Ví dụ: Nếu tài sản biến động 5%, $r = \pm 0.05$. Từ đó Kelly sẽ tìm ra đòn bẩy tối ưu $f^*$. Lỗi rò rỉ "Nghịch lý Thanh lý" xảy ra nếu ta truyền nhầm lợi suất ký quỹ (Margin Return) vào Kelly. Khi bị thanh lý (lỗ 100% tiền cọc $\implies r_{\text{margin}} = -1.0$), nếu đưa sai giá trị này vào, Kelly sẽ tưởng lầm rằng chính tài sản cơ sở đã rớt về 0 (như vụ sập LUNA), và nó sẽ vĩnh viễn khóa đòn bẩy quỹ ở mức $f \le 1.0$! Chốt chặn này ngăn ngừa những sai sót "ngây thơ" về vi cấu trúc thị trường khi lập trình.
+   - **Hàm Objective (`growth_derivative`)**: Theo tiêu chuẩn định lượng, mục tiêu không phải là tối đa hóa lợi nhuận tuyệt đối (dễ dẫn đến cháy túi), mà là tối đa hóa **Tỷ lệ tăng trưởng kép (`Geometric Growth Rate`)**. Đạo hàm của hàm tăng trưởng $G(f) = E[\ln(1 + f \cdot r)]$ bằng $0$ tại điểm Kelly tối ưu. Do đó, ta đi tìm nghiệm $f^*$ sao cho $E[\frac{r}{1 + f \cdot r}] = 0$.
 2. **Khối Lõi Phục Vụ Xây Bảng Tra Cứu Kelly 2D (`Kelly 2D Lookup Table Engine`):**  
-   Để phục vụ giao dịch thực chiến tốc độ cao, hệ thống chia không gian xác suất $[0, 1] \times [0, 1]$ thành lưới 10x10 (`100 buckets`). Với mỗi ô lưới, hệ thống gom mẫu giao dịch tương ứng và gọi trực tiếp hàm `solve_empirical_kelly_fraction` (Task B-1-1) 100 lần để tính tỷ lệ tối ưu $f\_{ij}^*$ điền vào bảng tra cứu.
+   Để phục vụ giao dịch thực chiến tốc độ cao, hệ thống chia không gian xác suất $[0, 1] \times [0, 1]$ thành lưới 10x10 (`100 buckets`). Với mỗi ô lưới, hệ thống gom mẫu giao dịch tương ứng và gọi trực tiếp hàm `solve_empirical_kelly_fraction` (Task B-1-1) 100 lần để tính tỷ lệ tối ưu $f_{ij}^*$ điền vào bảng tra cứu.
 3. **Cơ Chế Phanh Khẩn Cấp (`Severe Drawdown Prevention Guard`):**  
-   Nhờ dòng kiểm tra `if np.any(denom <= 1e-6): return -1e6`, Task B-1-1 đóng vai trò như một bộ phanh an toàn tự động: Ngăn chặn triệt để các mức tỷ lệ đặt cược gây suy kiệt vốn ($1 + f \cdot r\_i \le 0$) ngay trong bước dò nghiệm.
+   Nhờ dòng kiểm tra `if np.any(denom <= 1e-6): return -1e6`, Task B-1-1 đóng vai trò như một bộ phanh an toàn tự động: Ngăn chặn triệt để các mức tỷ lệ đặt cược gây suy kiệt vốn ($1 + f \cdot r_i \le 0$) ngay trong bước dò nghiệm.
+
+> [!NOTE]
+> **Phân Tích Độ Nhạy Mẫu Số & Bootstrap CI (`Bootstrap Confidence Interval`):** Mặc dù $N \ge 30$ là quy tắc CLT tối thiểu, nhưng do rủi ro "Fat Tails", chúng ta sử dụng hàm bọc ngoài `solve_empirical_kelly_fraction_with_confidence`. Hàm này sử dụng **Bootstrapping** (lấy mẫu lại có hoàn lại `n_bootstraps=1000` lần) để tạo ra một dải phân phối các $f^*$. Thay vì lấy giá trị điểm (`Point Estimate`), hệ thống bảo thủ trích xuất phân vị thứ 25 (`lower_percentile=25.0`), đảm bảo tỷ lệ cược luôn được hạ thấp an toàn trước những sai số nhiễu trong mẫu nhỏ, triệt tiêu rủi ro Overfitting.
 
 ### 2. Giải Phẫu Hàm Lõi `solve_empirical_kelly_fraction`
 ```python
-def solve\_empirical\_kelly\_fraction(returns\_sample: np.ndarray, f\_max: float = 1.0) -> float:
+DEFAULT_F_MAX_NOTIONAL_CAP = 3.0
+DEFAULT_LAMBDA_KELLY = 0.5  # Half-Kelly chiết khấu rủi ro mô hình
+
+def solve_empirical_kelly_fraction(returns_sample: np.ndarray, f_max: float = DEFAULT_F_MAX_NOTIONAL_CAP, lambda_kelly: float = DEFAULT_LAMBDA_KELLY) -> float:
+    returns_sample = returns_sample[np.isfinite(returns_sample)]
+    if len(returns_sample) < 30: return 0.0
+    assert np.all(returns_sample >= -1.0), "Canary Error: return < -100% sau khi đã lọc NaN/Inf"
+
+def solve_empirical_kelly_fraction_with_confidence(returns_sample: np.ndarray, f_max: float = DEFAULT_F_MAX_NOTIONAL_CAP, lambda_kelly: float = DEFAULT_LAMBDA_KELLY, n_bootstraps: int = 1000, lower_percentile: float = 25.0) -> float:
 ```
+
+#### Tách Biệt Kiến Trúc Tường Minh & Chiết Khấu Fractional Kelly ($\lambda$)
+> [!IMPORTANT]
+> **Phát Hiện A & Cơ Chế Chiết Khấu Rủi Ro Mô Hình ($\lambda$):** 
+> 1. **`DEFAULT_F_MAX_NOTIONAL_CAP = 3.0` (Trần Rủi Ro Biến Động Giá):** Quyết định `size_notional = f* × Equity`. Việc nâng `f_max` lên 20.0 là một sự đánh đồng nguy hiểm, vì vị thế notional 20x làm rớt 5% giá là mất 100% vốn — độc lập với mức đòn bẩy sàn chọn ở tầng margin. Trần rủi ro giá được giới hạn bảo thủ ở mức $\le 3.0$ (3x equity).
+> 2. **`DEFAULT_LAMBDA_KELLY = 0.5` (Fractional Kelly Discount Factor $\lambda$):** Vị thế thực tế được phân bổ là $f_{\text{allocated}} = \lambda \cdot f^*$. Việc sử dụng Half-Kelly ($\lambda = 0.5$) là chuẩn mực định chế giúp giảm 75% biến động tài khoản (`Drawdown Variance`) trong khi chỉ giảm 25% tỷ lệ tăng trưởng kép, chủ động triệt tiêu sai số ước lượng mẫu và rủi ro mô hình (`Model Risk`).
+> 3. **`MARGIN_LEVERAGE_CAP = 20.0` (Trần Hiệu Quả Ký Quỹ Margin):** Chỉ ảnh hưởng khoảng cách tới giá thanh lý, KHÔNG ảnh hưởng PnL của lệnh thoát thông thường (SL/TRAIL/REGIME_FLIP).
+
+#### Canary Error Assertion (Thứ Tự NaN-Safe)
+- **`assert np.all(returns_sample >= -1.0)`**: Chạy **SAU** khi đã lọc bỏ các giá trị `NaN/Inf` (`returns_sample[np.isfinite(...)]`). Điều này ngăn ngừa báo lỗi giả (`false-positive`) do `NaN >= -1.0` trả về `False` trong NumPy. Mảng `returns_sample` đưa vào Kelly BẮT BUỘC phải là **Lợi suất Cơ sở Chưa dùng đòn bẩy (Unleveraged Return)**. Ví dụ: Nếu tài sản biến động 5%, $r = \pm 0.05$. Chốt chặn này đảm bảo nếu xuất hiện lỗ $> -100\%$ chưa đòn bẩy (lỗi số học rò rỉ), hệ thống sẽ ném lỗi ngay lập tức.
+
 
 #### A. Lọc Dữ Liệu và Kiểm Tra Kích Thước Mẫu (`Sample Size Guard`)
 ```python
-returns\_sample = returns\_sample[np.isfinite(returns\_sample)]
-if len(returns\_sample) < 30:
+returns_sample = returns_sample[np.isfinite(returns_sample)]
+if len(returns_sample) < 30:
     return 0.0
 ```
 - Lọc bỏ các số `NaN` hoặc `Inf` để bảo đảm đạo hàm hợp lệ.
 - Kiểm tra số lượng lệnh tối thiểu $N \ge 30$. Nếu dưới 30 lệnh, Định lý Giới Hạn Trung Tâm (`Central Limit Theorem`) chưa đủ lực để đảm bảo phân phối mẫu đại diện cho thực tế $\implies$ Trả về $f^* = 0.0$ (Không cược tiền khi thiếu dữ liệu để chống Overfitting).
-  > [!NOTE]
-  > **Phân Tích Độ Nhạy Mẫu Số (`Sample Size Sensitivity N=30 vs 100 vs 200`):** Ngưỡng $N \ge 30$ là quy tắc kinh nghiệm căn bản theo CLT. Tuy nhiên, trong phân tích định lượng thực chiến, phân phối lợi suất thường có đuôi dày (`fat-tailed`) và lệch (`skewed`). Vì công thức Kelly cực kỳ nhạy cảm với các rủi ro tổn thất đuôi (`tail risk`), mức $N=30$ có thể chưa đủ kiên cố. Trong giai đoạn kiểm định hệ thống toàn diện tại Module F (`CPCV/DSR/PBO`), chúng ta sẽ chạy bài kiểm tra độ nhạy (`sensitivity test` với $N=30, 100, 200$) để đánh giá tính ổn định của $f^*$ trước khi ấn định quy mô đặt cược live.
+
+#### A.1. Giới Hạn Đòn Bẩy Động (`Dynamic Leverage Cap — f_max_safe`)
+```python
+min_return = np.min(returns_sample)
+if min_return < 0:
+    f_max_safe = min(f_max, 0.999 / abs(min_return))
+else:
+    f_max_safe = f_max
+```
+- **Nền tảng Toán học:**
+  Hàm $\ln(1 + f \cdot r)$ chỉ hợp lệ khi $1 + f \cdot r > 0$. Nếu mẫu chứa lệnh bị thanh lý ($r_{\min} = -1.0$), thì $f$ tối đa cho phép là $f < \frac{1}{|r_{\min}|} = 1.0$. Khi gọi `brentq` với `f_max = 3.0` (hoặc bất kỳ $f_{\max} > 1.0$) trên mẫu này, thuật toán sẽ thử $f = 2.0$ → $1 + 2 \times (-1) = -1 \le 0$ → $\ln(\le 0)$ **vô nghĩa** → crash!
+- **Giải pháp:** Trước khi gọi `brentq`, hệ thống tính $f_{\max\_safe} = \min(f_{\max}, \frac{0.999}{|r_{\min}|})$ để đảm bảo miền dò nghiệm $[0, f_{\max\_safe}]$ luôn nằm trong vùng $\ln$ hợp lệ. Kết quả: Nếu mẫu có lệnh thanh lý $-100\%$, Kelly tự động hiểu rằng **không thể dùng đòn bẩy** ($f^* \le 0.999$). (Với `f_max = DEFAULT_F_MAX_NOTIONAL_CAP = 3.0`).
+
+> [!NOTE]
+> **Phân Tích Độ Nhạy Mẫu Số & Bootstrap CI (`Bootstrap Confidence Interval`):** Mặc dù $N \ge 30$ là quy tắc CLT tối thiểu, nhưng do rủi ro "Fat Tails", chúng ta sử dụng hàm bọc ngoài `solve_empirical_kelly_fraction_with_confidence`. Hàm này sử dụng **Bootstrapping** (lấy mẫu lại có hoàn lại `n_bootstraps=1000` lần) để tạo ra một dải phân phối các $f^*$. Thay vì lấy giá trị điểm (`Point Estimate`), hệ thống bảo thủ trích xuất phân vị thứ 25 (`lower_percentile=25.0`), đảm bảo tỷ lệ cược luôn được hạ thấp an toàn trước những sai số nhiễu trong mẫu nhỏ, triệt tiêu rủi ro Overfitting.
 
 #### B. Phương Trình Đạo Hàm Tăng Trưởng Log Kỳ Vọng (`growth_derivative`)
 ```python
-def growth\_derivative(f):
-    denom = 1.0 + f * returns\_sample
+def growth_derivative(f):
+    denom = 1.0 + f * returns_sample
     if np.any(denom <= 1e-6):
         return -1e6
-    return np.mean(returns\_sample / denom)
+    return np.mean(returns_sample / denom)
 ```
 - **Nền tảng Toán học:**  
   Mục tiêu là cực đại hóa hàm tăng trưởng: $G(f) = E\left[ \ln(1 + f \cdot r) \right]$. Đạo hàm bậc nhất theo $f$ là $G'(f) = E\left[ \frac{r}{1 + f \cdot r} \right] = 0$.
 - **Cơ chế bảo vệ thâm hụt vốn (`if np.any(denom <= 1e-6): return -1e6`):**  
-  Đây là chốt chặn quan trọng! Nếu thử nghiệm một tỷ lệ `f` quá lớn khiến lệnh thua ($r\_i < 0$) làm số dư $1 + f \cdot r\_i \le 0$ (Suy kiệt vốn), code trả về `-1e6` để báo hiệu thuật toán dò nghiệm `brentq` cần lùi về vùng tỷ lệ an toàn hơn.
+  Đây là chốt chặn quan trọng! Nếu thử nghiệm một tỷ lệ `f` quá lớn khiến lệnh thua ($r_i < 0$) làm số dư $1 + f \cdot r_i \le 0$ (Suy kiệt vốn), code trả về `-1e6` để báo hiệu thuật toán dò nghiệm `brentq` cần lùi về vùng tỷ lệ an toàn hơn.
 
 #### C. Chốt Chặn Hai Đầu Mút & Thuật Toán Brent's Method (`brentq`)
 ```python
-if growth\_derivative(0.0) <= 0: return 0.0
-if growth\_derivative(f\_max) > 0: return f\_max
-return brentq(growth\_derivative, 0.0, f\_max, xtol=1e-6)
+if growth_derivative(0.0) <= 0: return 0.0
+if growth_derivative(f_max_safe) > 0: return f_max_safe
+return brentq(growth_derivative, 0.0, f_max_safe, xtol=1e-6)
 ```
 - **Chốt 1 ($f = 0.0$):** Tại $f=0$, $G'(0) = E[r]$. Nếu trung bình lợi suất của chiến lược $E[r] \le 0$ (chiến lược không có kỳ vọng dương), hệ thống khóa nghiệm tại `0.0` (Không cược tiền).
-- **Chốt 2 ($f = f\_{\max}$):** Nếu tại mức cược tối đa (ví dụ $100\%$ hoặc $25\%$), đường cong tăng trưởng vẫn dốc lên ($G'(f\_{\max}) > 0$), khóa nghiệm tại trần $f\_{\max}$ để tuân thủ giới hạn quản trị rủi ro.
-- **Chốt 3 (`brentq`):** Nếu $G'(0) > 0$ và $G'(f\_{\max}) \le 0$, theo Định lý Giá Trị Trung Gian (`Intermediate Value Theorem`), chắc chắn tồn tại duy nhất một nghiệm $f^* \in (0, f\_{\max})$ nơi đạo hàm bằng 0. Thuật toán `brentq` (kết hợp chia đôi, cát tuyến và nội suy nghịch đảo bậc 2) sẽ dò tìm ra nghiệm với sai số $< 10^{-6}$.
+- **Chốt 2 ($f = f_{\max\_safe}$):** Nếu tại mức đòn bẩy tối đa an toàn (đã được giới hạn động bởi `f_max_safe`), đường cong tăng trưởng vẫn dốc lên ($G'(f_{\max\_safe}) > 0$), khóa nghiệm tại trần an toàn để tuân thủ giới hạn quản trị rủi ro.
+- **Chốt 3 (`brentq`):** Nếu $G'(0) > 0$ và $G'(f_{\max\_safe}) \le 0$, theo Định lý Giá Trị Trung Gian (`Intermediate Value Theorem`), chắc chắn tồn tại duy nhất một nghiệm $f^* \in (0, f_{\max\_safe})$ nơi đạo hàm bằng 0. Vì `f_max_safe` đã đảm bảo $1 + f \cdot r_{\min} > 0 \; \forall f \in [0, f_{\max\_safe}]$, hàm `growth_derivative` hoàn toàn **liên tục** trên miền dò nghiệm, thuật toán `brentq` dò tìm ra nghiệm với sai số $< 10^{-6}$ mà không bao giờ va vào bức tường phá sản.
 
 ### 3. Kiểm Thử TDD Phân Phối Bernoulli (`test_solve_empirical_kelly_fraction` & Coin Toss)
 ```python
-def test\_b\_1\_1\_kelly\_classical\_coin\_toss():
+def test_b_1_1_kelly_classical_coin_toss():
     np.random.seed(42)
-    sample = np.random.choice([1.0, -1.0], p=[0.6, 0.4], size=10000)
-    f\_star = solve\_empirical\_kelly\_fraction(sample, f\_max=1.0)
-    assert abs(f\_star - 0.2) < 0.05
+    sample = np.random.choice([1.0, -0.999], p=[0.6, 0.4], size=10000)
+    f_star = solve_empirical_kelly_fraction(sample, f_max=1.0)
+    assert abs(f_star - 0.2) < 0.05
 ```
 - **Kiểm chứng bằng toán học nhị thức Bernoulli:** Với phân phối nhị thức ($60\%$ lệnh thắng $+100\%$, $40\%$ lệnh thua $-100\%$), công thức Kelly kinh điển cho kết quả lời giải chuẩn xác là:
   
@@ -318,15 +357,16 @@ $$
 #### Sơ Đồ Luồng Tối Ưu Hóa Kelly Phi Tuyến (`Empirical Kelly Solver Pipeline`)
 ```mermaid
 flowchart TD
-    Input["Input: returns_sample Array"] --> Filter["Filter: Remove NaN/Inf & check len >= 30"]
+    Input["Input: returns_sample Array, f_max=3.0"] --> Filter["Filter: Remove NaN/Inf & check len >= 30"]
     Filter -->|len < 30| ReturnZero["Return f* = 0.0 (Data Insufficient Guard)"]
-    Filter -->|len >= 30| EvalZero["Eval growth_derivative(f=0.0)"]
+    Filter -->|len >= 30| DynCap["Dynamic Leverage Cap: f_max_safe = min(f_max, 0.999 / abs(min_return))"]
     
-    EvalZero -->|E[r] <= 0| ReturnZero
-    EvalZero -->|E[r] > 0| EvalMax["Eval growth_derivative(f=f_max)"]
+    DynCap --> EvalZero["Eval growth_derivative(f=0.0)"]
+    EvalZero -->|"E[r] <= 0"| ReturnZero
+    EvalZero -->|"E[r] > 0"| EvalMax["Eval growth_derivative(f=f_max_safe)"]
     
-    EvalMax -->|Deriv > 0| ReturnMax["Return f* = f_max (Cap at Max Risk)"]
-    EvalMax -->|Deriv <= 0| Brentq["scipy.optimize.brentq(growth_derivative, 0, f_max)"]
+    EvalMax -->|Deriv > 0| ReturnMax["Return f* = f_max_safe (Cap at Safe Leverage Limit)"]
+    EvalMax -->|Deriv <= 0| Brentq["scipy.optimize.brentq(growth_derivative, 0, f_max_safe)"]
     
     Brentq --> CheckSing["growth_derivative checks denom <= 1e-6"]
     CheckSing -->|Singularity Risk| Penalty["Return -1e6 (Singularity Guard - Prevent Ruin)"]
@@ -350,26 +390,26 @@ Trong thị trường tài chính, không phải lúc nào hệ thống cũng đ
 ### 2. Giải Phẫu Từng Dòng Quy Tắc Phân Loại & Vùng Đệm
 
 ```python
-def classify\_trade\_mode(p\_i: float, p\_chop\_i: float, fade\_enabled: bool,
-                        fade\_regime\_gate\_threshold: float = 0.60) -> Literal["follow", "fade", "none"]:
+def classify_trade_mode(p_i: float, p_chop_i: float, fade_enabled: bool,
+                        fade_regime_gate_threshold: float = 0.60) -> Literal["follow", "fade", "none"]:
 ```
 
 #### A. Nhánh 1 — Đánh Theo Xu Hướng (`Follow Mode`)
 ```python
-if p\_i >= 0.5:
+if p_i >= 0.5:
     return "follow"
 ```
-- **Ý nghĩa:** Khi xác suất xu hướng sơ cấp $p\_i \ge 50\%$, tín hiệu động lượng đang chiếm ưu thế. Hệ thống kích hoạt chế độ `Follow` (mua khi phá vỡ kháng cự, bán khi thủng hỗ trợ).
+- **Ý nghĩa:** Khi xác suất xu hướng sơ cấp $p_i \ge 50\%$, tín hiệu động lượng đang chiếm ưu thế. Hệ thống kích hoạt chế độ `Follow` (mua khi phá vỡ kháng cự, bán khi thủng hỗ trợ).
 
 #### B. Nhánh 2 — Khóa Cổng Đánh Đảo Chiều (`Fade Mode with Regime Gate`)
 ```python
-if fade\_enabled and p\_i < 0.2 and p\_chop\_i > fade\_regime\_gate\_threshold:
+if fade_enabled and p_i < 0.2 and p_chop_i > fade_regime_gate_threshold:
     return "fade"
 ```
 - **Tại sao cần 3 điều kiện đồng thời (`fade_enabled`, `p_i < 0.2`, `p_chop_i > 0.60`)?**
   - `fade_enabled == True`: Cờ cho phép bật/tắt chiến lược đảo chiều từ cấu hình tổng.
   - `p_i < 0.2`: Bắt buộc xác suất xu hướng phải **cực kỳ yếu ($< 20\%$)**, chứng tỏ động lượng đã tắt hẳn.
-  - `p_chop_i > fade_regime_gate_threshold (0.60)`: **Đây là Khóa Cổng An Toàn (`Regime Gate`)!** Ngay cả khi xu hướng yếu ($p\_i < 0.2$), hệ thống **tuyệt đối không cho phép đánh đảo chiều** nếu xác suất thị trường đi ngang (`p_chop_i`) chưa đủ cao ($> 60\%$). Nếu `p_chop_i <= 60%`, thị trường đang ở trạng thái nhiễu loạn khó đoán, đánh Fade rất dễ bị bẫy nổ sóng ngầm!
+  - `p_chop_i > fade_regime_gate_threshold (0.60)`: **Đây là Khóa Cổng An Toàn (`Regime Gate`)!** Ngay cả khi xu hướng yếu ($p_i < 0.2$), hệ thống **tuyệt đối không cho phép đánh đảo chiều** nếu xác suất thị trường đi ngang (`p_chop_i`) chưa đủ cao ($> 60\%$). Nếu `p_chop_i <= 60%`, thị trường đang ở trạng thái nhiễu loạn khó đoán, đánh Fade rất dễ bị bẫy nổ sóng ngầm!
 
 #### C. Nhánh 3 — Vùng Đứng Ngoài Bảo Toàn Tính Mạng (`Deadzone -> None`)
 ```python
@@ -382,7 +422,7 @@ return "none"
 ### 3. Nghiệm Thu Kiểm Thử TDD & Cơ Chế Kiểm Sách An Toàn (`test_b_1_2_trade_mode`)
 Qua đợt kiểm toán kỹ thuật khắt khe (`Rigorous Vulnerability Audit v11.8`), hệ thống đã được thiết lập 5 lớp bảo vệ kiên cố (`Strict Safety Guards`):
 1. `(0.5, 0.4, True) -> follow`: Nhận diện chuẩn xác biên trái của Follow.
-2. `(0.3, 0.8, True) -> none`: Khóa chặt vùng Deadzone $p\_i = 0.3$.
+2. `(0.3, 0.8, True) -> none`: Khóa chặt vùng Deadzone $p_i = 0.3$.
 3. `(0.1, 0.5, True) -> none`: Khóa cổng Fade khi `p_chop` chưa vượt qua ngưỡng an toàn $0.60$.
 4. `(0.1, 0.7, False) -> none`: Tuân thủ tuyệt đối công tắc tổng `fade_enabled = False`.
 5. **[STRICT VALIDATION GUARDS] Kiểm tra tính hợp lệ dữ liệu:** Bắt buộc `p_i` và `p_chop_i` phải nằm trong đoạn $[0, 1]$ và không được là `NaN/Inf`. Nếu mô hình ML trả về số liệu không hợp lệ hay `NaN`, hệ thống ném ngoại lệ `ValueError` để cảnh báo suy thoái mô hình (`Model Degradation`), ngăn chặn sớm lỗi rò rỉ logic ngầm (`Silent Logic Failure`).
@@ -426,16 +466,22 @@ Rào cản cắt lỗ ban đầu (`SL Initial`) không bao giờ là một con s
 ### 2. Giải Phẫu Công Thức Toán Học & Đối Xứng Gương (`Symmetric Mirroring`)
 
 ```python
-def compute\_sl\_initial(entry\_price: float, side: int, m\_sl: float, sigma: float, c\_trade\_adj: float) -> float:
+def compute_sl_initial(
+    entry_price: float, side: int, m_sl: float, sigma: float, c_trade_adj: float, max_reasonable_cushion: float = 0.5
+) -> float:
 ```
 
-#### A. Công Thức Trục Phân Cực Long/Short & Lính Gác Bọc Thép
+#### A. Công Thức Trục Phân Cực Long/Short & Đối Xứng Hình Học (`Geometric Symmetry`)
 ```python
-total\_cushion = m\_sl * sigma + c\_trade\_adj
+total_cushion = m_sl * sigma + c_trade_adj
+
+if total_cushion > max_reasonable_cushion:
+    raise ValueError(...)
+
 if side > 0:
-    sl = entry\_price * (1.0 - total\_cushion)
+    sl = entry_price * math.exp(-total_cushion)
 else:
-    sl = entry\_price * (1.0 + total\_cushion)
+    sl = entry_price * math.exp(total_cushion)
 ```
 - **Tham số hóa thông minh (`Parameterization`):**
   - `entry_price`: Giá khớp lệnh đầu vào.
@@ -443,16 +489,19 @@ else:
   - `sigma`: Biến động nội tại của thị trường ($\ge 0$, không cho phép số âm hay `NaN/Inf`).
   - `m_sl`: Hệ số nhân rào cản cắt lỗ (`Stop-loss multiplier`).
   - `c_trade_adj`: Phí giao dịch + Trượt giá dự kiến (`Slippage + Commission`).
-- **Tính đối xứng gương (`Symmetric Mirroring`):**
-  - **Với lệnh Mua (`side > 0`):** Giá cắt lỗ nằm bên dưới giá mua một khoảng cách bằng đúng $(m\_{sl} \cdot \sigma + c\_{\text{trade-adj}}) \cdot \text{Entry}$. Nếu tổng rủi ro $\ge 100\%$, hệ thống ném ngoại lệ `ValueError` để chặn đứng lỗi rủi ro cắt lỗ âm (`Inverted/Negative Stop-Loss: SL <= 0`).
-  - **Với lệnh Bán (`side < 0`):** Giá cắt lỗ nằm bên trên giá bán đúng bằng khoảng cách đó!
-  - Việc đưa `c_trade_adj` vào công thức đảm bảo khi lệnh bị cắt lỗ, số tiền thực tế bạn mất sau khi trừ sạch phí và trượt giá **chính xác bằng đúng mức rủi ro tối đa đã định trước**!
+  - `max_reasonable_cushion`: Giới hạn đệm an toàn tối đa (mặc định 0.5, tức 50%), ngăn chặn giá trị `sigma` lớn phi lý do lỗi đơn vị tính.
+- **Tính đối xứng hình học tuyệt đối (`Geometric Symmetry via Exponential`):**
+  - Trong đại số tuyến tính, việc cộng trừ $(1 - R)$ và $(1 + R)$ tạo ra sự sai lệch lợi suất kép (Ví dụ giảm $10\%$ cần tăng $11.1\%$ để hoàn vốn), khiến phe Short luôn chịu tỷ lệ quét râu (`stop-hunt`) cao hơn phe Long!
+  - Để giải quyết lỗ hổng cấu trúc này, hệ thống áp dụng **Hàm Mũ (Exponential)**.
+  - **Với lệnh Mua (`side > 0`):** Giá cắt lỗ được tính theo $\text{Entry} \cdot e^{-R}$.
+  - **Với lệnh Bán (`side < 0`):** Giá cắt lỗ được tính theo $\text{Entry} \cdot e^{+R}$.
+  - Điều này đảm bảo khoảng cách Logarithm $\ln(\frac{\text{Entry}}{\text{SL\_Long}}) = \ln(\frac{\text{SL\_Short}}{\text{Entry}}) = R$, mang lại sự công bằng xác suất thống kê đối xứng 100% cho cả 2 chiều mua bán.
 
 ### 3. Nghiệm Thu Kiểm Thử TDD & Stress Test (`test_b_1_3_compute_sl_initial`)
 Bài test phản ánh sự kết hợp chuẩn xác giữa Tư duy Thiết kế (`4-Step Quant Architect Mindset`) và Kiểm toán Kỹ thuật Khắt khe (`Rigorous Engineering Audit`):
-1. **Kiểm tra độ chính xác Long (`89.0`):** Khớp tuyệt đối với $100 \cdot (1 - 2 \cdot 0.05 - 0.01)$.
-2. **Kiểm tra độ chính xác Short (`111.0`):** Khớp tuyệt đối với $100 \cdot (1 + 2 \cdot 0.05 + 0.01)$.
-3. **Kiểm tra đối xứng gương (`dist_long == dist_short`):** Khẳng định không có sự lệch lạc giữa phe Long và phe Short.
+1. **Kiểm tra độ chính xác Long (`≈ 89.58`):** Khớp tuyệt đối với $100 \cdot e^{-0.11}$ (công thức hàm mũ Logarithm, R = 2 × 0.05 + 0.01 = 0.11).
+2. **Kiểm tra độ chính xác Short (`≈ 111.63`):** Khớp tuyệt đối với $100 \cdot e^{+0.11}$ (đối xứng gương trong không gian Log).
+3. **Kiểm tra đối xứng gương (`ln(Entry/SL_Long) == ln(SL_Short/Entry)`):** Khẳng định khoảng cách Logarithm bằng nhau giữa phe Long và phe Short (đối xứng trong không gian Log, KHÔNG phải trong không gian giá tuyệt đối).
 4. **[STRICT VALIDATION GUARDS] Kiểm tra `side=0` & tham số bất thường/NaN:** Ném lỗi `ValueError` ngay lập tức nếu truyền lệnh không xác định hướng (`side=0`), giá mua/biến động âm, hoặc tổng rủi ro vượt quá 100% tài sản!
 
 Kết quả `✅ PASSED!` xác nhận bộ tính toán cắt lỗ ban đầu của bạn đã đạt độ tinh xảo định chế và an toàn tuyệt đối, sẵn sàng tích hợp vào cơ chế `Trailing Exit` động và mô phỏng gán nhãn sự kiện!
@@ -466,12 +515,12 @@ flowchart TD
     
     RiskCalc --> SideCheck{"Check Trade Direction: side > 0 (Long vs Short)?"}
     
-    SideCheck -->|side > 0 (Long)| LongSL["SL_Long = entry_price * (1 - R)"]
-    SideCheck -->|side <= 0 (Short/Fade)| ShortSL["SL_Short = entry_price * (1 + R)"]
+    SideCheck -->|side > 0 (Long)| LongSL["SL_Long = entry_price * exp(-R)"]
+    SideCheck -->|side <= 0 (Short/Fade)| ShortSL["SL_Short = entry_price * exp(+R)"]
     
     LongSL --> CheckNeg{"Is SL_Long <= 0 (Risk >= 100%)?"}
     CheckNeg -->|Yes| Error
-    CheckNeg -->|No| VerifySym["Symmetric Verification: dist_long == dist_short"]
+    CheckNeg -->|No| VerifySym["Symmetric Verification: ln(Entry/SL_Long) == ln(SL_Short/Entry)"]
     ShortSL --> VerifySym
     
     VerifySym -->|Mirror Confirmed| Output["Armor-Plated Initial Stop-Loss Ready for Trailing Logic"]
@@ -479,7 +528,7 @@ flowchart TD
 
 ---
 
-## PHẦN VI: GIẢI PHẪU CHI TIẾT TASK B-1-4 (`compute_regime_aware_trailing_exit_v2`) — CƠ CHẾ TRAILING EXIT ĐỐI XỨNG & ĐẢO CHIỀU NHẬN DIỆN CHẾ ĐỘ (`Regime-Flip`)
+## PHẦN VI: GIẢI PHẪU CHI TIẾT TASK B-1-4 (`compute_regime_aware_trailing_exit_v3_liquidation_aware`) — CƠ CHẾ TRAILING EXIT ĐỐI XỨNG & ĐẢO CHIỀU NHẬN DIỆN CHẾ ĐỘ (`Regime-Flip`)
 
 ### 1. Ý Nghĩa & Nỗi Đau Thực Tế Về Thoát Lệnh (`Why Amateur Trailing Exits Fail?`)
 Một trong những nghịch lý lớn nhất của giao dịch định chế là: **"Điểm vào lệnh (`Entry`) chỉ quyết định 20% thắng thua, 80% lợi nhuận và sự sống còn nằm ở kỹ thuật Thoát lệnh (`Exit`)"**.
@@ -489,8 +538,9 @@ Một trong những nghịch lý lớn nhất của giao dịch định chế l�
 👉 **Task B-1-4 ([src/aegis/labeling/trailing_exit.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/labeling/trailing_exit.py)) giải quyết bài toán này với 3 thành phần thiết kế:**
 1. **Thứ tự ưu tiên rủi ro (`Risk Hierarchy — SL trước TRAIL`):** Trong vòng lặp từng nến tương lai, hệ thống luôn kiểm tra `SL` ban đầu trước khi tính toán cắt theo `TRAIL`. Điều này bảo vệ tính minh bạch khi thống kê: Nếu nến sập mạnh thủng cả 2 mốc, nguyên nhân thoát lệnh phải ghi nhận là rủi ro cực đại (`SL`), không bị lẫn lộn vào thống kê gồng lãi (`TRAIL`).
 2. **Đối xứng gương tuyệt đối (`Symmetric Mirroring for Long/Short`):**
-   - Với lệnh Mua (`side > 0`): `extreme_price` liên tục cập nhật đỉnh cao nhất (`highest high`), và `trail_stop` bám theo bên dưới bằng cách trừ đi `m_trail_base * (1 + gamma * p_trend) * ATR`.
-   - Với lệnh Bán/Fade (`side < 0`): `extreme_price` liên tục cập nhật đáy thấp nhất (`lowest low`), và `trail_stop` bám theo bên trên bằng cách cộng thêm `m_trail_base * (1 + gamma * p_trend) * ATR`.
+   - Lớp đệm tỷ lệ phần trăm (Percentage Cushion): `trail_cushion = m_trail_base * (1 + gamma * p_trend) * (ATR / extreme_price)`. (Việc chia cho `extreme_price` chuẩn hóa lớp đệm tuyệt đối thành một tỷ lệ % không thứ nguyên, giúp hàm số mũ `math.exp` nhận diện chuẩn xác).
+   - Với lệnh Mua (`side > 0`): `extreme_price` liên tục cập nhật đỉnh cao nhất (`highest high`), và `trail_stop` bám theo bằng hàm logarithm hình học: `extreme_price * math.exp(-trail_cushion)`. Sau đó kẹp lại (Clamp) để không bao giờ thấp hơn mức cắt lỗ ban đầu: `max(trail_stop, sl_initial)`.
+   - Với lệnh Bán/Fade (`side < 0`): `extreme_price` liên tục cập nhật đáy thấp nhất (`lowest low`), và `trail_stop` bám theo bằng hàm logarithm hình học: `extreme_price * math.exp(+trail_cushion)`. Tương tự, kẹp lại: `min(trail_stop, sl_initial)`.
 3. **Đảo chiều nhận diện Regime-Flip (`Mode-Dependent Regime Flip`):**
    - Với chế độ `Follow`: Lệnh thoát sớm khi xu hướng suy yếu (`p_trend < threshold`).
    - Với chế độ `Fade`: Lệnh thoát sớm khi vùng sideway bị phá vỡ để nhường chỗ cho bùng nổ xu hướng (`p_trend > threshold`). Sự nhạy bén này cứu tài khoản khỏi các cú bứt phá (`Breakout`) ngược chiều!
@@ -518,7 +568,7 @@ flowchart TD
     CheckLiq -->|No| CheckSL{"Check Hard SL: Lows <= SL (Long) or Highs >= SL (Short)?"}
     CheckSL -->|Yes| ExitSL["Return Exit: idx=k, reason='SL'"]
     
-    CheckSL -->|No| CalcTrail["Calculate trail_stop = extreme_price_from_prev_bar +/- m_trail * (1 + gamma*p_trend) * ATR"]
+    CheckSL -->|No| CalcTrail["Calculate trail_cushion = m_trail * (1+gamma*p_trend) * ATR / extreme<br/>trail_stop = clamp(extreme * exp(-/+ trail_cushion), sl_initial)"]
     CalcTrail --> CheckTrail{"Check Trailing Stop: Lows <= trail (Long) or Highs >= trail (Short)?"}
     CheckTrail -->|Yes| ExitTrail["Return Exit: idx=k, reason='TRAIL'"]
     
@@ -550,10 +600,11 @@ Khi giao dịch phái sinh hợp đồng tương lai vĩnh cửu (`Perpetual Fut
 - Nếu bạn đặt đòn bẩy quá cao (ví dụ `20x` hay `50x`), khoảng cách từ giá mua đến giá thanh lý (`Liquidation Price`) có thể còn ngắn hơn cả khoảng cách từ giá mua đến điểm Cắt Lỗ (`sl_initial`) đã tính theo ATR ở Task B-1-3!
 - Hậu quả: Lệnh chưa kịp cắt lỗ chủ động thì sàn đã tịch thu toàn bộ số dư tài sản thế chấp (`Isolated Margin`), gây lỗ `100%` ký quỹ trái với tính toán quản trị rủi ro.
 
-👉 **Module `liquidation_layer.py` (Task v11.9) ra đời để làm "Trạm kiểm soát an toàn trước khi vào lệnh (`Pre-Flight Check`)" giải quyết triệt để 3 nhiệm vụ:**
+👉 **Module `liquidation_layer.py` (Task v11.9) ra đời để làm "Trạm kiểm soát an toàn trước khi vào lệnh (`Pre-Flight Check`)" giải quyết triệt để 4 nhiệm vụ:**
 1. **Xấp xỉ giá thanh lý (`compute_liquidation_price`):** Tính chính xác điểm cháy tài khoản cho lệnh Long/Short dựa trên đòn bẩy và tỷ lệ ký quỹ duy trì (`Maintenance Margin Rate`).
 2. **Kiểm tra an toàn trước khi vào lệnh (`validate_leverage_against_sl`):** Đảm bảo điểm Cắt Lỗ (`sl_initial`) luôn nằm an toàn bên trong, cách điểm thanh lý ít nhất một lớp đệm bảo vệ (`safety_buffer_pct`, mặc định `15%`).
 3. **Giải closed-form đòn bẩy tối đa (`resolve_max_safe_leverage`):** Thay vì dò tìm tự động bằng vòng lặp chậm chạp, hệ thống giải trực tiếp phương trình giải tích để tìm ra mức đòn bẩy tối đa chính xác `100%` cho phép bot đi cược tiền an toàn tuyệt đối.
+4. **Bảo vệ tra cứu Margin (`get_maintenance_margin_rate`):** Được bọc thép chống lại các giá trị `size_notional` bị âm hoặc là số rác `NaN/Inf`, ngăn chặn việc chọn sai bậc Tier Margin gây nguy hiểm cho hệ thống thanh lý.
 
 ---
 
@@ -568,38 +619,62 @@ Gọi $S = \frac{|\text{Entry} - \text{SL}|}{\text{Entry}}$ là tỷ lệ % cắ
 Với lệnh Long (`side = 1`), giá thanh lý là:
 
 $$
-P_{\text{liq}} = \text{Entry} \times \left(1 - \frac{1}{L} + M\right)
+P_{\text{liq}} = \text{Entry} \times \left(1 - \frac{1}{L} + M + \text{fee\_rate} + \text{liquidation\_fee\_rate}\right)
 $$
 
 Trong đó $L$ là đòn bẩy, $M$ là `maintenance_margin_rate`. Khi đó khoảng cách đến điểm thanh lý là:
 
 $$
-\text{Entry} - P_{\text{liq}} = \text{Entry} \times \left(\frac{1}{L} - M\right)
+\text{Entry} - P_{\text{liq}} = \text{Entry} \times \left(\frac{1}{L} - M - \text{fee\_rate} - \text{liquidation\_fee\_rate}\right)
 $$
 
 Thay vào bất phương trình an toàn:
 
 $$
-S \times \text{Entry} \le \text{Entry} \times \left(\frac{1}{L} - M\right) \times (1 - B)
+S \times \text{Entry} \le \text{Entry} \times \left(\frac{1}{L} - M - \text{fee\_rate} - \text{liquidation\_fee\_rate}\right) \times (1 - B)
 $$
 
 $$
-\frac{S}{1 - B} \le \frac{1}{L} - M \implies \frac{1}{L} \ge \frac{S}{1 - B} + M
+\frac{S}{1 - B} \le \frac{1}{L} - M - \text{fee\_rate} - \text{liquidation\_fee\_rate} \implies \frac{1}{L} \ge \frac{S}{1 - B} + M + \text{fee\_rate} + \text{liquidation\_fee\_rate}
 $$
 
 $$
-L_{\max} = \frac{1}{\frac{S}{1 - B} + M}
+L_{\max} = \frac{1}{\frac{S}{1 - B} + M + \text{fee\_rate} + \text{liquidation\_fee\_rate}}
 $$
 
 👉 Đây chính là công thức giải tích được cài đặt trong hàm `resolve_max_safe_leverage`, với độ chính xác tuyệt đối và thời gian thực thi $O(1)$.
 
+#### 2.1 Chứng Minh Đối Xứng Cho Lệnh Short (`side = -1`)
+
+Với lệnh Short, giá thanh lý nằm **phía trên** giá vào lệnh:
+
+$$
+P_{\text{liq\_short}} = \text{Entry} \times \left(1 + \frac{1}{L} - M - \text{fee\_rate} - \text{liquidation\_fee\_rate}\right)
+$$
+
+Khoảng cách đến điểm thanh lý là:
+
+$$
+P_{\text{liq\_short}} - \text{Entry} = \text{Entry} \times \left(\frac{1}{L} - M - \text{fee\_rate} - \text{liquidation\_fee\_rate}\right)
+$$
+
+Vì cấu trúc toán học của khoảng cách đến điểm thanh lý của phe Short tương đương với phe Long (cùng biểu thức $\frac{1}{L} - M - \text{fee\_rate} - \text{liquidation\_fee\_rate}$), bất phương trình an toàn và công thức $L_{\max}$ cuối cùng **đồng nhất cho cả 2 chiều**:
+
+$$
+L_{\max}^{\text{Short}} = \frac{1}{\frac{S}{1 - B} + M + \text{fee\_rate} + \text{liquidation\_fee\_rate}} = L_{\max}^{\text{Long}}
+$$
+
+> [!NOTE]
+> **Tại sao công thức giống nhau?** Vì $S = \frac{|\text{Entry} - \text{SL}|}{\text{Entry}}$ và khoảng cách thanh lý đều được chuẩn hóa thành tỷ lệ $\%$ so với `Entry`, chiều của phép toán (cộng/trừ) triệt tiêu nhau khi lấy giá trị tuyệt đối. Đây là một tính chất đối xứng thiên nhiên của cơ chế Isolated Margin trong Perpetual Futures.
+
 ---
 
-### 3. Kiểm Toán Kỹ Thuật & 4 Lớp Kiểm Sách An Toàn (`Strict Validation Guards v11.9`)
+### 3. Kiểm Toán Kỹ Thuật & 5 Lớp Kiểm Sách An Toàn (`Strict Validation Guards v11.9`)
 1. **Kiểm tra Chia cho số 0 & Đòn bẩy không hợp lệ (`ZeroDivision / Negative Leverage Guard`):** Chặn đứng ngay `leverage < 1.0`, `0`, hoặc dữ liệu không hợp lệ `NaN/Inf`. Ngăn lỗi chia cho số 0 và ngăn giá thanh lý bị tính ra số âm vô lý.
 2. **Kiểm tra Cắt lỗ ngược chiều (`Inverted Stop-Loss Guard`):** Nếu `sl_initial` bị truyền vào sai chiều (ví dụ lệnh Long nhưng SL lại lớn hơn hoặc bằng giá mua), `sl_distance_frac` sẽ bị âm dẫn đến `denom < 0` và đòn bẩy ảo vọt lên vô lý. Hải quan lập tức phát hiện `sl_distance_frac <= 0` và ném lỗi `ValueError` (`Strict Rejection`).
 3. **Kiểm tra Lớp đệm ngoài biên (`Buffer Out-of-Bounds Guard`):** Chặn `safety_buffer_pct` ngoài đoạn $[0.0, 0.9]$, ngăn lỗi mẫu số bằng $0$ (`Division-by-Zero`) khi $B = 1.0$.
 4. **Kiểm tra `side == 0` (`Stand Aside Guard`):** Bắt buộc hướng lệnh phải là `+1` (Long) hoặc `-1` (Short).
+5. **Kiểm tra tỷ lệ phí hợp lệ (`Fee Rate Guard`):** Đảm bảo `fee_rate` $\ge 0$ và $< 0.05$ (5%), chống truyền số âm hoặc rác `NaN/Inf` phá hỏng phương trình thanh lý.
 
 ---
 
@@ -615,7 +690,7 @@ flowchart TD
     CheckSafe -->|"Yes (is_safe = True)"| SafeOrder["Order Safe: Proceed to Kelly Execution"]
     
     CheckSafe -->|"No (is_safe = False)"| CapNeed["Leverage Too High: SL exceeds safe Liquidation buffer!"]
-    CapNeed --> CalcMax["resolve_max_safe_leverage: L_max = 1 / ( (SL_frac / (1-buffer)) + MaintRate )"]
+    CapNeed --> CalcMax["resolve_max_safe_leverage: L_max = 1 / ( SL_frac/(1-buffer) + MaintRate + fee_rate + liquidation_fee_rate )"]
     CalcMax --> AutoAdjust["Auto-clamp Leverage = min(L_max, leverage_cap)"]
     AutoAdjust --> SafeOrder
 ```
@@ -638,20 +713,23 @@ $$
 
 ---
 
-### 2. Giải Phẫu Nhánh Phí Thanh Lý `LIQUIDATION PnL` (Module G)
+### 2. Giải Phẫu Nhánh Phí Thanh Lý `LIQUIDATION PnL` (Module G - `pnl.py`)
+> [!NOTE]
+> **Tái Cấu Trúc Kiến Trúc (Architectural Refactoring):** Hàm `compute_realized_pnl` đã được nhổ tận gốc khỏi `trailing_exit.py` (tầng Labeling) và dời về đúng vị trí chuẩn mực tại `src/aegis/execution/pnl.py` (tầng Execution/Module G) để tuân thủ tuyệt đối nguyên tắc **Separation of Concerns**. Hàm này nay trở thành Động Cơ PnL Thống Nhất (`Unified PnL Engine`).
+
 Khi một lệnh bị sàn phái sinh quét thanh lý (`LIQUIDATION`), cơ chế tính toán tổn thất hoàn toàn khác so với chốt lời/cắt lỗ thông thường:
 - **Sai lầm ngây thơ:** Dùng công thức PnL thường $\text{Loss} = \text{size-notional} \times (1 + \text{fee})$. Nếu `size_notional` là giá trị danh nghĩa USD (ví dụ đòn bẩy `10x` thì `size_notional` gấp 10 lần tiền cọc), việc trừ thẳng `size_notional` sẽ báo cáo quỹ bị lỗ gấp `10 lần` số vốn ký quỹ thực tế!
-- **Chuẩn hóa định chế (`compute_realized_pnl`):** Khi thanh lý, số tiền bị mất chính là toàn bộ tiền thế chấp (`Margin = size_notional / leverage`) cộng với phí phạt thanh lý mà sàn thu trên tổng giá trị lệnh (`size_notional * liquidation_fee_rate`).
+- **Chuẩn hóa định chế (`compute_realized_pnl` trong Module G):** Khác với giao dịch thông thường, trong cơ chế `Isolated Margin`, số tiền tối đa quỹ có thể mất (Maximum Loss) khi bị thanh lý chính là toàn bộ tiền thế chấp ban đầu (`Margin = size_notional / leverage`). Phí phạt thanh lý (`liquidation_fee_rate`) được sàn thu trực tiếp từ số dư ký quỹ này (làm dịch chuyển giá thanh lý lại gần điểm entry hơn), chứ sàn không yêu cầu nạp thêm tiền ngoài margin đã cọc. Tuy nhiên, khoản phí vào lệnh (`fee_entry`) đã bị trừ từ trước là một khoản chi phí chìm (Sunk-cost). Do đó, khoản lỗ tuyệt đối được giới hạn ở:
   
 
 $$
-\text{Loss}_{\text{Liq}} = -\left( \frac{\text{size-notional}}{\text{leverage}} + \text{size-notional} \times \text{liquidation-fee-rate} \right) - \text{funding-accrued}
+\text{Loss}_{\text{Liq}} = -\left( \frac{\text{size\_notional}}{\text{leverage}} \right) - \text{fee\_entry}
 $$
 
 ---
 
 ### 3. Kiểm Tra Hợp Lệ & Bảo Vệ 4 Lỗi Rủi Ro (`Strict Validation Guards B-1-5`)
-1. **Kiểm tra mảng rỗng sát biên (`Zero-Length Slice Guard`):** Nếu lệnh mở đúng tại cây nến cuối cùng của Fold (`entry_idx + 1 >= test_window_end_idx`), mảng sau khi `Pre-Slice` sẽ rỗng (`len == 0`). Hệ thống tự động bắt lỗi và hoàn trả `TIME_STOP` với `exit_idx_relative = 0` ngay tại chỗ mà không gọi hàm `v3` để tránh lỗi chỉ số (`IndexError`).
+1. **Kiểm tra mảng rỗng sát biên (`Zero-Length Slice Guard`):** Nếu lệnh mở đúng tại cây nến cuối cùng của Fold (`entry_idx + 1 >= test_window_end_idx`), mảng sau khi `Pre-Slice` sẽ rỗng (`len <= 1`). Hệ thống tự động bắt lỗi và hoàn trả `None` (Hủy bỏ sự kiện) thay vì tạo ra một bản ghi giả 0 nến, ngăn chặn việc làm ô nhiễm mẫu thống kê Kelly.
 2. **Kiểm tra giới hạn kép (`Dual-Boundary Cut`):** Cắt vật lý đồng thời theo cả `t_max_live` và `test_window_end_idx`.
 3. **Kiểm tra chuẩn hóa đơn vị `size_notional` (`USD Notional vs Units Guard`):** Tách rõ cờ `is_notional_in_usd` để chuẩn hóa phép tính PnL theo tỷ suất sinh lời hoặc theo số lượng coin.
 4. **Kiểm tra tham số đầu vào (`Side & Leverage Guard`):** Bảo đảm tính hợp lệ tuyệt đối cho `side in (1, -1)` và `leverage >= 1.0`.
@@ -664,14 +742,14 @@ flowchart TD
     Input["Input: full_bars, entry_idx, test_window_end_idx, t_max_live"] --> PreSlice["Pre-Slice Cut: effective_end = min(entry + 1 + t_max, fold_end, len)"]
     PreSlice --> SliceArr["Slice Physical Arrays: future_bars = full_bars[entry+1 : effective_end]"]
     
-    SliceArr --> CheckZero{"Is len(future_bars) == 0?"}
-    CheckZero -->|"Yes (At fold boundary)"| InstantExit["Return Exit: idx_rel=0, reason='TIME_STOP', boundary_truncated=True"]
+    SliceArr --> CheckZero{"Is len(future_bars) <= 1?"}
+    CheckZero -->|"Yes (At fold boundary)"| InstantExit["Return None (Drop event to prevent Kelly pollution)"]
     
     CheckZero -->|No| CallV3["Call compute_regime_aware_trailing_exit_v3_liquidation_aware(future_bars)"]
     CallV3 --> InitExtreme["Initialize extreme_price (from n-1 bar if trailing)"]
     
     InitExtreme --> CheckReason{"What is exit_reason?"}
-    CheckReason -->|LIQUIDATION| LiqPnL["compute_realized_pnl (LIQUIDATION Branch): Loss_Liq = - (size_notional / leverage) - funding_accrued (Max Loss Bounded by Initial Margin)"]
+    CheckReason -->|LIQUIDATION| LiqPnL["compute_realized_pnl LIQUIDATION Branch:<br/>Loss_Liq = -(size_notional/leverage) - fee_entry"]
 ```
 
 ---

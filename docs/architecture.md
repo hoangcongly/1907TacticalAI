@@ -931,7 +931,7 @@ def _update_regime_flip(p_trend_k: float, trade_mode: str, threshold: float, pre
         triggered = p_trend_k > threshold
     return prev_count + 1 if triggered else 0
 
-def compute_regime_aware_trailing_exit_v2(
+def compute_regime_aware_trailing_exit_v3_liquidation_aware(
     entry_price: float, side: int, trade_mode: str,
     future_highs: np.ndarray, future_lows: np.ndarray, future_atr: np.ndarray,
     future_p_trend: np.ndarray, sl_initial: float,
@@ -994,29 +994,29 @@ def test_regime_aware_trailing_exit_symmetry():
     # Test 1: side=+1 (Long/Follow), giá giảm chạm SL tại k=3
     highs_l = np.array([101, 102, 103, 90, 90, 90, 90, 90, 90, 90], dtype=float)
     lows_l = np.array([100, 101, 102, 85, 85, 85, 85, 85, 85, 85], dtype=float)
-    res = compute_regime_aware_trailing_exit_v2(100.0, 1, "follow", highs_l, lows_l, atr, p_trend_flat, 95.0, t_max_live=10)
+    res = compute_regime_aware_trailing_exit_v3_liquidation_aware(100.0, 1, "follow", highs_l, lows_l, atr, p_trend_flat, 95.0, t_max_live=10)
     assert res["reason"] == "SL" and res["exit_idx"] == 3, f"Long SL test FAILED: {res}"
 
     # Test 2: side=-1 (Short/Fade), giá tăng vượt SL tại k=3
     highs_s = np.array([101, 102, 103, 110, 110, 110, 110, 110, 110, 110], dtype=float)
     lows_s = np.array([100, 101, 102, 105, 105, 105, 105, 105, 105, 105], dtype=float)
-    res_s = compute_regime_aware_trailing_exit_v2(100.0, -1, "fade", highs_s, lows_s, atr, p_trend_flat, 105.0, t_max_live=10)
+    res_s = compute_regime_aware_trailing_exit_v3_liquidation_aware(100.0, -1, "fade", highs_s, lows_s, atr, p_trend_flat, 105.0, t_max_live=10)
     assert res_s["reason"] == "SL" and res_s["exit_idx"] == 3, f"Short SL test FAILED: {res_s}"
 
     # Test 3: Regime-Flip cho Fade — p_trend TĂNG vượt ngưỡng 0.65 phải kích hoạt thoát
     highs_f = np.full(10, 100.5)
     lows_f = np.full(10, 99.5)
     p_trend_rising = np.array([0.5, 0.5, 0.7, 0.7, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5])
-    res_f_flip = compute_regime_aware_trailing_exit_v2(100.0, -1, "fade", highs_f, lows_f, atr, p_trend_rising, 110.0,
+    res_f_flip = compute_regime_aware_trailing_exit_v3_liquidation_aware(100.0, -1, "fade", highs_f, lows_f, atr, p_trend_rising, 110.0,
                                                          t_max_live=10, p_trend_exit_threshold_fade=0.65, consecutive_bars_required=2)
     assert res_f_flip["reason"] == "REGIME_FLIP", f"Fade regime-flip test FAILED: {res_f_flip}"
 
     # Test 4: Follow cùng chuỗi p_trend_rising — KHÔNG kích hoạt Regime-Flip
-    res_fl_no_flip = compute_regime_aware_trailing_exit_v2(100.0, 1, "follow", highs_f, lows_f, atr, p_trend_rising, 90.0,
+    res_fl_no_flip = compute_regime_aware_trailing_exit_v3_liquidation_aware(100.0, 1, "follow", highs_f, lows_f, atr, p_trend_rising, 90.0,
                                                            t_max_live=10, p_trend_exit_threshold_follow=0.35, consecutive_bars_required=2)
     assert res_fl_no_flip["reason"] == "TIME_STOP", f"Follow false-positive test FAILED: {res_fl_no_flip}"
 
-    print("compute_regime_aware_trailing_exit_v2 symmetry & direction tests PASSED")
+    print("compute_regime_aware_trailing_exit_v3_liquidation_aware symmetry & direction tests PASSED")
 ```
 
 ---
@@ -1227,6 +1227,7 @@ def build_empirical_kelly_table(
     p_oos: np.ndarray, realized_returns_oos: np.ndarray,
     n_buckets: int = 10, min_samples_per_bucket: int = 30, f_max: float = 1.0
 ) -> list:
+    p_oos = np.clip(p_oos, 0.0, 1.0)
     sort_idx = np.argsort(p_oos)
     p_sorted, r_sorted = p_oos[sort_idx], realized_returns_oos[sort_idx]
     quantile_edges = np.linspace(0, 1, n_buckets + 1)
@@ -1365,7 +1366,7 @@ Mọi nơi trong pipeline (Module F, Module G, `filter_boundary_truncated_for_ke
 - `mode`: str (`"follow"` hoặc `"fade"`)
 - `side`: int (`+1` hoặc `-1`, ĐÃ resolve, KHÔNG phải `side_primary` chưa đảo dấu)
 - `sl_initial`: float (giá cắt lỗ ban đầu tính chính xác cho `side` thực tế)
-- **`exit_idx_relative`**: int (offset tương đối $k \ge 0$ tính từ nến kế tiếp sau điểm vào lệnh, tức `entry_idx + 1`, đúng bằng giá trị `exit_idx` thô trả về từ `compute_regime_aware_trailing_exit_v2`)
+- **`exit_idx_relative`**: int (offset tương đối $k \ge 0$ tính từ nến kế tiếp sau điểm vào lệnh, tức `entry_idx + 1`, đúng bằng giá trị `exit_idx` thô trả về từ `compute_regime_aware_trailing_exit_v3_liquidation_aware`)
 - **`exit_idx_absolute`**: int ($= \text{entry-idx} + 1 + \text{exit-idx-relative}$, **chỉ số bar tuyệt đối trên toàn bộ chuỗi thời gian đầy đủ**, bắt buộc phải dùng để tra cứu giá fill từ `simulate_market_fill`/`simulate_limit_fill_with_queue` của Module G, cũng như tra cứu timestamp thật để tính `funding_accrued` trong Module K.1)
 - `exit_reason`: str (`"SL"`, `"TRAIL"`, `"REGIME_FLIP"`, `"TIME_STOP"`)
 - `boundary_truncated`: bool (`True` nếu lệnh bị cắt bởi ranh giới fold CPCV)
@@ -1398,7 +1399,7 @@ def resolve_trade_execution_params(
 
 def resolve_absolute_exit_idx(entry_idx: int, exit_idx_relative: int) -> int:
     """
-    CHUYỂN ĐỔI BẮT BUỘC (v11.8): Chuyển offset tương đối k trả về từ compute_regime_aware_trailing_exit_v2
+    CHUYỂN ĐỔI BẮT BUỘC (v11.8): Chuyển offset tương đối k trả về từ compute_regime_aware_trailing_exit_v3_liquidation_aware
     (trên mảng future_highs/lows bắt đầu tại entry_idx + 1) sang chỉ số bar tuyệt đối trên toàn chuỗi.
     """
     return entry_idx + 1 + exit_idx_relative
@@ -1483,7 +1484,7 @@ def simulate_trailing_exit_within_fold_bounds(
     future_lows = full_lows[entry_idx + 1: slice_end]
     future_atr = full_atr[entry_idx + 1: slice_end]
     future_p_trend = full_p_trend[entry_idx + 1: slice_end]
-    return compute_regime_aware_trailing_exit_v2(
+    return compute_regime_aware_trailing_exit_v3_liquidation_aware(
         entry_price=entry_price, side=side, trade_mode=trade_mode,
         future_highs=future_highs, future_lows=future_lows,
         future_atr=future_atr, future_p_trend=future_p_trend,
@@ -1872,7 +1873,7 @@ impl FfdStateApprox {
 - [ ] **[v11.7 Patch A — WIRING GLUE]** Triển khai hàm `resolve_trade_execution_params` và `run_trailing_exit_for_oos_event`. Thay mọi lời gọi trực tiếp `simulate_trailing_exit_within_fold_bounds` trong quy trình Module F bằng `run_trailing_exit_for_oos_event`. Chạy unit test bắt buộc `test_resolve_trade_execution_params_symmetry` pass 100%.
 - [ ] **[v11.7 Patch B — SCHEMA CHUẨN]** Thống nhất `TRADE_RECORD_SCHEMA` xuyên suốt Module F/G. Triển khai `finalize_trade_record` và `trade_records_to_kelly_table_inputs`. Cập nhật quy trình Mục 4.0 theo đúng thứ tự 5 bước v11.8 (1 -> 2 -> 2.5 -> 3 -> 4).
 - [ ] **[v11.7 Patch C — TÁCH T\_MAX\_LIVE]** Thêm tham số `t_max_live_fade` (mặc định khởi điểm $40$) tách khỏi `t_max_live_follow` ($120$). Đăng ký vào `ExperimentTracker` (`strategy_selection`). Cân nhắc đưa vào Flat Plateau Check nếu Fade đóng góp PnL đáng kể.
-- [ ] **[v11.6 Patch A — NGHIÊM TRỌNG]** Thay `compute_regime_aware_trailing_exit` bằng `compute_regime_aware_trailing_exit_v2` (đối xứng hóa `side<0`, đảo chiều Regime-Flip theo `trade_mode`). Bổ sung `compute_sl_initial` đối xứng. `test_regime_aware_trailing_exit_symmetry` CI test bắt buộc pass 100%. Golden Fixture chứa Fade SL/Trail fixtures.
+- [ ] **[v11.6 Patch A — NGHIÊM TRỌNG]** Thay `compute_regime_aware_trailing_exit` bằng `compute_regime_aware_trailing_exit_v3_liquidation_aware` (đối xứng hóa `side<0`, đảo chiều Regime-Flip theo `trade_mode`). Bổ sung `compute_sl_initial` đối xứng. `test_regime_aware_trailing_exit_symmetry` CI test bắt buộc pass 100%. Golden Fixture chứa Fade SL/Trail fixtures.
 - [ ] **[v11.6 Patch B]** Triển khai `simulate_trailing_exit_within_fold_bounds` (giới hạn biên fold CPCV). `filter_boundary_truncated_for_kelly_table` (bước 2.5). Sharpe OOS dùng toàn bộ record, Kelly table chỉ dùng "clean". Cảnh báo nếu truncation > 15%.
 - [ ] **[v11.6 Patch C]** Hàm `classify_trade_mode` duy nhất. `build_empirical_kelly_tables_v2`. `compute_bi_directional_kelly_v14_unified`. Lưu `trade_mode`/`side` cùng sự kiện CUSUM (C.4).
 - [ ] **[v11.5 Patch A]** `solve_empirical_kelly_fraction`, `build_empirical_kelly_table`, `lookup_empirical_kelly`. Xuất `kelly_lookup_table_follow.json`, `kelly_lookup_table_fade.json`.

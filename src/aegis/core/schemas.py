@@ -13,6 +13,7 @@ from typing import (
     Any,
     TypedDict,
     Literal,
+    Optional,
 )  # Thư viện định nghĩa kiểu dữ liệu tĩnh (như dict, list, tuple, set, TypedDict, Literal)
 
 
@@ -25,25 +26,28 @@ class TradeRecord(TypedDict):
     Giúp IDE tự động gợi ý code, kiểm tra lỗi gõ nhầm tên key trước khi gom thành DataFrame.
     """
 
-    entry_idx: int  # Chỉ số bar_idx tuyệt đối tại thời điểm vào lệnh
-    p_i: float  # Xác suất xu hướng tại thời điểm vào lệnh p_trend
-    p_chop_i: float  # Xác suất thị trường đi ngang tại thời điểm vào lệnh p_chop
-    mode: Literal[
-        "follow", "fade", "none"
-    ]  # Chế độ giao dịch: follow (theo xu hướng), fade (đánh đảo chiều), hoặc none
-    side: int  # Hướng lệnh giao dịch thực tế: +1 (Long/Mua) hoặc -1 (Short/Bán)
-    sl_initial: float  # Giá cắt lỗ ban đầu (Stop Loss) đã được đối xứng theo hướng lệnh
-    exit_idx_relative: (
-        int  # Khoảng cách số nến từ lúc vào lệnh đến lúc thoát lệnh (>= 0)
-    )
-    exit_idx_absolute: int  # Chỉ số bar_idx tuyệt đối tại thời điểm thoát lệnh (= entry_idx + 1 + exit_idx_relative)
-    exit_reason: Literal[
-        "SL", "TRAIL", "REGIME_FLIP", "TIME_STOP"
-    ]  # Lý do thoát lệnh theo chuẩn v11.8
-    boundary_truncated: bool  # Cờ báo hiệu giao dịch bị cắt ngắn do chạm biên fold CPCV hoặc hết dữ liệu test
-    realized_return: (
-        float  # Lợi nhuận thực tế (Realized Return) sau khi trừ phí và lãi qua đêm
-    )
+    schema_version: str
+    dataset_manifest_hash: str
+    fold_id: Optional[str]
+    symbol: str
+    entry_idx: int
+    entry_price: float
+    p_i: float
+    p_chop_i: float
+    mode: Literal["follow", "fade", "none"]
+    side: int
+    sl_initial: float
+    size_notional: float
+    exit_idx_relative: int
+    exit_idx_absolute: int
+    exit_reason: Literal["SL", "TRAIL", "REGIME_FLIP", "TIME_STOP"]
+    fill_price_exit: float
+    boundary_truncated: bool
+    fee_entry: float
+    fee_exit: float
+    funding_accrued: float
+    gross_pnl: float
+    realized_return: float
 
 
 # ============================================================================
@@ -66,19 +70,18 @@ def check_ohlc_logic(df: pd.DataFrame) -> pd.Series:
 
 def check_insufficient_history_nulls(df: pd.DataFrame) -> pd.Series:
     """
-    Kiểm tra điều kiện thiếu dữ liệu lịch sử:
-    - Khi insufficient_history == True (giai đoạn khởi động W bar đầu tiên), các cột tín hiệu rolling
-      bắt buộc phải là Null (rỗng), tuyệt đối không được điền số ảo làm hệ thống ngộ nhận tín hiệu.
+    SỬA DỨT ĐIỂM: df[mask] làm mất index của các dòng insufficient_history=False,
+    khiến Series trả về không khớp độ dài/index với df gốc — Pandera sẽ báo lỗi
+    shape mismatch hoặc âm thầm reindex sai. Bản sửa giữ nguyên index đầy đủ,
+    chỉ ghi đè kết quả vào đúng các dòng thuộc mask.
     """
-    mask = df["insufficient_history"]
+    mask = df["insufficient_history"] == True
     result = pd.Series(True, index=df.index)
     if not mask.any():
         return result
-    invalid = (
-        df.loc[mask, ["trend_score", "p_trend", "p_chop", "atr_14", "hurst_value"]]
-        .notna()
-        .any(axis=1)
-    )
+
+    cols = ["trend_score", "p_trend", "p_chop", "atr_14", "hurst_value"]
+    invalid = df.loc[mask, cols].notna().any(axis=1)
     result.loc[mask] = ~invalid
     return result
 

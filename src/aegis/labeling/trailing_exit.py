@@ -7,15 +7,15 @@ from typing import Optional
 # [TASK B-1-3] SYMMETRIC INITIAL STOP-LOSS WITH ARMOR-PLATED GUARDS
 # ============================================================================
 def compute_sl_initial(
-    entry_price: float, side: int, m_sl: float, sigma: float, c_trade_adj: float
+    entry_price: float,
+    side: int,
+    m_sl: float,
+    sigma: float,
+    c_trade_adj: float,
+    max_reasonable_cushion: float = 0.5,
 ) -> float:
     """
-    [TASK B-1-3] Tính giá Stop-Loss ban đầu, đối xứng tuyệt đối cho Long/Short.
-
-    [ARMOR-PLATED GUARDS — BẢO VỆ CHỐNG LỖ HỔNG]:
-    - Chặn đứng side == 0 (Neutral/Stand Aside) ngăn nhiễm độc PnL.
-    - Chặn đứng số rác NaN / Inf hoặc số âm cho entry_price, sigma, m_sl, c_trade_adj.
-    - Ngăn chặn thảm họa Stop-Loss âm (sl <= 0) khi thị trường biến động quá lớn (>100% rủi ro).
+    [TASK B-1-3] Tính toán mức Cắt lỗ gốc tĩnh (Initial Stop-Loss) hoàn toàn đối xứng.
 
     Tham số:
     - entry_price: Giá khớp lệnh đầu vào.
@@ -23,6 +23,7 @@ def compute_sl_initial(
     - m_sl: Hệ số nhân rào cản cắt lỗ (Stop-loss multiplier).
     - sigma: Biến động nội tại của nến (VD: ATR_14 tính bằng %).
     - c_trade_adj: Chi phí giao dịch + Trượt giá dự kiến.
+    - max_reasonable_cushion: Giới hạn đệm an toàn hợp lý.
     """
     if side not in (1, -1):
         raise ValueError(
@@ -71,15 +72,21 @@ def compute_sl_initial(
 
     total_cushion = m_sl * sigma + c_trade_adj
 
+    if total_cushion > max_reasonable_cushion:
+        raise ValueError(
+            f"Cushion {total_cushion:.2%} vượt ngưỡng hợp lý {max_reasonable_cushion:.2%} "
+            f"-- khả năng sigma bị lỗi đơn vị hoặc NaN thoát dạng số lớn bất thường."
+        )
+
     if side > 0:
         if total_cushion >= 1.0:
             raise ValueError(
                 f"Lỗi rủi ro cực đại B-1-3: Tổng rủi ro trừ hao ({total_cushion:.2%}) >= 100% giá trị tài sản với lệnh Long, dẫn đến Stop-Loss <= 0!"
             )
-        sl = entry_price * (1.0 - total_cushion)
+        sl = entry_price * math.exp(-total_cushion)
         return float(max(sl, 1e-4))
     else:
-        sl = entry_price * (1.0 + total_cushion)
+        sl = entry_price * math.exp(total_cushion)
         return float(sl)
 
 
@@ -99,7 +106,7 @@ def test_b_1_3_compute_sl_initial():
     sl_long = compute_sl_initial(
         entry_price, side=1, m_sl=m_sl, sigma=sigma, c_trade_adj=c_trade_adj
     )
-    expected_sl_long = 100.0 * (1.0 - 0.11)  # = 89.0
+    expected_sl_long = 100.0 * math.exp(-0.11)  # ~ 89.5834
     assert (
         abs(sl_long - expected_sl_long) < 1e-9
     ), f"Lỗi SL Long: Cần {expected_sl_long}, Nhận {sl_long}"
@@ -108,17 +115,17 @@ def test_b_1_3_compute_sl_initial():
     sl_short = compute_sl_initial(
         entry_price, side=-1, m_sl=m_sl, sigma=sigma, c_trade_adj=c_trade_adj
     )
-    expected_sl_short = 100.0 * (1.0 + 0.11)  # = 111.0
+    expected_sl_short = 100.0 * math.exp(0.11)  # ~ 111.6278
     assert (
         abs(sl_short - expected_sl_short) < 1e-9
     ), f"Lỗi SL Short: Cần {expected_sl_short}, Nhận {sl_short}"
 
-    # 3. Test tính đối xứng tuyệt đối
-    dist_long = entry_price - sl_long
-    dist_short = sl_short - entry_price
+    # 3. Test tính đối xứng tuyệt đối (Hình học Logarithm)
+    dist_long_log = math.log(entry_price / sl_long)
+    dist_short_log = math.log(sl_short / entry_price)
     assert (
-        abs(dist_long - dist_short) < 1e-9
-    ), f"Lỗi Đối xứng: Long ({dist_long}) != Short ({dist_short})"
+        abs(dist_long_log - dist_short_log) < 1e-9
+    ), f"Lỗi Đối xứng Geometric: Long ({dist_long_log}) != Short ({dist_short_log})"
 
     # 4. [ARMOR-PLATED TESTS] Bắt lỗi nghiêm ngặt khi truyền side = 0
     try:
@@ -149,11 +156,18 @@ def test_b_1_3_compute_sl_initial():
     # 6. [ARMOR-PLATED TESTS] Bắt lỗi rủi ro vượt quá 100% với lệnh Long
     try:
         compute_sl_initial(
-            entry_price=100.0, side=1, m_sl=3.0, sigma=0.40, c_trade_adj=0.05
+            entry_price=100.0, side=1, m_sl=3.0, sigma=0.40, c_trade_adj=0.05, max_reasonable_cushion=2.0 # override để lọt qua max_reasonable_cushion
         )  # Total = 1.25 (125%)
         assert False, "Lỗi rò rỉ: Stop-loss âm lọt qua mà không bị chặn!"
     except ValueError as e:
         assert "Tổng rủi ro trừ hao" in str(e)
+
+    # 7. [ARMOR-PLATED TESTS] Bắt lỗi cushion lớn bất thường (đối xứng cho cả 2 chiều)
+    try:
+        compute_sl_initial(entry_price=100.0, side=-1, m_sl=2.0, sigma=0.30, c_trade_adj=0.01) # Total = 0.61 > 0.5
+        assert False, "Lỗi rò rỉ: Cushion lớn phi lý lọt qua mà không bị chặn!"
+    except ValueError as e:
+        assert "vượt ngưỡng hợp lý" in str(e)
 
     print(
         "✅ [TASK B-1-3] compute_sl_initial PASSED! (Đối xứng gương hoàn hảo & Khóa 100% lỗ hổng side=0 / NaN / SL âm)"
@@ -197,178 +211,6 @@ def _update_regime_flip(
     return prev_count + 1 if triggered else 0
 
 
-def compute_regime_aware_trailing_exit_v2(
-    entry_price: float,
-    side: int,
-    trade_mode: str,
-    future_highs: np.ndarray,
-    future_lows: np.ndarray,
-    future_atr: np.ndarray,
-    future_p_trend: np.ndarray,
-    sl_initial: float,
-    m_trail_base: float = 2.0,
-    gamma: float = 0.75,
-    p_trend_exit_threshold_follow: float = 0.35,
-    p_trend_exit_threshold_fade: float = 0.65,
-    consecutive_bars_required: int = 2,
-    t_max_live: int = 120,
-    max_lookforward_override: Optional[int] = None,
-) -> dict:
-    """
-    SỬA LỖI v11.6 Patch A: Đối xứng hóa hoàn toàn SL/Trailing cho side<0 và đảo chiều Regime-Flip.
-    v11.7 Patch C: t_max_live được truyền vào đã được resolve chính xác theo mode.
-    LƯU Ý v11.8: exit_idx trả về từ hàm này là OFFSET TƯƠNG ĐỐI k tính từ tương lai của entry_idx+1.
-
-    [ARMOR-PLATED GUARDS — BẢO VỆ CHỐNG LỖ HỔNG]:
-    1. Chặn side == 0 (Stand Aside) hoặc không hợp lệ.
-    2. Chặn trade_mode ngoài ('follow', 'fade').
-    3. Chặn mảng tương lai rỗng (0 nến) hoặc t_max_live/override <= 0.
-    4. Chặn độ dài các mảng future_highs, future_lows, future_atr, future_p_trend lệch nhau.
-    5. Chặn mảng chứa ATR âm (< 0) hoặc NaN/Inf làm nghịch đảo Trailing Stop.
-    """
-    if side not in (1, -1):
-        raise ValueError(
-            f"Lỗi hải quan B-1-4: side bắt buộc phải là +1 (Long) hoặc -1 (Short/Fade), nhận {side}"
-        )
-
-    if trade_mode not in ("follow", "fade"):
-        raise ValueError(
-            f"Lỗi hải quan B-1-4: trade_mode bắt buộc phải là 'follow' hoặc 'fade', nhận {trade_mode}"
-        )
-
-    # Chuẩn hóa sang numpy ndarray để đảm bảo an toàn thao tác mảng
-    highs = np.asarray(future_highs, dtype=float)
-    lows = np.asarray(future_lows, dtype=float)
-    atr = np.asarray(future_atr, dtype=float)
-    p_trend = np.asarray(future_p_trend, dtype=float)
-
-    n_bars = len(highs)
-    if n_bars == 0:
-        raise ValueError("Lỗi B-1-4: Mảng future_highs rỗng (0 nến tương lai)!")
-
-    if len(lows) != n_bars or len(atr) != n_bars or len(p_trend) != n_bars:
-        raise ValueError(
-            f"Lỗi B-1-4: Độ dài các mảng tương lai lệch nhau: highs={n_bars}, lows={len(lows)}, atr={len(atr)}, p_trend={len(p_trend)}"
-        )
-
-    if (
-        np.any(np.isnan(highs))
-        or np.any(np.isinf(highs))
-        or np.any(np.isnan(lows))
-        or np.any(np.isinf(lows))
-    ):
-        raise ValueError(
-            "Lỗi B-1-4: Mảng giá tương lai (highs/lows) chứa giá trị rác NaN hoặc Inf!"
-        )
-
-    if np.any(atr < 0) or np.any(np.isnan(atr)) or np.any(np.isinf(atr)):
-        raise ValueError(
-            "Lỗi B-1-4: Mảng future_atr chứa số âm (<0) hoặc NaN/Inf gây sai lệch Trailing Stop!"
-        )
-
-    if np.any(highs < lows):
-        raise ValueError(
-            "Lỗi B-1-4: Phát hiện nến dị thường có High < Low trong mảng tương lai!"
-        )
-
-    effective_t_max = (
-        min(t_max_live, max_lookforward_override)
-        if max_lookforward_override is not None
-        else t_max_live
-    )
-    if effective_t_max <= 0:
-        raise ValueError(f"Lỗi B-1-4: effective_t_max ({effective_t_max}) phải > 0!")
-
-    threshold = (
-        p_trend_exit_threshold_follow
-        if trade_mode == "follow"
-        else p_trend_exit_threshold_fade
-    )
-    consecutive_flip_count = 0
-
-    # ---------------------------------------------------------
-    # 1. NHÁNH LONG (side > 0)
-    # ---------------------------------------------------------
-    if side > 0:
-        extreme_price = entry_price  # highest high kể từ lúc vào lệnh
-        for k in range(min(effective_t_max, n_bars)):
-            # Kiểm tra Stop-loss cứng trước
-            if lows[k] <= sl_initial:
-                return {"exit_idx": k, "reason": "SL", "boundary_truncated": False}
-
-            # Tính Trailing Stop TỪ extreme_price HIỆN TẠI (của nến trước)
-            trail_stop = (
-                extreme_price - m_trail_base * (1 + gamma * p_trend[k]) * atr[k]
-            )
-
-            # Kiểm tra Trailing Stop
-            if lows[k] <= trail_stop:
-                return {"exit_idx": k, "reason": "TRAIL", "boundary_truncated": False}
-
-            # Cập nhật mức cao nhất cho vòng lặp nến tiếp theo
-            extreme_price = max(extreme_price, highs[k])
-
-
-            # Kiểm tra Regime-Flip (Thoát sớm dựa trên HMM)
-            consecutive_flip_count = _update_regime_flip(
-                p_trend[k], trade_mode, threshold, consecutive_flip_count
-            )
-            if consecutive_flip_count >= consecutive_bars_required:
-                return {
-                    "exit_idx": k,
-                    "reason": "REGIME_FLIP",
-                    "boundary_truncated": False,
-                }
-
-    # ---------------------------------------------------------
-    # 2. NHÁNH SHORT/FADE (side < 0)
-    # ---------------------------------------------------------
-    else:
-        extreme_price = entry_price  # lowest low kể từ lúc vào lệnh
-        for k in range(min(effective_t_max, n_bars)):
-            # Kiểm tra Stop-loss cứng (Với lệnh Short, SL nằm bên TRÊN)
-            if highs[k] >= sl_initial:
-                return {"exit_idx": k, "reason": "SL", "boundary_truncated": False}
-
-            # Tính Trailing nằm bên TRÊN giá TỪ extreme_price HIỆN TẠI
-            trail_stop = (
-                extreme_price + m_trail_base * (1 + gamma * p_trend[k]) * atr[k]
-            )
-
-            # Kiểm tra Trailing Stop
-            if highs[k] >= trail_stop:
-                return {"exit_idx": k, "reason": "TRAIL", "boundary_truncated": False}
-
-            # Cập nhật mức thấp nhất cho vòng lặp nến tiếp theo
-            extreme_price = min(extreme_price, lows[k])
-
-
-            # Kiểm tra Regime-Flip (Thoát sớm dựa trên HMM)
-            consecutive_flip_count = _update_regime_flip(
-                p_trend[k], trade_mode, threshold, consecutive_flip_count
-            )
-            if consecutive_flip_count >= consecutive_bars_required:
-                return {
-                    "exit_idx": k,
-                    "reason": "REGIME_FLIP",
-                    "boundary_truncated": False,
-                }
-
-    # ---------------------------------------------------------
-    # 3. CHƯA CHẠM NGƯỠNG NÀO -> HẾT THỜI GIAN (TIME_STOP)
-    # ---------------------------------------------------------
-    last_idx = min(effective_t_max, n_bars) - 1
-    is_truncated = (max_lookforward_override is not None) and (
-        effective_t_max < t_max_live
-    )
-    return {
-        "exit_idx": max(last_idx, 0),
-        "reason": "TIME_STOP",
-        "boundary_truncated": is_truncated,
-    }
-
-
-# ============================================================================
 # UNIT TESTS (TDD & ARMOR-PLATED FAULT-INJECTION STRESS TESTS)
 # ============================================================================
 def test_b_1_4_regime_aware_trailing_exit_symmetry():
@@ -381,7 +223,7 @@ def test_b_1_4_regime_aware_trailing_exit_symmetry():
     # Test 1: side=+1 (Long/Follow), giá giảm chạm SL tại k=3
     highs_l = np.array([101, 102, 103, 90, 90, 90, 90, 90, 90, 90], dtype=float)
     lows_l = np.array([100, 101, 102, 85, 85, 85, 85, 85, 85, 85], dtype=float)
-    res_l = compute_regime_aware_trailing_exit_v2(
+    res_l = compute_regime_aware_trailing_exit_v3_liquidation_aware(
         100.0, 1, "follow", highs_l, lows_l, atr, p_trend_flat, 95.0, t_max_live=10
     )
     assert (
@@ -393,7 +235,7 @@ def test_b_1_4_regime_aware_trailing_exit_symmetry():
         [101, 102, 102.5, 110, 110, 110, 110, 110, 110, 110], dtype=float
     )
     lows_s = np.array([100, 101, 101.5, 105, 105, 105, 105, 105, 105, 105], dtype=float)
-    res_s = compute_regime_aware_trailing_exit_v2(
+    res_s = compute_regime_aware_trailing_exit_v3_liquidation_aware(
         100.0, -1, "fade", highs_s, lows_s, atr, p_trend_flat, 105.0, t_max_live=10
     )
     assert (
@@ -404,7 +246,7 @@ def test_b_1_4_regime_aware_trailing_exit_symmetry():
     highs_f = np.full(10, 100.5)
     lows_f = np.full(10, 99.5)
     p_trend_rising = np.array([0.5, 0.5, 0.7, 0.7, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5])
-    res_f_flip = compute_regime_aware_trailing_exit_v2(
+    res_f_flip = compute_regime_aware_trailing_exit_v3_liquidation_aware(
         100.0,
         -1,
         "fade",
@@ -422,7 +264,7 @@ def test_b_1_4_regime_aware_trailing_exit_symmetry():
     ), f"Fade regime-flip test FAILED: {res_f_flip}"
 
     # Test 4: Follow cùng chuỗi p_trend_rising — KHÔNG kích hoạt Regime-Flip vì Follow chỉ thoát khi trend yếu
-    res_fl_no_flip = compute_regime_aware_trailing_exit_v2(
+    res_fl_no_flip = compute_regime_aware_trailing_exit_v3_liquidation_aware(
         100.0,
         1,
         "follow",
@@ -441,14 +283,14 @@ def test_b_1_4_regime_aware_trailing_exit_symmetry():
 
     # 5. [ARMOR-PLATED FAULT-INJECTION] Kiểm thử bẻ gãy mảng rỗng (Empty array crash check)
     try:
-        compute_regime_aware_trailing_exit_v2(100.0, 1, "follow", [], [], [], [], 95.0)
+        compute_regime_aware_trailing_exit_v3_liquidation_aware(100.0, 1, "follow", [], [], [], [], 95.0)
         assert False, "Lỗi rò rỉ: Mảng rỗng lọt qua mà không ném lỗi ValueError!"
     except ValueError as e:
         assert "Mảng future_highs rỗng" in str(e)
 
     # 6. [ARMOR-PLATED FAULT-INJECTION] Kiểm thử bẻ gãy độ dài mảng lệch nhau (Mismatched arrays check)
     try:
-        compute_regime_aware_trailing_exit_v2(
+        compute_regime_aware_trailing_exit_v3_liquidation_aware(
             100.0, 1, "follow", highs_l[:5], lows_l[:4], atr[:5], p_trend_flat[:5], 95.0
         )
         assert False, "Lỗi rò rỉ: Mảng lệch độ dài lọt qua mà không ném lỗi ValueError!"
@@ -459,7 +301,7 @@ def test_b_1_4_regime_aware_trailing_exit_symmetry():
     atr_bad = atr.copy()
     atr_bad[2] = -1.0
     try:
-        compute_regime_aware_trailing_exit_v2(
+        compute_regime_aware_trailing_exit_v3_liquidation_aware(
             100.0, 1, "follow", highs_l, lows_l, atr_bad, p_trend_flat, 95.0
         )
         assert False, "Lỗi rò rỉ: ATR âm lọt qua mà không ném lỗi ValueError!"
@@ -468,7 +310,7 @@ def test_b_1_4_regime_aware_trailing_exit_symmetry():
 
     # 8. [ARMOR-PLATED FAULT-INJECTION] Kiểm thử bẻ gãy side = 0 hoặc trade_mode không hợp lệ
     try:
-        compute_regime_aware_trailing_exit_v2(
+        compute_regime_aware_trailing_exit_v3_liquidation_aware(
             100.0, 0, "follow", highs_l, lows_l, atr, p_trend_flat, 95.0
         )
         assert False, "Lỗi rò rỉ: side=0 lọt qua mà không ném lỗi ValueError!"
@@ -476,7 +318,7 @@ def test_b_1_4_regime_aware_trailing_exit_symmetry():
         pass
 
     try:
-        compute_regime_aware_trailing_exit_v2(
+        compute_regime_aware_trailing_exit_v3_liquidation_aware(
             100.0, 1, "invalid_mode", highs_l, lows_l, atr, p_trend_flat, 95.0
         )
         assert False, "Lỗi rò rỉ: trade_mode rác lọt qua mà không ném lỗi ValueError!"
@@ -484,7 +326,7 @@ def test_b_1_4_regime_aware_trailing_exit_symmetry():
         pass
 
     print(
-        "✅ [TASK B-1-4] compute_regime_aware_trailing_exit_v2 PASSED! (Đối xứng hoàn hảo, Regime-Flip chuẩn & Chống 100% mảng rỗng/lệch/ATR âm/mode rác)"
+        "✅ [TASK B-1-4] compute_regime_aware_trailing_exit_v3_liquidation_aware PASSED! (Đối xứng hoàn hảo, Regime-Flip chuẩn & Chống 100% mảng rỗng/lệch/ATR âm/mode rác)"
     )
 
 
@@ -537,6 +379,26 @@ def compute_regime_aware_trailing_exit_v3_liquidation_aware(
             f"Lỗi B-1-5 (v3): Độ dài các mảng tương lai lệch nhau: highs={n_bars}, lows={len(lows)}, atr={len(atr)}, p_trend={len(p_trend)}"
         )
 
+    if (
+        np.any(np.isnan(highs))
+        or np.any(np.isinf(highs))
+        or np.any(np.isnan(lows))
+        or np.any(np.isinf(lows))
+    ):
+        raise ValueError(
+            "Lỗi B-1-4: Mảng giá tương lai (highs/lows) chứa giá trị rác NaN hoặc Inf!"
+        )
+
+    if np.any(atr < 0) or np.any(np.isnan(atr)) or np.any(np.isinf(atr)):
+        raise ValueError(
+            "Lỗi B-1-4: Mảng future_atr chứa số âm (<0) hoặc NaN/Inf gây sai lệch Trailing Stop!"
+        )
+
+    if np.any(highs < lows):
+        raise ValueError(
+            "Lỗi B-1-4: Phát hiện nến dị thường có High < Low trong mảng tương lai!"
+        )
+
     effective_t_max = (
         min(t_max_live, max_lookforward_override)
         if max_lookforward_override is not None
@@ -546,6 +408,12 @@ def compute_regime_aware_trailing_exit_v3_liquidation_aware(
         raise ValueError(
             f"Lỗi B-1-5 (v3): effective_t_max ({effective_t_max}) phải > 0!"
         )
+
+    # [FINDING F] Zero-length slice: nếu chỉ có 0 hoặc 1 nến tương lai,
+    # không đủ dữ liệu để mô phỏng exit có ý nghĩa → trả None thay vì
+    # tạo bản ghi TIME_STOP giả với thời gian nắm giữ = 0.
+    if min(effective_t_max, n_bars) <= 1:
+        return None
 
     threshold = (
         p_trend_exit_threshold_follow
@@ -571,10 +439,11 @@ def compute_regime_aware_trailing_exit_v3_liquidation_aware(
             # 1. Kiểm tra Stop-loss cứng
             if lows[k] <= sl_initial:
                 return {"exit_idx": k, "reason": "SL", "boundary_truncated": False}
-            # 2. Tính Trailing Stop TỪ extreme_price của nến trước
-            trail_stop = (
-                extreme_price - m_trail_base * (1 + gamma * p_trend[k]) * atr[k]
-            )
+            # 2. Tính Trailing Stop TỪ extreme_price của nến trước (Geometric Symmetry)
+            trail_cushion = m_trail_base * (1 + gamma * p_trend[k]) * atr[k] / extreme_price
+            trail_stop = extreme_price * math.exp(-trail_cushion)
+            # Kẹp (clamp): trail_stop KHÔNG được phép lỏng hơn sl_initial (Long: không thấp hơn SL)
+            trail_stop = max(trail_stop, sl_initial)
             if lows[k] <= trail_stop:
                 return {"exit_idx": k, "reason": "TRAIL", "boundary_truncated": False}
             # 2.1 Cập nhật cực đại cho nến sau
@@ -607,10 +476,11 @@ def compute_regime_aware_trailing_exit_v3_liquidation_aware(
             # 1. Kiểm tra Stop-loss cứng
             if highs[k] >= sl_initial:
                 return {"exit_idx": k, "reason": "SL", "boundary_truncated": False}
-            # 2. Tính Trailing Stop TỪ extreme_price của nến trước
-            trail_stop = (
-                extreme_price + m_trail_base * (1 + gamma * p_trend[k]) * atr[k]
-            )
+            # 2. Tính Trailing Stop TỪ extreme_price của nến trước (Geometric Symmetry)
+            trail_cushion = m_trail_base * (1 + gamma * p_trend[k]) * atr[k] / extreme_price
+            trail_stop = extreme_price * math.exp(trail_cushion)
+            # Kẹp (clamp): trail_stop KHÔNG được phép lỏng hơn sl_initial (Short: không cao hơn SL)
+            trail_stop = min(trail_stop, sl_initial)
             if highs[k] >= trail_stop:
                 return {"exit_idx": k, "reason": "TRAIL", "boundary_truncated": False}
             # 2.1 Cập nhật cực tiểu cho nến sau
@@ -689,13 +559,7 @@ def simulate_trailing_exit_within_fold_bounds(
 
     # Guard an toàn nếu lệnh vào đúng nến cuối của Fold hoặc vượt biên
     if len(future_highs) == 0:
-        return {
-            "entry_idx": entry_idx,
-            "exit_idx_relative": 0,
-            "exit_idx_absolute": entry_idx,
-            "exit_reason": "TIME_STOP",
-            "boundary_truncated": True,
-        }
+        return None
 
     exit_result = compute_regime_aware_trailing_exit_v3_liquidation_aware(
         entry_price=entry_price,
@@ -724,62 +588,6 @@ def simulate_trailing_exit_within_fold_bounds(
     }
 
 
-# ============================================================================
-# BỔ SUNG — Module G cần nhánh riêng cho LIQUIDATION, không dùng công thức PnL thường
-# ============================================================================
-def compute_realized_pnl(
-    side: int,
-    size_notional: float,
-    fill_price_entry: float,
-    fill_price_exit: float,
-    fee_entry_rate: float,
-    fee_exit_rate: float,
-    exit_reason: str,
-    funding_accrued: float = 0.0,
-    liquidation_fee_rate: float = 0.0125,
-    leverage: float = 1.0,
-    is_notional_in_usd: bool = True,
-) -> float:
-    """
-    [BỔ SUNG] Nhánh LIQUIDATION: mất toàn bộ tiền ký quỹ (Margin = size_notional / leverage)
-    cộng phí thanh lý thu trên tổng giá trị danh nghĩa.
-
-    [ARMOR-PLATED GUARDS]:
-    - Phân định rõ is_notional_in_usd (mặc định True là USD Notional) tránh nhầm lẫn đơn vị.
-    """
-    if side not in (1, -1):
-        raise ValueError(
-            f"Lỗi hải quan B-1-5 (compute_realized_pnl): side phải là +1 hoặc -1, nhận {side}"
-        )
-
-    if not isinstance(fill_price_entry, (int, float)) or fill_price_entry <= 0:
-        raise ValueError(
-            f"Lỗi hải quan B-1-5: fill_price_entry phải > 0, nhận {fill_price_entry}"
-        )
-
-    if not isinstance(size_notional, (int, float)) or size_notional < 0:
-        raise ValueError(
-            f"Lỗi hải quan B-1-5: size_notional phải >= 0, nhận {size_notional}"
-        )
-
-    if not isinstance(leverage, (int, float)) or leverage < 1.0:
-        raise ValueError(f"Lỗi hải quan B-1-5: leverage phải >= 1.0, nhận {leverage}")
-
-    if exit_reason == "LIQUIDATION":
-        margin_lost = size_notional / max(leverage, 1.0)
-        return float(-margin_lost - funding_accrued)
-
-    if is_notional_in_usd:
-        raw_pnl = (
-            side
-            * ((fill_price_exit - fill_price_entry) / fill_price_entry)
-            * size_notional
-        )
-    else:
-        raw_pnl = side * (fill_price_exit - fill_price_entry) * size_notional
-
-    fee_cost = (fee_entry_rate + fee_exit_rate) * size_notional
-    return float(raw_pnl - fee_cost - funding_accrued)
 
 
 # ============================================================================
@@ -826,21 +634,34 @@ def test_b_1_5_no_leakage_past_fold_boundary():
     ), f"Kỳ vọng TIME_STOP, nhận {result['exit_reason']}"
     assert result["boundary_truncated"] is True
 
-    # Kiểm thử thêm PnL Liquidation không bị lỗ ảo gấp 10 lần đòn bẩy
-    pnl_liq = compute_realized_pnl(
+    # Kiểm thử thêm case: Nếu lệnh rơi đúng vào sát vách fold_end_idx (future mảng rỗng)
+    result_empty = simulate_trailing_exit_within_fold_bounds(
+        entry_idx=fold_end_idx - 1, # Lệnh mở đúng nến cuối của test_window, mảng future rỗng
+        entry_price=100.0,
         side=1,
+        trade_mode="follow",
+        test_window_end_idx=fold_end_idx,
+        full_highs=full_highs,
+        full_lows=full_lows,
+        full_atr=full_atr,
+        full_p_trend=full_p_trend,
+        sl_initial=90.0,
+        liquidation_price=80.0,
+        t_max_live=120,
+    )
+    assert result_empty is None, f"Kỳ vọng None cho lệnh mảng rỗng, nhận {result_empty}"
+
+    from aegis.meta_labeling.sizing.liquidation_layer import compute_liquidation_loss
+
+    # Kiểm thử PnL Liquidation: Isolated Margin, mất mát tối đa = margin = size_notional / leverage.
+    # Phí thanh lý đã được tính vào việc đẩy giá thanh lý gần entry hơn (trong compute_liquidation_price),
+    # KHÔNG tính thêm ở đây (tránh double-count).
+    pnl_liq = compute_liquidation_loss(
         size_notional=100000.0,
-        fill_price_entry=100.0,
-        fill_price_exit=80.0,
-        fee_entry_rate=0.0004,
-        fee_exit_rate=0.0004,
-        exit_reason="LIQUIDATION",
-        funding_accrued=50.0,
-        liquidation_fee_rate=0.0125,
         leverage=10.0,
     )
-    # Kỳ vọng: Mất 10,000 (margin_lost) + 50 (funding) = -10050.0 (phí phạt đã trừ thẳng vào margin còn lại)
-    assert abs(pnl_liq - (-10050.0)) < 1e-4, f"Sai tính toán PnL Liquidation: {pnl_liq}"
+    # Kỳ vọng: Mất trắng margin = -(100000 / 10) = -10000.0
+    assert abs(pnl_liq - (-10000.0)) < 1e-4, f"Sai tính toán PnL Liquidation: {pnl_liq}"
 
     print(
         "✅ [TASK B-1-5] test_b_1_5_no_leakage_past_fold_boundary & Liquidation PnL PASSED!"

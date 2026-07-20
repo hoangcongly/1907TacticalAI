@@ -6,8 +6,12 @@ import pandera as pa
 from aegis.core.schemas import (
     SignalBarSchema,
     TradeRecordSchema,
+    TradeRecord,
     assert_trade_records_match_bar_version,
+    check_insufficient_history_nulls,
 )
+import inspect
+from aegis.execution.pnl import compute_realized_pnl
 
 
 def test_signal_bar_schema_valid():
@@ -155,3 +159,76 @@ def test_lineage_and_versioning_assertion():
 
     with pytest.raises(AssertionError, match="FATAL: DATA LINEAGE MISMATCH"):
         assert_trade_records_match_bar_version(trade_df, expected_hash)
+
+
+def test_check_insufficient_history_nulls_mixed_true_false():
+    """
+    Case trước đây KHÔNG được test: dữ liệu trộn lẫn cả True lẫn False trong
+    insufficient_history — đây chính là case mà bug index-alignment lộ ra.
+    """
+    df = pd.DataFrame({
+        "insufficient_history": [True, False, True, False, False],
+        "trend_score": [None, 0.5, None, 0.3, 0.1],
+        "p_trend": [None, 0.6, None, 0.4, 0.2],
+        "p_chop": [None, 0.4, None, 0.6, 0.8],
+        "atr_14": [None, 1.2, None, 1.5, 1.1],
+        "hurst_value": [None, 0.55, None, 0.45, 0.5],
+    })
+    result = check_insufficient_history_nulls(df)
+
+    assert len(result) == len(df), f"Độ dài lệch: result={len(result)}, df={len(df)}"
+    assert list(result.index) == list(df.index), "Index không khớp df gốc"
+    assert result.tolist() == [True, True, True, True, True], (
+        f"Kỳ vọng toàn True (không dòng nào vi phạm), nhận {result.tolist()}"
+    )
+
+    # Case vi phạm: dòng insufficient_history=True nhưng có giá trị không null
+    df_bad = df.copy()
+    df_bad.loc[0, "trend_score"] = 0.9  # vi phạm: insufficient_history=True nhưng có số
+    result_bad = check_insufficient_history_nulls(df_bad)
+    assert result_bad.tolist() == [False, True, True, True, True], (
+        f"Kỳ vọng dòng 0 = False (vi phạm), nhận {result_bad.tolist()}"
+    )
+
+    print("✅ test_check_insufficient_history_nulls_mixed_true_false PASSED")
+
+def test_schema_column_count_matches_typeddict():
+    """
+    [TASK B-1] (Phát hiện 7) Đảm bảo số lượng cột trong TradeRecordSchema
+    phải khớp chính xác với số lượng trường định nghĩa trong TradeRecord (TypedDict),
+    tránh trường hợp schema bị cập nhật sót so với logic code (Magic Number column count).
+    """
+    schema_cols = set(TradeRecordSchema.columns.keys())
+    # Lấy các trường (keys) từ TradeRecord TypedDict
+    # typing.get_type_hints hoặc __annotations__ đều được
+    import typing
+    typed_dict_keys = set(typing.get_type_hints(TradeRecord).keys())
+    
+    missing_in_schema = typed_dict_keys - schema_cols
+    missing_in_dict = schema_cols - typed_dict_keys
+    
+    assert schema_cols == typed_dict_keys, (
+        f"Lệch cột giữa Schema và TypedDict.\n"
+        f"Thiếu trong Schema: {missing_in_schema}\n"
+        f"Thiếu trong TypedDict: {missing_in_dict}"
+    )
+
+def test_leverage_does_not_affect_pnl_for_non_liquidated_exits():
+    """
+    [TASK B-1] Khóa cứng hàm tính PnL thường (compute_realized_pnl).
+    Với các lệnh không phải thanh lý, PnL CHỈ phụ thuộc vào side, size_notional, fill_price, fee.
+    Thay đổi đòn bẩy (leverage) sẽ KHÔNG làm thay đổi kết quả PnL.
+    """
+    res_lev_2 = compute_realized_pnl(
+        entry_price=100.0, exit_price=110.0, side=1, size_notional=1000.0,
+        leverage=2.0, exit_reason="TRAIL"
+    )
+    res_lev_10 = compute_realized_pnl(
+        entry_price=100.0, exit_price=110.0, side=1, size_notional=1000.0,
+        leverage=10.0, exit_reason="TRAIL"
+    )
+    
+    assert res_lev_2["net_pnl"] == res_lev_10["net_pnl"], (
+        "Lỗi kiến trúc: Đòn bẩy đã làm rò rỉ và thay đổi PnL của một lệnh thoát bình thường!"
+    )
+

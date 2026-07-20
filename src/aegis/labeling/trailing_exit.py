@@ -354,6 +354,15 @@ def compute_regime_aware_trailing_exit_v3_liquidation_aware(
     if len(lows) != n_bars or len(atr) != n_bars or len(p_trend) != n_bars:
         raise ValueError(f"Lỗi B-1-5 (v3): Độ dài các mảng tương lai lệch nhau: highs={n_bars}, lows={len(lows)}, atr={len(atr)}, p_trend={len(p_trend)}")
 
+    if np.any(np.isnan(highs)) or np.any(np.isinf(highs)) or np.any(np.isnan(lows)) or np.any(np.isinf(lows)):
+        raise ValueError("Lỗi B-1-5 (v3): Mảng giá tương lai (highs/lows) chứa giá trị rác NaN hoặc Inf!")
+
+    if np.any(atr < 0) or np.any(np.isnan(atr)) or np.any(np.isinf(atr)):
+        raise ValueError("Lỗi B-1-5 (v3): Mảng future_atr chứa số âm (<0) hoặc NaN/Inf gây sai lệch Trailing Stop!")
+
+    if np.any(highs < lows):
+        raise ValueError("Lỗi B-1-5 (v3): Phát hiện nến dị thường có High < Low trong mảng tương lai!")
+
     effective_t_max = min(t_max_live, max_lookforward_override) if max_lookforward_override is not None else t_max_live
     if effective_t_max <= 0:
         raise ValueError(f"Lỗi B-1-5 (v3): effective_t_max ({effective_t_max}) phải > 0!")
@@ -449,7 +458,7 @@ def simulate_trailing_exit_within_fold_bounds(
         return {
             "entry_idx": entry_idx,
             "exit_idx_relative": 0,
-            "exit_idx_absolute": entry_idx,
+            "exit_idx_absolute": entry_idx + 1,
             "exit_reason": "TIME_STOP",
             "boundary_truncated": True,
         }

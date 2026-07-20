@@ -44,7 +44,7 @@ Output của `build_signal_bars()`, `schema_version = "1.0.0"`. `timestamp_ms` L
 12. `size_notional` (float): > 0
 13. `exit_idx_relative` (int): >= 0
 14. `exit_idx_absolute` (int): = entry_idx + 1 + exit_idx_relative
-15. `exit_reason` (str): "SL" | "TRAIL" | "REGIME_FLIP" | "TIME_STOP"
+15. `exit_reason` (str): "SL" | "TRAIL" | "REGIME_FLIP" | "TIME_STOP" | "LIQUIDATION"
 16. `fill_price_exit` (float): > 0
 17. `boundary_truncated` (bool)
 18. `fee_entry` (float): >= 0

@@ -22,7 +22,7 @@ class TradeRecord(TypedDict):
     sl_initial: float # Giá cắt lỗ ban đầu (Stop Loss) đã được đối xứng theo hướng lệnh
     exit_idx_relative: int # Khoảng cách số nến từ lúc vào lệnh đến lúc thoát lệnh (>= 0)
     exit_idx_absolute: int # Chỉ số bar_idx tuyệt đối tại thời điểm thoát lệnh (= entry_idx + 1 + exit_idx_relative)
-    exit_reason: Literal["SL", "TRAIL", "REGIME_FLIP", "TIME_STOP"] # Lý do thoát lệnh theo chuẩn v11.8
+    exit_reason: Literal["SL", "TRAIL", "REGIME_FLIP", "TIME_STOP", "LIQUIDATION"] # Lý do thoát lệnh theo chuẩn v11.9
     boundary_truncated: bool # Cờ báo hiệu giao dịch bị cắt ngắn do chạm biên fold CPCV hoặc hết dữ liệu test
     realized_return: float # Lợi nhuận thực tế (Realized Return) sau khi trừ phí và lãi qua đêm
 
@@ -115,7 +115,7 @@ TradeRecordSchema = DataFrameSchema(
         "size_notional": Column(float, Check.gt(0)), # Quy mô danh nghĩa của lệnh giao dịch (> 0)
         "exit_idx_relative": Column(int, Check.ge(0)), # Khoảng cách bar tương đối từ lúc vào lệnh đến lúc thoát lệnh (>= 0)
         "exit_idx_absolute": Column(int, Check.ge(0)), # Chỉ số bar tuyệt đối khi thoát lệnh (= entry_idx + 1 + exit_idx_relative)
-        "exit_reason": Column(str, Check.isin(["SL", "TRAIL", "REGIME_FLIP", "TIME_STOP"])), # Lý do thoát lệnh chuẩn hóa
+        "exit_reason": Column(str, Check.isin(["SL", "TRAIL", "REGIME_FLIP", "TIME_STOP", "LIQUIDATION"])), # Lý do thoát lệnh chuẩn hóa
         "fill_price_exit": Column(float, Check.gt(0)), # Giá khớp lệnh thoát lệnh thực tế tra cứu tại exit_idx_absolute (> 0)
         "boundary_truncated": Column(bool), # Cờ báo hiệu giao dịch bị cắt ngắn do hết dữ liệu hoặc chạm biên fold
         "fee_entry": Column(float, Check.ge(0)), # Phí giao dịch vào lệnh (>= 0)

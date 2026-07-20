@@ -384,6 +384,15 @@ flowchart TD
     Mean -->|Iterate until = 0| Optimal["Found Optimal Fraction f*"]
 ```
 
+### 5. Phòng Thủ Kép: HMM Bayesian Kelly & Volatility Targeting (Vá Lỗ Hổng "Ảo Giác Tĩnh")
+Kelly truyền thống mắc phải một lỗ hổng chí mạng: **Ảo giác tĩnh**. Nó dùng toàn bộ dữ liệu lịch sử tĩnh để đánh cược cho một thị trường có thể đã hoàn toàn thay đổi cấu trúc (Market Regime) hoặc đang bước vào một đợt bùng nổ biến động đột ngột (Thiên Nga Đen). Để triệt tiêu lỗ hổng này, hệ thống áp dụng cấu trúc phòng thủ 3 tầng:
+
+- **Tầng 1 - Mượt Mà Hóa Xác Suất (HMM Probability-Weighted):** Thay vì ném toàn bộ dữ liệu vào 1 rổ, hệ thống tách bảng Kelly theo từng Regime (Bull, Bear, Chop). Tuy nhiên, hệ thống không "chốt cứng" một regime. Tại mỗi thời điểm, HMM xuất ra xác suất của 3 regime, và Kelly cuối cùng là trung bình cộng có trọng số của 3 giá trị $f^*$ tương ứng, đảm bảo chuyển pha cực kỳ mượt mà.
+- **Tầng 2 - Phanh Khẩn Cấp Bằng Nhánh Shrinkage (Bayesian Shrinkage):** Khi HMM vừa báo chuyển pha, dữ liệu quá khứ cho regime mới có thể cực kỳ ít (Data Starvation). Kelly có thể báo $f^*$ rất cao do "ảo giác" mẫu nhỏ. Cơ chế Bayesian Shrinkage sẽ trừng phạt mẫu nhỏ bằng công thức:
+  $$f_{\text{bayesian}} = \frac{N}{N + C} f_{\text{conservative}} + \frac{C}{N + C} f_{\text{prior}}$$
+  Nếu số lệnh $N$ quá nhỏ so với ngưỡng $C=20$, tỷ lệ phân bổ bị ép về mức an toàn tối thiểu ($f_{\text{prior}} = 0.1$).
+- **Tầng 3 - Bóp Nghẹt Thiên Nga Đen (Volatility Scaling Ratio):** Kelly giải quyết bài toán tăng trưởng chứ không phải sụt giảm tức thời. Hàm `compute_position_size` áp dụng tỷ lệ chiết khấu biến động: $Vol\_Ratio = ATR_{\text{hist}} / ATR_t$. Nếu biến động hiện tại vọt lên gấp 5 lần quá khứ, quy mô lệnh tự động bị chém đi $80\%$ ngay trong phần nghìn giây, không cần đợi Kelly thu thập đủ mẫu để hiểu chuyện gì đang xảy ra.
+
 ---
 
 ## PHẦN IV: GIẢI PHẪU CHI TIẾT TASK B-1-2 (`classify_trade_mode`) — BỘ PHÂN LOẠI CHẾ ĐỘ GIAO DỊCH DUY NHẤT & KHÓA CỔNG AN TOÀN (`Regime Gate`)

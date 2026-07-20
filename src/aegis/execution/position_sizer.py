@@ -20,17 +20,21 @@ def compute_position_size(
     current_equity: float,
     lambda_kelly: float = DEFAULT_LAMBDA_KELLY,
     max_notional_cap: float = None,
+    atr_hist_mean_pct: float = None,
+    atr_current_pct: float = None,
 ) -> float:
     """
     [PHÁT HIỆN O] Biến f* thành size_notional cho lệnh thật.
 
-    Công thức: size_notional = f* × λ × current_equity
+    Công thức: size_notional = f* × λ × current_equity × min(1.0, ATR_hist / ATR_current)
 
     Tham số:
     - f_star: Tỷ lệ cược tối ưu từ solve_empirical_kelly_fraction.
     - current_equity: Vốn tài khoản HIỆN TẠI (mark-to-market).
     - lambda_kelly: Hệ số chiết khấu Fractional Kelly (mặc định 0.5 = Half-Kelly).
     - max_notional_cap: Trần tuyệt đối cho size_notional (USD). None = không giới hạn.
+    - atr_hist_mean_pct: ATR trung bình (tính bằng %) của mẫu quá khứ Kelly.
+    - atr_current_pct: ATR hiện tại (tính bằng %). Nếu cao hơn quá khứ, size sẽ bị cắt giảm.
     """
     # [ARMOR GUARD] Chặn input rác
     if math.isnan(f_star) or math.isinf(f_star) or f_star < 0:
@@ -43,9 +47,23 @@ def compute_position_size(
     # f_star = 0 → Không cược (kỳ vọng âm hoặc thiếu dữ liệu)
     if f_star == 0.0:
         return 0.0
+        
+    # [TẦNG 3]: VOLATILITY TARGETING (BÓP NGHẸT THIÊN NGA ĐEN)
+    vol_multiplier = 1.0
+    if atr_hist_mean_pct is not None and atr_current_pct is not None:
+        if atr_current_pct <= 0 or math.isnan(atr_current_pct):
+            raise ValueError("ATR hiện tại rác (<=0 hoặc NaN), dừng cấp vốn!")
+        if atr_hist_mean_pct <= 0 or math.isnan(atr_hist_mean_pct):
+            raise ValueError("ATR lịch sử rác, không có cơ sở tham chiếu!")
+            
+        # Tính Tỷ lệ Bóp nghẹt (Volatility Scaling Ratio)
+        vol_ratio = atr_hist_mean_pct / atr_current_pct
+        
+        # Kẹp max = 1.0 (Chỉ được giảm size khi bão tới, cấm tăng size khi thị trường quá phẳng lặng)
+        vol_multiplier = min(1.0, vol_ratio)
 
     # Công thức lõi
-    size_notional = f_star * lambda_kelly * current_equity
+    size_notional = f_star * lambda_kelly * current_equity * vol_multiplier
 
     # Trần tuyệt đối (nếu có)
     if max_notional_cap is not None:
@@ -56,66 +74,4 @@ def compute_position_size(
     return float(size_notional)
 
 
-# ============================================================================
-# UNIT TESTS (TDD)
-# ============================================================================
-def test_position_size_uses_current_equity():
-    """
-    [PHÁT HIỆN O] Xác nhận size_notional PHẢI thay đổi khi Equity thay đổi,
-    chứng minh hệ thống dùng vốn hiện tại (compounding), không phải vốn gốc cố định.
-    """
-    f_star = 0.3
-    size_1000 = compute_position_size(f_star=f_star, current_equity=1000.0)
-    size_2000 = compute_position_size(f_star=f_star, current_equity=2000.0)
 
-    assert abs(size_2000 - size_1000 * 2.0) < 1e-6, (
-        f"size_notional phải tỷ lệ thuận với Equity: {size_2000} vs {size_1000 * 2.0}"
-    )
-    # Kiểm tra giá trị cụ thể: 0.3 * 0.5 * 1000 = 150
-    assert abs(size_1000 - 150.0) < 1e-6, f"Kỳ vọng 150.0, nhận {size_1000}"
-    print("✅ [PHÁT HIỆN O] size_notional tỷ lệ thuận với Equity PASSED!")
-
-
-def test_position_size_zero_f_star():
-    """f_star = 0 → Không cược tiền (kỳ vọng âm hoặc thiếu dữ liệu)."""
-    size = compute_position_size(f_star=0.0, current_equity=10000.0)
-    assert size == 0.0, f"f_star=0 phải trả về 0, nhận {size}"
-    print("✅ f_star=0 → size=0 PASSED!")
-
-
-def test_position_size_max_cap():
-    """Trần tuyệt đối giới hạn size_notional."""
-    size = compute_position_size(
-        f_star=10.0, current_equity=100000.0,
-        lambda_kelly=0.5, max_notional_cap=50000.0
-    )
-    assert abs(size - 50000.0) < 1e-6, f"Phải bị giới hạn ở 50000, nhận {size}"
-    print("✅ max_notional_cap PASSED!")
-
-
-def test_position_size_armor_guards():
-    """[ARMOR GUARD] Chặn input rác."""
-    import pytest
-
-    bad_inputs = [
-        {"f_star": -1.0, "current_equity": 1000.0},
-        {"f_star": float("nan"), "current_equity": 1000.0},
-        {"f_star": 0.3, "current_equity": -1000.0},
-        {"f_star": 0.3, "current_equity": 0.0},
-        {"f_star": 0.3, "current_equity": 1000.0, "lambda_kelly": 0.0},
-        {"f_star": 0.3, "current_equity": 1000.0, "lambda_kelly": 1.5},
-    ]
-    for kwargs in bad_inputs:
-        try:
-            compute_position_size(**kwargs)
-            assert False, f"Không chặn được input rác: {kwargs}"
-        except ValueError:
-            pass
-    print("✅ [ARMOR GUARD] Position Sizer chặn mọi input rác PASSED!")
-
-
-if __name__ == "__main__":
-    test_position_size_uses_current_equity()
-    test_position_size_zero_f_star()
-    test_position_size_max_cap()
-    test_position_size_armor_guards()

@@ -268,26 +268,36 @@ Trong kiến trúc Master Blueprint v11.8, `solve_empirical_kelly_fraction` đ�
 
 ### 2. Giải Phẫu Hàm Lõi `solve_empirical_kelly_fraction`
 ```python
-DEFAULT_F_MAX_NOTIONAL_CAP = 3.0
-DEFAULT_LAMBDA_KELLY = 0.5  # Half-Kelly chiết khấu rủi ro mô hình
+DEFAULT_F_MAX = 20.0          # Giới hạn tìm kiếm brentq (= leverage cap Perp Futures)
+DEFAULT_LAMBDA_KELLY = 0.5    # Half-Kelly chiết khấu rủi ro mô hình
 
-def solve_empirical_kelly_fraction(returns_sample: np.ndarray, f_max: float = DEFAULT_F_MAX_NOTIONAL_CAP, lambda_kelly: float = DEFAULT_LAMBDA_KELLY) -> float:
+class KellyConfidenceResult(NamedTuple):
+    f_star_point: float        # Ước lượng điểm
+    f_star_conservative: float # Phân vị bảo thủ 25%
+    bootstrap_std: float       # Độ lệch chuẩn bootstrap
+    uncertainty_ratio: float   # Cờ cảnh báo bất định
+
+def solve_empirical_kelly_fraction(returns_sample, f_max=DEFAULT_F_MAX) -> float:
     returns_sample = returns_sample[np.isfinite(returns_sample)]
     if len(returns_sample) < 30: return 0.0
-    assert np.all(returns_sample >= -1.0), "Canary Error: return < -100% sau khi đã lọc NaN/Inf"
+    assert np.all(returns_sample >= -1.0), "Canary Error"
 
-def solve_empirical_kelly_fraction_with_confidence(returns_sample: np.ndarray, f_max: float = DEFAULT_F_MAX_NOTIONAL_CAP, lambda_kelly: float = DEFAULT_LAMBDA_KELLY, n_bootstraps: int = 1000, lower_percentile: float = 25.0) -> float:
+def solve_empirical_kelly_fraction_with_confidence(...) -> KellyConfidenceResult:
 ```
 
-#### Tách Biệt Kiến Trúc Tường Minh & Chiết Khấu Fractional Kelly ($\lambda$)
+#### Phòng Thủ Chiều Sâu 3 Lớp (`Defense-in-Depth`) & Fractional Kelly ($\lambda$)
 > [!IMPORTANT]
-> **Phát Hiện A & Cơ Chế Chiết Khấu Rủi Ro Mô Hình ($\lambda$):** 
-> 1. **`DEFAULT_F_MAX_NOTIONAL_CAP = 3.0` (Trần Rủi Ro Biến Động Giá):** Quyết định `size_notional = f* × Equity`. Việc nâng `f_max` lên 20.0 là một sự đánh đồng nguy hiểm, vì vị thế notional 20x làm rớt 5% giá là mất 100% vốn — độc lập với mức đòn bẩy sàn chọn ở tầng margin. Trần rủi ro giá được giới hạn bảo thủ ở mức $\le 3.0$ (3x equity).
-> 2. **`DEFAULT_LAMBDA_KELLY = 0.5` (Fractional Kelly Discount Factor $\lambda$):** Vị thế thực tế được phân bổ là $f_{\text{allocated}} = \lambda \cdot f^*$. Việc sử dụng Half-Kelly ($\lambda = 0.5$) là chuẩn mực định chế giúp giảm 75% biến động tài khoản (`Drawdown Variance`) trong khi chỉ giảm 25% tỷ lệ tăng trưởng kép, chủ động triệt tiêu sai số ước lượng mẫu và rủi ro mô hình (`Model Risk`).
-> 3. **`MARGIN_LEVERAGE_CAP = 20.0` (Trần Hiệu Quả Ký Quỹ Margin):** Chỉ ảnh hưởng khoảng cách tới giá thanh lý, KHÔNG ảnh hưởng PnL của lệnh thoát thông thường (SL/TRAIL/REGIME_FLIP).
+> **Kiến trúc f_max = 20.0 được bảo vệ bởi 3 lớp phòng thủ đồng thời:**
+> 1. **Lớp 1 — Dynamic Cap:** $f_{\max\_safe} = \min(f_{\max}, \frac{0.999}{|r_{\min}|})$. Nếu mẫu chứa lệnh thanh lý ($r_{\min}=-1.0$), trần tìm kiếm tự động co lại về $0.999$ bất kể `f_max=20.0`.
+> 2. **Lớp 2 — Liquidation Layer:** `validate_leverage_against_sl` đảm bảo SL luôn nằm an toàn bên trong giá thanh lý (15% buffer).
+> 3. **Lớp 3 — Half-Kelly ($\lambda = 0.5$):** Vị thế thực tế $f_{\text{allocated}} = \lambda \cdot f^*$ giảm 75% biến động tài khoản (`Drawdown Variance`) trong khi chỉ mất 25% tốc độ tăng trưởng kép.
+>
+> **`MARGIN_LEVERAGE_CAP = 20.0` (Trần Hiệu Quả Ký Quỹ Margin):** Chỉ ảnh hưởng khoảng cách tới giá thanh lý, KHÔNG ảnh hưởng PnL lệnh thoát thông thường.
+>
+> **[Phát hiện M] `KellyConfidenceResult`:** Hàm bootstrap nay trả về `NamedTuple` chứa đầy đủ thông tin chẩn đoán (`f_star_point`, `f_star_conservative`, `bootstrap_std`, `uncertainty_ratio`) phục vụ tầng giám sát/logging.
 
 #### Canary Error Assertion (Thứ Tự NaN-Safe)
-- **`assert np.all(returns_sample >= -1.0)`**: Chạy **SAU** khi đã lọc bỏ các giá trị `NaN/Inf` (`returns_sample[np.isfinite(...)]`). Điều này ngăn ngừa báo lỗi giả (`false-positive`) do `NaN >= -1.0` trả về `False` trong NumPy. Mảng `returns_sample` đưa vào Kelly BẮT BUỘC phải là **Lợi suất Cơ sở Chưa dùng đòn bẩy (Unleveraged Return)**. Ví dụ: Nếu tài sản biến động 5%, $r = \pm 0.05$. Chốt chặn này đảm bảo nếu xuất hiện lỗ $> -100\%$ chưa đòn bẩy (lỗi số học rò rỉ), hệ thống sẽ ném lỗi ngay lập tức.
+- **`assert np.all(returns_sample >= -1.0)`**: Chạy **SAU** khi đã lọc bỏ `NaN/Inf` (`returns_sample[np.isfinite(...)]`). Mảng `returns_sample` BẮT BUỘC phải là **Lợi suất Cơ sở Chưa đòn bẩy (Unleveraged Return)**. Chốt chặn này ngăn ngừa lỗi rò rỉ "Nghịch lý Thanh lý" khi truyền nhầm lợi suất ký quỹ vào Kelly.
 
 
 #### A. Lọc Dữ Liệu và Kiểm Tra Kích Thước Mẫu (`Sample Size Guard`)
@@ -357,7 +367,7 @@ $$
 #### Sơ Đồ Luồng Tối Ưu Hóa Kelly Phi Tuyến (`Empirical Kelly Solver Pipeline`)
 ```mermaid
 flowchart TD
-    Input["Input: returns_sample Array, f_max=3.0"] --> Filter["Filter: Remove NaN/Inf & check len >= 30"]
+    Input["Input: returns_sample Array, f_max=20.0"] --> Filter["Filter: Remove NaN/Inf & check len >= 30"]
     Filter -->|len < 30| ReturnZero["Return f* = 0.0 (Data Insufficient Guard)"]
     Filter -->|len >= 30| DynCap["Dynamic Leverage Cap: f_max_safe = min(f_max, 0.999 / abs(min_return))"]
     
@@ -715,15 +725,18 @@ $$
 
 ### 2. Giải Phẫu Nhánh Phí Thanh Lý `LIQUIDATION PnL` (Module G - `pnl.py`)
 > [!NOTE]
-> **Tái Cấu Trúc Kiến Trúc (Architectural Refactoring):** Hàm `compute_realized_pnl` đã được nhổ tận gốc khỏi `trailing_exit.py` (tầng Labeling) và dời về đúng vị trí chuẩn mực tại `src/aegis/execution/pnl.py` (tầng Execution/Module G) để tuân thủ tuyệt đối nguyên tắc **Separation of Concerns**. Hàm này nay trở thành Động Cơ PnL Thống Nhất (`Unified PnL Engine`).
+> **Tái Cấu Trúc Kiến Trúc (Architectural Refactoring):** Hàm `compute_realized_pnl` đã được dời về đúng vị trí chuẩn mực tại `src/aegis/execution/pnl.py` (tầng Execution/Module G) để tuân thủ tuyệt đối nguyên tắc **Separation of Concerns**. Hàm này nay trở thành Động Cơ PnL Thống Nhất (`Unified PnL Engine`).
 
 Khi một lệnh bị sàn phái sinh quét thanh lý (`LIQUIDATION`), cơ chế tính toán tổn thất hoàn toàn khác so với chốt lời/cắt lỗ thông thường:
-- **Sai lầm ngây thơ:** Dùng công thức PnL thường $\text{Loss} = \text{size-notional} \times (1 + \text{fee})$. Nếu `size_notional` là giá trị danh nghĩa USD (ví dụ đòn bẩy `10x` thì `size_notional` gấp 10 lần tiền cọc), việc trừ thẳng `size_notional` sẽ báo cáo quỹ bị lỗ gấp `10 lần` số vốn ký quỹ thực tế!
-- **Chuẩn hóa định chế (`compute_realized_pnl` trong Module G):** Khác với giao dịch thông thường, trong cơ chế `Isolated Margin`, số tiền tối đa quỹ có thể mất (Maximum Loss) khi bị thanh lý chính là toàn bộ tiền thế chấp ban đầu (`Margin = size_notional / leverage`). Phí phạt thanh lý (`liquidation_fee_rate`) được sàn thu trực tiếp từ số dư ký quỹ này (làm dịch chuyển giá thanh lý lại gần điểm entry hơn), chứ sàn không yêu cầu nạp thêm tiền ngoài margin đã cọc. Tuy nhiên, khoản phí vào lệnh (`fee_entry`) đã bị trừ từ trước là một khoản chi phí chìm (Sunk-cost). Do đó, khoản lỗ tuyệt đối được giới hạn ở:
-  
+- **Sai lầm ngây thơ:** Dùng công thức PnL thường $\text{Loss} = \text{size-notional} \times (1 + \text{fee})$. Việc trừ thẳng `size_notional` sẽ báo cáo quỹ bị lỗ gấp `10 lần` số vốn ký quỹ thực tế (nếu dùng đòn bẩy 10x).
+- **Chuẩn hóa định chế (`compute_realized_pnl`):** Trong cơ chế `Isolated Margin`, số tiền tối đa quỹ mất khi thanh lý (`gross_pnl`) chính là toàn bộ tiền thế chấp ban đầu (`Margin = size_notional / leverage`). 
+- **[Quyết Định #7] Thống Nhất Xử Lý Phí:** Thay vì gộp `fee_entry` làm chi phí chìm vào `gross_pnl`, hệ thống tách bạch để 2 nhánh (Normal và Liquidation) xử lý phí giống hệt nhau ở bước tính `net_pnl`.
 
 $$
-\text{Loss}_{\text{Liq}} = -\left( \frac{\text{size\_notional}}{\text{leverage}} \right) - \text{fee\_entry}
+\text{Gross\_PnL}_{\text{Liq}} = -\left( \frac{\text{size\_notional}}{\text{leverage}} \right)
+$$
+$$
+\text{Net\_PnL}_{\text{Liq}} = \text{Gross\_PnL}_{\text{Liq}} - \text{fee\_entry} - \text{funding\_accrued}
 $$
 
 ---

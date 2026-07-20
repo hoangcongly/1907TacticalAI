@@ -29,55 +29,65 @@ def compute_sl_initial(
         raise ValueError(
             f"Lỗi hải quan B-1-3: side bắt buộc phải là +1 (Long) hoặc -1 (Short/Fade), nhận {side}"
         )
-
+    #kiểm tra price nhập có hợp lệ không
     if (
-        not isinstance(entry_price, (int, float))
-        or math.isnan(entry_price)
-        or math.isinf(entry_price)
-        or entry_price <= 0
+        not isinstance(entry_price, (int, float))   #kiểm tra kiểu dữ liệu
+        or math.isnan(entry_price) #kiểm tra có phải NaN không
+        or math.isinf(entry_price)  #kiểm tra có phải Inf không
+        or entry_price <= 0         #kiểm tra có phải số âm không
     ):
         raise ValueError(
             f"Lỗi hải quan B-1-3: entry_price phải là số dương hợp lệ, nhận {entry_price}"
         )
-
+    #kiểm tra sigma có hợp lệ không     
     if (
-        not isinstance(sigma, (int, float))
-        or math.isnan(sigma)
-        or math.isinf(sigma)
-        or sigma < 0
+        not isinstance(sigma, (int, float))  #kiểm tra kiểu dữ liệu 
+        or math.isnan(sigma) #kiểm tra có phải NaN không
+        or math.isinf(sigma)  #kiểm tra có phải Inf không
+        or sigma < 0 #kiểm tra có phải số âm không
     ):
         raise ValueError(
             f"Lỗi hải quan B-1-3: sigma (biến động) phải >= 0 và không được là NaN/Inf, nhận {sigma}"
         )
-
+    #kiểm tra m_sl có hợp lệ không
     if (
-        not isinstance(m_sl, (int, float))
-        or math.isnan(m_sl)
-        or math.isinf(m_sl)
-        or m_sl < 0
+        not isinstance(m_sl, (int, float))  #kiểm tra kiểu dữ liệu
+        or math.isnan(m_sl)                 #kiểm tra có phải NaN không
+        or math.isinf(m_sl)                 #kiểm tra có phải Inf không
+        or m_sl < 0                         #kiểm tra có phải số âm không
     ):
         raise ValueError(
             f"Lỗi hải quan B-1-3: m_sl (hệ số cắt lỗ) phải >= 0 và hợp lệ, nhận {m_sl}"
         )
-
+    #kiểm tra c_trade_adj có hợp lệ không
     if (
-        not isinstance(c_trade_adj, (int, float))
-        or math.isnan(c_trade_adj)
-        or math.isinf(c_trade_adj)
-        or c_trade_adj < 0
+        not isinstance(c_trade_adj, (int, float))  #kiểm tra kiểu dữ liệu
+        or math.isnan(c_trade_adj)                 #kiểm tra có phải NaN không
+        or math.isinf(c_trade_adj)                 #kiểm tra có phải Inf không
+        or c_trade_adj < 0                         #kiểm tra có phải số âm không
     ):
         raise ValueError(
             f"Lỗi hải quan B-1-3: c_trade_adj (phí & slippage) phải >= 0 và hợp lệ, nhận {c_trade_adj}"
         )
-
+    #kiểm tra max_reasonable_cushion có hợp lệ không
+    if (
+        not isinstance(max_reasonable_cushion, (int, float))  #kiểm tra kiểu dữ liệu
+        or math.isnan(max_reasonable_cushion)                 #kiểm tra có phải NaN không
+        or math.isinf(max_reasonable_cushion)                 #kiểm tra có phải Inf không
+        or max_reasonable_cushion <= 0                         #kiểm tra có phải số âm không
+    ):
+        raise ValueError(
+            f"Lỗi hải quan B-1-3: max_reasonable_cushion phải > 0 và hợp lệ, nhận {max_reasonable_cushion}"
+        )
+    #tính tổng rủi ro trừ hao
     total_cushion = m_sl * sigma + c_trade_adj
-
+    #kiểm tra tổng rủi ro trừ hao có vượt quá ngưỡng hợp lý không
     if total_cushion > max_reasonable_cushion:
         raise ValueError(
             f"Cushion {total_cushion:.2%} vượt ngưỡng hợp lý {max_reasonable_cushion:.2%} "
             f"-- khả năng sigma bị lỗi đơn vị hoặc NaN thoát dạng số lớn bất thường."
         )
-
+    #kiểm tra rủi ro cực đại với lệnh Long
     if side > 0:
         if total_cushion >= 1.0:
             raise ValueError(
@@ -85,7 +95,7 @@ def compute_sl_initial(
             )
         sl = entry_price * math.exp(-total_cushion)
         return float(max(sl, 1e-4))
-    else:
+    else:  #kiểm tra rủi ro cực đại với lệnh Short/Fade
         sl = entry_price * math.exp(total_cushion)
         return float(sl)
 
@@ -653,9 +663,8 @@ def test_b_1_5_no_leakage_past_fold_boundary():
 
     from aegis.meta_labeling.sizing.liquidation_layer import compute_liquidation_loss
 
-    # Kiểm thử PnL Liquidation: Isolated Margin, mất mát tối đa = margin = size_notional / leverage.
-    # Phí thanh lý đã được tính vào việc đẩy giá thanh lý gần entry hơn (trong compute_liquidation_price),
-    # KHÔNG tính thêm ở đây (tránh double-count).
+    # [QĐ #7] compute_liquidation_loss trả về -(margin) thuần.
+    # Phí vào lệnh được xử lý thống nhất tại pnl.py.
     pnl_liq = compute_liquidation_loss(
         size_notional=100000.0,
         leverage=10.0,

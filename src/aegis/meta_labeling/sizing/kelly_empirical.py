@@ -2,42 +2,62 @@
 
 import numpy as np
 from scipy.optimize import brentq
+from typing import NamedTuple
 
 
 # ============================================================================
 # HẰNG SỐ KIẾN TRÚC — TÁCH BIỆT RỦI RO GIÁ vs RỦI RO MARGIN & FRACTIONAL KELLY
 # ============================================================================
-# Trần rủi ro BIẾN ĐỘNG GIÁ: size_notional = f_allocated × Equity.
-# Một vị thế notional > 3x equity là mức rất mạo hiểm cho trend-following.
-DEFAULT_F_MAX_NOTIONAL_CAP = 3.0
+# [STREAMING_CHUNK: KELLY_CONSTANTS]
+# Trần tìm kiếm f* cho brentq. Trong chiến lược Perp Futures vốn nhỏ,
+# f* chính là đòn bẩy hiệu dụng. 3 lớp phòng thủ bảo vệ:
+#   1. Dynamic Cap: f_max_safe = min(f_max, 0.999/|r_min|)
+#   2. Liquidation Layer: validate_leverage_against_sl
+#   3. Half-Kelly: f_allocated = λ × f*
+DEFAULT_F_MAX = 20.0
 
 # Hệ số chiết khấu Fractional Kelly λ (mặc định 0.5 = Half-Kelly).
-# Giúp hạ tỷ lệ cược để phòng chống sai số ước lượng mẫu và rủi ro mô hình (Model Risk).
+# Giảm 75% biến động tài khoản, chỉ mất 25% tốc độ tăng trưởng kép.
+# Áp dụng BÊN NGOÀI hàm solve (tách biệt toán học vs chính sách rủi ro).
 DEFAULT_LAMBDA_KELLY = 0.5
+
+
+# ============================================================================
+# [PHÁT HIỆN M] CẤU TRÚC KẾT QUẢ BOOTSTRAP GIÀU THÔNG TIN CHẨN ĐOÁN
+# ============================================================================
+# [STREAMING_CHUNK: KELLY_CONFIDENCE_RESULT]
+class KellyConfidenceResult(NamedTuple):
+    """Kết quả Bootstrap CI với đầy đủ thông tin chẩn đoán cho tầng giám sát."""
+    f_star_point: float        # Ước lượng điểm (Point Estimate) trên toàn bộ mẫu
+    f_star_conservative: float # Giá trị bảo thủ (phân vị lower_percentile)
+    bootstrap_std: float       # Độ lệch chuẩn của phân phối bootstrap f*
+    uncertainty_ratio: float   # bootstrap_std / max(f_star_point, 1e-6) — cờ cảnh báo nếu > 1.0
 
 
 # ============================================================================
 # [TASK B-1-1] EMPIRICAL KELLY FRACTION
 # ============================================================================
+# [STREAMING_CHUNK: KELLY_SOLVER]
 def solve_empirical_kelly_fraction(
     returns_sample: np.ndarray,
-    f_max: float = DEFAULT_F_MAX_NOTIONAL_CAP,
+    f_max: float = DEFAULT_F_MAX,
 ) -> float:
     """
     [TASK B-1-1] Giải f* tối đa hóa kỳ vọng Log-growth E[log(1 + f*r)]
     trên phân phối thực nghiệm.
 
     Tham số:
-    - f_max: Giới hạn rủi ro BIẾN ĐỘNG GIÁ (notional / equity), KHÔNG PHẢI đòn bẩy sàn.
+    - f_max: Giới hạn tìm kiếm cho brentq. Dynamic Cap sẽ tự động co lại
+      khi mẫu chứa lệnh lỗ nặng (f_max_safe = min(f_max, 0.999/|r_min|)).
     - returns_sample: BẮT BUỘC phải là Lợi suất Cơ sở Chưa đòn bẩy (Unleveraged Return).
     """
-    # Lọc NaN/Inf TRƯỚC khi chạy Canary Assertion
+    # [ARMOR GUARD] Lọc NaN/Inf TRƯỚC khi chạy Canary Assertion
     returns_sample = returns_sample[np.isfinite(returns_sample)]
 
     if len(returns_sample) < 30:
         return 0.0
 
-    # Canary Assertion — chạy SAU khi đã lọc NaN/Inf
+    # [ARMOR GUARD] Canary Assertion — chạy SAU khi đã lọc NaN/Inf
     assert np.all(returns_sample >= -1.0), (
         "Canary Error: Phát hiện return < -100% sau khi đã lọc NaN/Inf. "
         "PnL thanh lý đã làm rò rỉ dữ liệu hoặc sai số học!"
@@ -70,21 +90,30 @@ def solve_empirical_kelly_fraction(
     return float(f_star_raw)
 
 
+# [STREAMING_CHUNK: KELLY_BOOTSTRAP]
 def solve_empirical_kelly_fraction_with_confidence(
     returns_sample: np.ndarray,
-    f_max: float = DEFAULT_F_MAX_NOTIONAL_CAP,
+    f_max: float = DEFAULT_F_MAX,
     n_bootstraps: int = 1000,
     lower_percentile: float = 25.0,
-) -> float:
+) -> KellyConfidenceResult:
     """
-    Dùng Bootstrap để trích xuất phân vị bảo thủ (25th percentile).
+    [PHÁT HIỆN M] Dùng Bootstrap để trích xuất phân vị bảo thủ + thông tin chẩn đoán.
+    Trả về KellyConfidenceResult thay vì float đơn thuần.
     """
     returns_sample = returns_sample[np.isfinite(returns_sample)]
     n_samples = len(returns_sample)
 
     if n_samples < 30:
-        return 0.0
+        return KellyConfidenceResult(
+            f_star_point=0.0, f_star_conservative=0.0,
+            bootstrap_std=0.0, uncertainty_ratio=0.0
+        )
 
+    # Point estimate trên toàn bộ mẫu
+    f_star_point = solve_empirical_kelly_fraction(returns_sample, f_max=f_max)
+
+    # Bootstrap
     f_stars = np.zeros(n_bootstraps)
     rng = np.random.RandomState(42)  # Seed cố định để test ổn định
 
@@ -94,46 +123,47 @@ def solve_empirical_kelly_fraction_with_confidence(
             bootstrap_sample, f_max=f_max
         )
 
-    # Trả về phân vị bảo thủ
-    return float(np.percentile(f_stars, lower_percentile))
+    f_star_conservative = float(np.percentile(f_stars, lower_percentile))
+    bootstrap_std = float(np.std(f_stars))
+    uncertainty_ratio = bootstrap_std / max(f_star_point, 1e-6)
+
+    return KellyConfidenceResult(
+        f_star_point=f_star_point,
+        f_star_conservative=f_star_conservative,
+        bootstrap_std=bootstrap_std,
+        uncertainty_ratio=uncertainty_ratio,
+    )
 
 
 # ============================================================================
 # UNIT TESTS (TDD)
 # ============================================================================
-def test_f_star_notional_risk_independent_of_leverage_cap():
+def test_f_max_is_leverage_search_bound():
     """
-    [FINDING A] Xác nhận trần f_max (rủi ro biến động giá) KHÔNG được set bằng
-    hoặc gần bằng leverage_cap (rủi ro margin) — 2 con số phải được chọn độc lập.
+    [QĐ #1] Xác nhận f_max = 20.0 là giới hạn TÌM KIẾM cho brentq,
+    KHÔNG PHẢI giới hạn rủi ro cuối cùng (đó là Dynamic Cap + Half-Kelly).
     """
-    LEVERAGE_CAP_MARGIN = 20.0
-    assert DEFAULT_F_MAX_NOTIONAL_CAP <= 5.0, (
-        "f_max quyết định rủi ro biến động GIÁ -- một vị thế notional > 5x equity "
-        "là mức rủi ro cực đoan độc lập với margin/leverage đang chọn."
-    )
-    assert DEFAULT_F_MAX_NOTIONAL_CAP < LEVERAGE_CAP_MARGIN, (
-        "Kiến trúc lỗi: f_max đang bị đánh đồng với đòn bẩy sàn!"
-    )
-    print("✅ [FINDING A] Separation of Concerns (Notional Risk vs Margin Risk) Confirmed!")
+    assert DEFAULT_F_MAX == 20.0, f"f_max phải = 20.0, nhận {DEFAULT_F_MAX}"
+    assert DEFAULT_LAMBDA_KELLY == 0.5, f"λ phải = 0.5 (Half-Kelly), nhận {DEFAULT_LAMBDA_KELLY}"
+    print("✅ [QĐ #1] f_max=20.0, λ=0.5 Confirmed!")
 
 
 def test_fractional_kelly_lambda_discount():
     """
-    [FRACTIONAL KELLY TEST] Kiểm tra xem hệ số chiết khấu λ = 0.5 (Half Kelly)
-    có làm giảm đúng 50% vị thế f* so với Full Kelly (λ = 1.0) hay không.
-    Lưu ý: Nhân λ diễn ra ở ngoài hàm toán học solve_empirical_kelly_fraction.
+    [QĐ #2] Kiểm tra hệ số chiết khấu λ = 0.5 (Half Kelly)
+    giảm đúng 50% vị thế f* so với Full Kelly (λ = 1.0).
     """
     np.random.seed(42)
     sample = np.random.choice([1.0, -0.999], p=[0.6, 0.4], size=10000)
 
     f_raw = solve_empirical_kelly_fraction(sample, f_max=1.0)
-    
+
     f_full = f_raw * 1.0
     f_half = f_raw * DEFAULT_LAMBDA_KELLY
 
     assert abs(f_full - 0.2) < 0.05, f"Full Kelly cho coin toss kỳ vọng ~0.2, nhận {f_full}"
     assert abs(f_half - f_full * 0.5) < 1e-4, f"Half Kelly phải bằng 50% Full Kelly: {f_half} vs {f_full*0.5}"
-    print(f"✅ [FRACTIONAL KELLY] Full Kelly: {f_full:.4f} | Half Kelly (λ=0.5): {f_half:.4f} PASSED!")
+    print(f"✅ [QĐ #2] Full Kelly: {f_full:.4f} | Half Kelly (λ=0.5): {f_half:.4f} PASSED!")
 
 
 def test_b_1_1_kelly_classical_coin_toss():
@@ -149,13 +179,19 @@ def test_b_1_1_kelly_classical_coin_toss():
     sample = np.random.choice([1.0, -0.999], p=[0.6, 0.4], size=10000)
 
     f_point = solve_empirical_kelly_fraction(sample, f_max=1.0)
-    f_boot = solve_empirical_kelly_fraction_with_confidence(
+    result = solve_empirical_kelly_fraction_with_confidence(
         sample, f_max=1.0, n_bootstraps=200, lower_percentile=25.0
     )
 
     assert abs(f_point - 0.2) < 0.05, f"Kelly cho tung đồng xu sai, kỳ vọng ~0.2, nhận {f_point}"
-    assert f_boot <= f_point, "Bootstrap (25th percentile) phải bảo thủ hơn hoặc bằng Point Estimate"
-    print("✅ [TASK B-1-1] Kelly Classic & Bootstrap PASSED!")
+    assert result.f_star_conservative <= result.f_star_point, (
+        "Bootstrap (25th percentile) phải bảo thủ hơn hoặc bằng Point Estimate"
+    )
+    assert result.bootstrap_std >= 0, "Độ lệch chuẩn bootstrap phải >= 0"
+    assert result.uncertainty_ratio >= 0, "Uncertainty ratio phải >= 0"
+    print(f"✅ [B-1-1] Kelly: point={result.f_star_point:.4f}, "
+          f"conservative={result.f_star_conservative:.4f}, "
+          f"std={result.bootstrap_std:.4f}, unc={result.uncertainty_ratio:.4f} PASSED!")
 
 
 def test_kelly_canary_and_nan_safety():
@@ -182,8 +218,9 @@ def test_kelly_canary_and_nan_safety():
 
 def test_kelly_dynamic_cap_with_liquidation():
     """
-    [RUTHLESS AUDIT v4] Kiểm chứng rằng khi mẫu chứa lệnh thanh lý (r = -1.0),
+    Kiểm chứng rằng khi mẫu chứa lệnh thanh lý (r = -1.0),
     brentq KHÔNG crash mà tự động giới hạn f_max_safe = 0.999 / abs(-1.0) = 0.999.
+    Bất kể f_max = 20.0.
     """
     np.random.seed(42)
     wins = np.full(70, 0.05)
@@ -192,17 +229,17 @@ def test_kelly_dynamic_cap_with_liquidation():
     sample = np.concatenate([wins, losses, liquidations])
     np.random.shuffle(sample)
 
-    f_star = solve_empirical_kelly_fraction(sample, f_max=DEFAULT_F_MAX_NOTIONAL_CAP)
+    f_star = solve_empirical_kelly_fraction(sample, f_max=DEFAULT_F_MAX)
 
     assert f_star <= 0.999, (
         f"Dynamic cap thất bại! f* = {f_star} > 0.999 khi mẫu chứa thanh lý -1.0"
     )
     assert f_star >= 0.0, f"f* phải >= 0, nhận {f_star}"
-    print(f"✅ [RUTHLESS AUDIT v4] Kelly Dynamic Cap: f* = {f_star:.4f} (capped <= 0.999) PASSED!")
+    print(f"✅ Kelly Dynamic Cap: f* = {f_star:.4f} (capped <= 0.999 dù f_max=20.0) PASSED!")
 
 
 if __name__ == "__main__":
-    test_f_star_notional_risk_independent_of_leverage_cap()
+    test_f_max_is_leverage_search_bound()
     test_fractional_kelly_lambda_discount()
     test_b_1_1_kelly_classical_coin_toss()
     test_kelly_canary_and_nan_safety()

@@ -274,11 +274,13 @@ def resolve_max_safe_leverage(
 def compute_liquidation_loss(
     size_notional: float,
     leverage: float,
-    fee_entry_rate: float = 0.0005
 ) -> float:
     """
-    [VÁ LỖ HỔNG 1]: Tính tổng tổn thất khi bị thanh lý.
-    Bao gồm vốn ký quỹ đã cọc (Isolated Margin) VÀ phí chìm lúc vào lệnh (Sunk-cost).
+    [QĐ #7] Tính tổn thất vốn ký quỹ (Isolated Margin) khi bị thanh lý.
+    Trả về: -(size_notional / leverage)
+    
+    Phí vào lệnh (fee_entry) được xử lý THỐNG NHẤT tại tầng pnl.py
+    (giống nhánh Normal), KHÔNG trừ ở đây để tránh double-count.
     """
     if not isinstance(size_notional, (int, float)) or size_notional <= 0:
         raise ValueError(f"size_notional phải > 0, nhận {size_notional}")
@@ -287,10 +289,7 @@ def compute_liquidation_loss(
     if math.isnan(size_notional) or math.isnan(leverage):
         raise ValueError("Input chứa rác NaN")
 
-    theoretical_margin_loss = size_notional / leverage
-    sunk_fee_cost = size_notional * fee_entry_rate
-    
-    return float(- (theoretical_margin_loss + sunk_fee_cost))
+    return float(-(size_notional / leverage))
 
 
 # ============================================================================
@@ -408,14 +407,17 @@ def test_get_maintenance_margin_rate_guards():
         pass
     print("✅ [LỖ HỔNG 3 VÁ THÀNH CÔNG] Guard chặn rác cho tra cứu MMR hoạt động hoàn hảo!")
 
-def test_compute_liquidation_loss_with_sunk_cost():
+def test_compute_liquidation_loss_margin_only():
+    """
+    [QĐ #7] compute_liquidation_loss trả về -(margin) thuần.
+    Phí vào lệnh được xử lý thống nhất tại pnl.py.
+    """
     notional = 1000.0
     lev = 10.0
-    # Tiền cọc = 100 USD. Phí vào lệnh (0.05%) = 0.5 USD.
-    # Tổng lỗ phải là -100.5 USD
-    loss = compute_liquidation_loss(notional, lev, fee_entry_rate=0.0005)
-    assert abs(loss - (-100.5)) < 1e-6, f"Lỗi tính toán: nhận {loss}, kỳ vọng -100.5"
-    print("✅ [LỖ HỔNG 1 VÁ THÀNH CÔNG] Phí chìm Sunk-Cost đã được trừ tuyệt đối vào PnL thanh lý!")
+    # Tiền cọc = 100 USD. Trả về -100.0 (KHÔNG trừ fee ở đây nữa)
+    loss = compute_liquidation_loss(notional, lev)
+    assert abs(loss - (-100.0)) < 1e-6, f"Lỗi tính toán: nhận {loss}, kỳ vọng -100.0"
+    print("✅ [QĐ #7] compute_liquidation_loss trả về -(margin) thuần, phí xử lý tại pnl.py!")
 
 if __name__ == "__main__":
     test_liquidation_layer_armor_plated()

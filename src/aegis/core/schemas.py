@@ -4,7 +4,7 @@ import json # Thư viện chuyển từ điển dict tham số thành chuỗi v�
 import pandas as pd # Thư viện xử lý dữ liệu dạng bảng (như bảng tính excel)
 import pandera.pandas as pa # Thư viện kiểm tra dữ liệu dạng bảng (như bảng tính excel, sử dụng namespace pandas chuẩn mới tránh cảnh báo tương lai)
 from pandera.pandas import Column, Check, DataFrameSchema # Thư viện định nghĩa cấu trúc dữ liệu dạng bảng và các điều kiện ràng buộc
-from typing import Dict, Any, TypedDict, Literal # Thư viện định nghĩa kiểu dữ liệu tĩnh (như dict, list, tuple, set, TypedDict, Literal)
+from typing import Dict, Any, TypedDict, Literal, Optional
 
 # ============================================================================
 # [TASK B-1-10] TYPED DICT CHO BẢN GHI GIAO DỊCH (Cho xử lý nội bộ dạng từ điển dict)
@@ -14,17 +14,28 @@ class TradeRecord(TypedDict):
     Cấu trúc định nghĩa tĩnh cho một bản ghi giao dịch đơn lẻ (dạng từ điển dict).
     Giúp IDE tự động gợi ý code, kiểm tra lỗi gõ nhầm tên key trước khi gom thành DataFrame.
     """
-    entry_idx: int # Chỉ số bar_idx tuyệt đối tại thời điểm vào lệnh
-    p_i: float # Xác suất xu hướng tại thời điểm vào lệnh p_trend
-    p_chop_i: float # Xác suất thị trường đi ngang tại thời điểm vào lệnh p_chop
-    mode: Literal["follow", "fade", "none"] # Chế độ giao dịch: follow (theo xu hướng), fade (đánh đảo chiều), hoặc none
-    side: int # Hướng lệnh giao dịch thực tế: +1 (Long/Mua) hoặc -1 (Short/Bán)
-    sl_initial: float # Giá cắt lỗ ban đầu (Stop Loss) đã được đối xứng theo hướng lệnh
-    exit_idx_relative: int # Khoảng cách số nến từ lúc vào lệnh đến lúc thoát lệnh (>= 0)
-    exit_idx_absolute: int # Chỉ số bar_idx tuyệt đối tại thời điểm thoát lệnh (= entry_idx + 1 + exit_idx_relative)
-    exit_reason: Literal["SL", "TRAIL", "REGIME_FLIP", "TIME_STOP", "LIQUIDATION"] # Lý do thoát lệnh theo chuẩn v11.9
-    boundary_truncated: bool # Cờ báo hiệu giao dịch bị cắt ngắn do chạm biên fold CPCV hoặc hết dữ liệu test
-    realized_return: float # Lợi nhuận thực tế (Realized Return) sau khi trừ phí và lãi qua đêm
+    schema_version: str
+    dataset_manifest_hash: str
+    fold_id: Optional[str]
+    symbol: str
+    entry_idx: int
+    entry_price: float
+    p_i: float
+    p_chop_i: float
+    mode: Literal["follow", "fade", "none"]
+    side: int
+    sl_initial: float
+    size_notional: float
+    exit_idx_relative: int
+    exit_idx_absolute: int
+    exit_reason: Literal["SL", "TRAIL", "REGIME_FLIP", "TIME_STOP", "LIQUIDATION"]
+    fill_price_exit: float
+    boundary_truncated: bool
+    fee_entry: float
+    fee_exit: float
+    funding_accrued: float
+    gross_pnl: float
+    realized_return: float
 
 
 # ============================================================================

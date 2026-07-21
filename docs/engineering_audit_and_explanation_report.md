@@ -360,7 +360,7 @@ for regime_name, prob in regime_probs.items():
 Sau khi có $f_{\text{blend}}$ từ tầng Bayesian Kelly, con số này vẫn là một tỷ lệ trừu tượng trên không gian rủi ro lịch sử. Để quy đổi thành quy mô vốn thực tế ($USD$) đưa lệnh ra sàn, hệ thống gọi hàm `compute_position_size` tại module [src/aegis/execution/position_sizer.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/execution/position_sizer.py) (`Task B-1-11 / Module G`).
 
 #### A. Phương Trình Quy Đổi Lõi (`Physical Notional Equation`)
-$$\text{size\_notional} = f_{\text{blend}} \cdot \lambda_{\text{kelly}} \cdot \text{current\_equity} \cdot \min\left(1.0, \frac{ATR_{\text{hist}}}{ATR_t}\right)$$
+$$\text{size notional} = f_{\text{blend}} \cdot \lambda_{\text{kelly}} \cdot \text{current equity} \cdot \min\left(1.0, \frac{ATR_{\text{hist}}}{ATR_t}\right)$$
 
 1. **Chiết Khấu Rủi Ro Mô Hình Half-Kelly ($\lambda_{\text{kelly}} = 0.5$)**:  
    Theo định lý quản trị rủi ro định chế, việc áp dụng Full Kelly ($\lambda = 1.0$) mang lại sụt giảm tài khoản cực kỳ khủng khiếp (`Drawdown Variance`). Khi đặt $\lambda = 0.5$ (`Half-Kelly`), phương sai sụt giảm tài khoản bị cắt giảm $75\%$, trong khi tốc độ tăng trưởng kép kỳ vọng chỉ giảm nhẹ $25\%$. Đây là "tỷ lệ vàng" được kiểm chứng TDD qua bài kiểm tra `test_fractional_kelly_lambda_discount`.
@@ -626,27 +626,27 @@ Gọi $S = \frac{|\text{Entry} - \text{SL}|}{\text{Entry}}$ là tỷ lệ % cắ
 Với lệnh Long (`side = 1`), giá thanh lý là:
 
 $$
-P_{\text{liq}} = \text{Entry} \times \left(1 - \frac{1}{L} + M + \text{fee\_rate} + \text{liquidation\_fee\_rate}\right)
+P_{\text{liq}} = \text{Entry} \times \left(1 - \frac{1}{L} + M + \text{fee rate} + \text{liquidation fee rate}\right)
 $$
 
 Trong đó $L$ là đòn bẩy, $M$ là `maintenance_margin_rate`. Khi đó khoảng cách đến điểm thanh lý là:
 
 $$
-\text{Entry} - P_{\text{liq}} = \text{Entry} \times \left(\frac{1}{L} - M - \text{fee\_rate} - \text{liquidation\_fee\_rate}\right)
+\text{Entry} - P_{\text{liq}} = \text{Entry} \times \left(\frac{1}{L} - M - \text{fee rate} - \text{liquidation fee rate}\right)
 $$
 
 Thay vào bất phương trình an toàn:
 
 $$
-S \times \text{Entry} \le \text{Entry} \times \left(\frac{1}{L} - M - \text{fee\_rate} - \text{liquidation\_fee\_rate}\right) \times (1 - B)
+S \times \text{Entry} \le \text{Entry} \times \left(\frac{1}{L} - M - \text{fee rate} - \text{liquidation fee rate}\right) \times (1 - B)
 $$
 
 $$
-\frac{S}{1 - B} \le \frac{1}{L} - M - \text{fee\_rate} - \text{liquidation\_fee\_rate} \implies \frac{1}{L} \ge \frac{S}{1 - B} + M + \text{fee\_rate} + \text{liquidation\_fee\_rate}
+\frac{S}{1 - B} \le \frac{1}{L} - M - \text{fee rate} - \text{liquidation fee rate} \implies \frac{1}{L} \ge \frac{S}{1 - B} + M + \text{fee rate} + \text{liquidation fee rate}
 $$
 
 $$
-L_{\max} = \frac{1}{\frac{S}{1 - B} + M + \text{fee\_rate} + \text{liquidation\_fee\_rate}}
+L_{\max} = \frac{1}{\frac{S}{1 - B} + M + \text{fee rate} + \text{liquidation fee rate}}
 $$
 
 👉 Đây chính là công thức giải tích được cài đặt trong hàm `resolve_max_safe_leverage`, với độ chính xác tuyệt đối và thời gian thực thi $O(1)$.
@@ -656,19 +656,19 @@ $$
 Với lệnh Short, giá thanh lý nằm **phía trên** giá vào lệnh:
 
 $$
-P_{\text{liq\_short}} = \text{Entry} \times \left(1 + \frac{1}{L} - M - \text{fee\_rate} - \text{liquidation\_fee\_rate}\right)
+P_{\text{liq short}} = \text{Entry} \times \left(1 + \frac{1}{L} - M - \text{fee rate} - \text{liquidation fee rate}\right)
 $$
 
 Khoảng cách đến điểm thanh lý là:
 
 $$
-P_{\text{liq\_short}} - \text{Entry} = \text{Entry} \times \left(\frac{1}{L} - M - \text{fee\_rate} - \text{liquidation\_fee\_rate}\right)
+P_{\text{liq short}} - \text{Entry} = \text{Entry} \times \left(\frac{1}{L} - M - \text{fee rate} - \text{liquidation fee rate}\right)
 $$
 
-Vì cấu trúc toán học của khoảng cách đến điểm thanh lý của phe Short tương đương với phe Long (cùng biểu thức $\frac{1}{L} - M - \text{fee\_rate} - \text{liquidation\_fee\_rate}$), bất phương trình an toàn và công thức $L_{\max}$ cuối cùng **đồng nhất cho cả 2 chiều**:
+Vì cấu trúc toán học của khoảng cách đến điểm thanh lý của phe Short tương đương với phe Long (cùng biểu thức $\frac{1}{L} - M - \text{fee rate} - \text{liquidation fee rate}$), bất phương trình an toàn và công thức $L_{\max}$ cuối cùng **đồng nhất cho cả 2 chiều**:
 
 $$
-L_{\max}^{\text{Short}} = \frac{1}{\frac{S}{1 - B} + M + \text{fee\_rate} + \text{liquidation\_fee\_rate}} = L_{\max}^{\text{Long}}
+L_{\max}^{\text{Short}} = \frac{1}{\frac{S}{1 - B} + M + \text{fee rate} + \text{liquidation fee rate}} = L_{\max}^{\text{Long}}
 $$
 
 > [!NOTE]
@@ -725,15 +725,15 @@ $$
 > **Tái Cấu Trúc Kiến Trúc (Architectural Refactoring):** Hàm `compute_realized_pnl` đã được dời về đúng vị trí chuẩn mực tại `src/aegis/execution/pnl.py` (tầng Execution/Module G) để tuân thủ tuyệt đối nguyên tắc **Separation of Concerns**. Hàm này nay trở thành Động Cơ PnL Thống Nhất (`Unified PnL Engine`).
 
 Khi một lệnh bị sàn phái sinh quét thanh lý (`LIQUIDATION`), cơ chế tính toán tổn thất hoàn toàn khác so với chốt lời/cắt lỗ thông thường:
-- **Sai lầm ngây thơ:** Dùng công thức PnL thường $\text{Loss} = \text{size\_notional} \times (1 + \text{fee})$. Việc trừ thẳng `size_notional` sẽ báo cáo quỹ bị lỗ gấp `10 lần` số vốn ký quỹ thực tế (nếu dùng đòn bẩy 10x).
+- **Sai lầm ngây thơ:** Dùng công thức PnL thường $\text{Loss} = \text{size notional} \times (1 + \text{fee})$. Việc trừ thẳng `size_notional` sẽ báo cáo quỹ bị lỗ gấp `10 lần` số vốn ký quỹ thực tế (nếu dùng đòn bẩy 10x).
 - **Chuẩn hóa định chế (`compute_realized_pnl`):** Trong cơ chế `Isolated Margin`, số tiền tối đa quỹ mất khi thanh lý (`gross_pnl`) chính là toàn bộ tiền thế chấp ban đầu (`Margin = size_notional / leverage`). 
 - **[Quyết Định #7] Thống Nhất Xử Lý Phí:** Thay vì gộp `fee_entry` làm chi phí chìm vào `gross_pnl`, hệ thống tách bạch để 2 nhánh (Normal và Liquidation) xử lý phí giống hệt nhau ở bước tính `net_pnl`.
 
 $$
-\text{Gross\_PnL}_{\text{Liq}} = -\left( \frac{\text{size\_notional}}{\text{leverage}} \right)
+\text{Gross PnL}_{\text{Liq}} = -\left( \frac{\text{size notional}}{\text{leverage}} \right)
 $$
 $$
-\text{Net\_PnL}_{\text{Liq}} = \text{Gross\_PnL}_{\text{Liq}} - \text{fee\_entry} - \text{funding\_accrued}
+\text{Net PnL}_{\text{Liq}} = \text{Gross PnL}_{\text{Liq}} - \text{fee entry} - \text{funding accrued}
 $$
 
 ---
@@ -807,7 +807,7 @@ def resolve_trade_execution_params(
 1. **Kiểm tra rào cản Regime Gate (`Step 1: Trade Mode Classification`):**
    Hàm gọi trực tiếp `classify_trade_mode(p_i, p_chop_i, ...)`. Nếu kết quả trả về là `"none"` (nằm trong vùng rủi ro mù `deadzone` hoặc tín hiệu yếu), hàm lập tức trả về `None` để chặn đứng toàn bộ việc mở lệnh, không tốn tài nguyên tính toán các tham số tiếp theo.
 2. **Quy tắc Đảo Dấu Bắt Buộc (`Step 2: Strict Side Inversion`):**
-   $$\text{side\_actual} = \begin{cases} \text{side\_primary} & \text{nếu mode} == \text{"follow"} \\ -\text{side\_primary} & \text{nếu mode} == \text{"fade"} \end{cases}$$
+   $$\text{side actual} = \begin{cases} \text{side primary} & \text{nếu mode} == \text{"follow"} \\ -\text{side primary} & \text{nếu mode} == \text{"fade"} \end{cases}$$
    Đồng thời, thời gian sống tối đa (`t_max`) và bộ nhân cắt lỗ (`m_sl`) được định dạng riêng biệt theo chế độ: chế độ `fade` (đánh nhanh rút gọn trong sideway) sẽ được gán `t_max_live_fade` (6 nến) và `m_sl_fade` (1.5x ATR), ngắn hơn đáng kể so với chế độ `follow` (12 nến, 2.0x ATR).
 3. **Tính toán Cắt Lỗ Ban Đầu Theo Chiều Thực Tế (`Step 3: Initial Stop-Loss via Task B-1-3`):**
    Hàm gọi `compute_sl_initial(entry_price=entry_price, atr=atr_i, side=side_actual, m_sl=m_sl, c_trade_adj=c_trade_adj)`. Việc truyền bắt buộc `side_actual` bảo đảm điểm Cắt Lỗ tuân thủ đúng quy ước `Geometric Logarithm Symmetry` cho đúng phe Long hoặc Short.
@@ -858,7 +858,7 @@ def resolve_absolute_exit_idx(entry_idx: int, exit_idx_relative: int) -> int:
 ```
 
 #### Phép tính biến đổi hệ quy chiếu (`Absolute Index Projection Formula`):
-$$\text{exit\_idx\_absolute} = \text{entry\_idx} + 1 + \text{exit\_idx\_relative}$$
+$$\text{exit idx absolute} = \text{entry idx} + 1 + \text{exit idx relative}$$
 
 - **Ý nghĩa sống còn của số hạng `+ 1` (`Why + 1 is mandatory?`):**
   Trong nguyên lý khớp lệnh định chế, lệnh được kích hoạt tại giá đóng cửa của cây nến tín hiệu (`entry_idx`). Cây nến đầu tiên mà lệnh chịu rủi ro biến động giá trong tương lai (`future bar #0`) chính là cây nến `entry_idx + 1`. 
@@ -906,7 +906,7 @@ def run_trailing_exit_for_oos_event(
 1. **Trạm 1 (Gọi B-1-6):** Điều phối thông số thực thi qua `resolve_trade_execution_params(p_i, p_chop_i, side_primary, entry_price, atr_i, ...)`. Nếu trả về `None` (deadzone), hàm kết thúc tức thì `return None`.
 2. **Trạm 2 (Kiến trúc Pre-Slice Zero-Leakage):**
    Tính toán điểm cắt ranh giới vật lý:
-   $$\text{effective\_end} = \min(\text{entry\_idx} + 1 + t_{\max}, \text{test\_window\_end\_idx}, \text{len}(full\_highs))$$
+   $$\text{effective end} = \min(\text{entry idx} + 1 + t_{\max}, \text{test window end idx}, \text{len}(full\_highs))$$
    Tạo mảng cắt vật lý: `future_highs = full_highs[entry_idx+1 : effective_end]`, `future_lows`, `future_closes`, `future_p_trend`.
 3. **Trạm 3 (Chốt Kiểm Duyệt Rác Cận Biên — `Strict Boundary Cut Guard`):**
    Kiểm tra độ dài mảng đã cắt: `if len(future_highs) <= 1: return None`.
@@ -969,7 +969,7 @@ def finalize_trade_record(
    Hàm lấy ra `exit_idx_absolute = partial_record["exit_idx_absolute"]` và tra cứu trực tiếp trên mảng gốc: `exit_price_stub = float(full_closes[exit_idx_absolute])`. Giá này đóng vai trò là `exit_price` tạm thời (sẽ được tích hợp trọn vẹn với giá khớp lệnh thực tế từ Module G ở Task B-8-4).
 2. **Phân Định Nhánh PnL Minh Bạch (`Step 2: Transparent PnL Branching Engine via Task v11.8 & v11.9`):**
    - **Nhánh `LIQUIDATION` (Quét thanh lý):** Tôn trọng tuyệt đối Quyết định Kiến trúc #7, tổn thất tối đa của quỹ bị khóa chặt tại mức Mất Trắng Tiền Thế Chấp (`Initial Margin`). Hàm gọi `compute_liquidation_loss` (hoặc tính toán trực tiếp):
-     $$\text{pnl}_{\text{liq}} = -\left(\frac{\text{size\_notional}}{\text{leverage\_used}}\right) - \text{funding\_accrued}$$
+     $$\text{pnl}_{\text{liq}} = -\left(\frac{\text{size notional}}{\text{leverage used}}\right) - \text{funding accrued}$$
      Đồng thời gắn `fee_entry = size_notional * fee_rate` và `fee_exit = 0.0` (vì không tốn phí chốt lời lệnh mà phí phạt đã trừ thẳng vào margin), loại bỏ hoàn toàn rủi ro khấu trừ đúp.
    - **Nhánh Thông Thường (`SL / TRAIL / REGIME_FLIP / TIME_STOP`):** Gọi `compute_realized_pnl` (`src/aegis/execution/pnl.py`) để tính toán chuẩn xác lời/lỗ gộp (`gross_pnl`), trừ đi `fee_entry`, `fee_exit`, và phí lãi qua đêm (`funding_accrued`) để ra `net_pnl`.
 3. **Hoàn Thiện Từ Điển 24 Trường (`Step 3: Complete 24-Field Dictionary Construction`):**
@@ -1143,9 +1143,9 @@ Tham số `sigma` (thường trích xuất từ `ATR / Price`) về nguyên tắ
 
 ### 7.3. Tách Bạch Phí Funding Khỏi Tổn Thất Ký Quỹ (`Gross vs Net Separation` — Vá Issue #4)
 Khi lệnh bị sàn thanh lý cưỡng chế (`Liquidation`), sự phân định giữa tổn thất ký quỹ và số dư ròng là ranh giới định chế bắt buộc để tránh nhầm lẫn cho lập trình viên:
-- **Tổn Thất Ký Quỹ Sàn Phái Sinh (`Gross Liquidation Loss`):** Khi lệnh chạm giá thanh lý, khoản lỗ tối đa trên sàn Perpetual Futures thu hồi chính xác bằng lượng Ký Quỹ Ban Đầu (`Initial Margin = size_notional / leverage`). Hàm `compute_liquidation_loss` giữ nguyên công thức chuẩn mực $-\frac{\text{size\_notional}}{\text{leverage}}$, TUYỆT ĐỐI KHÔNG cộng dồn `funding_accrued` hay `fee_exit` vào con số `Gross Loss` này vì sàn chỉ tịch thu đúng phần tài sản cọc (`Collateral`).
+- **Tổn Thất Ký Quỹ Sàn Phái Sinh (`Gross Liquidation Loss`):** Khi lệnh chạm giá thanh lý, khoản lỗ tối đa trên sàn Perpetual Futures thu hồi chính xác bằng lượng Ký Quỹ Ban Đầu (`Initial Margin = size_notional / leverage`). Hàm `compute_liquidation_loss` giữ nguyên công thức chuẩn mực $-\frac{\text{size notional}}{\text{leverage}}$, TUYỆT ĐỐI KHÔNG cộng dồn `funding_accrued` hay `fee_exit` vào con số `Gross Loss` này vì sàn chỉ tịch thu đúng phần tài sản cọc (`Collateral`).
 - **Tổn Thất Ròng Sổ Sách Của Quỹ (`Net Realized PnL`):** Trong sổ sách kế toán tổng thể của quỹ (tại `pnl.py` và khâu `finalize_trade_record`), sau khi đã ghi nhận khoản lỗ ký quỹ `Gross Loss = -Initial Margin`, số dư Equity thực tế của tài khoản vẫn phải chịu thêm khấu trừ khoản phí lãi qua đêm (`funding_accrued`) đã tích lũy trong suốt thời gian giữ lệnh trước thời điểm bị thanh lý:
-  $$\text{Net PnL} = \text{Gross Loss} - \text{funding\_accrued} = -\frac{\text{size\_notional}}{\text{leverage}} - \text{funding\_accrued}$$
+  $$\text{Net PnL} = \text{Gross Loss} - \text{funding accrued} = -\frac{\text{size notional}}{\text{leverage}} - \text{funding accrued}$$
 - **Quy ước tối cao:** Sự tách bạch `Gross vs Net Separation` triệt tiêu hoàn toàn mâu thuẫn "đếm kép" (`Double-Count Funding Fee`), vừa bảo đảm phản ánh đúng vi cấu trúc thanh lý trên sàn (không thu quá số cọc), vừa minh bạch 100% dòng tiền tài khoản quỹ (chịu trách nhiệm trả chi phí funding qua đêm thực tế phát sinh).
 
 ### 7.4. Kiến Trúc Cắt Trước Khi Tính (`Pre-Slice Zero-Leakage`) và Quy Ước Chỉ Số Tuyệt Đối (`Absolute Indexing v11.8`)

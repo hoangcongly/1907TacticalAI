@@ -223,11 +223,12 @@ def compute_regime_aware_trailing_exit_v3_liquidation_aware(
             f"Lỗi B-1-5 (v3): effective_t_max ({effective_t_max}) phải > 0!"
         )
 
-    # [FINDING F] Zero-length slice: nếu chỉ có 0 hoặc 1 nến tương lai,
-    # không đủ dữ liệu để mô phỏng exit có ý nghĩa → trả None thay vì
-    # tạo bản ghi TIME_STOP giả với thời gian nắm giữ = 0.
-    if min(effective_t_max, n_bars) <= 1:
-        return None
+    # [FINDING F & DATA CONTRACT v11.9] Zero-length slice or immediate boundary:
+    # Nếu n_bars == 0 hoặc effective_t_max <= 0, trả về bản ghi TIME_STOP bị cắt cụt bởi biên fold
+    # (boundary_truncated = True) để giữ lệnh trong thống kê OOS tổng (Sharpe/DSR/PBO),
+    # đồng thời cho phép filter_boundary_truncated_for_kelly_table loại khỏi bảng Kelly.
+    if n_bars == 0 or effective_t_max <= 0:
+        return {"exit_idx": 0, "reason": "TIME_STOP", "boundary_truncated": True}
 
     threshold = (
         p_trend_exit_threshold_follow
@@ -312,8 +313,10 @@ def compute_regime_aware_trailing_exit_v3_liquidation_aware(
                 }
 
     last_idx = min(effective_t_max, n_bars) - 1
-    is_truncated = (max_lookforward_override is not None) and (
-        effective_t_max < t_max_live
+    is_truncated = (
+        (max_lookforward_override is not None and effective_t_max < t_max_live)
+        or (n_bars < t_max_live)
+        or (n_bars <= 1)
     )
     return {
         "exit_idx": max(last_idx, 0),
@@ -371,9 +374,20 @@ def simulate_trailing_exit_within_fold_bounds(
     future_atr = full_atr[entry_idx + 1 : effective_end]
     future_p_trend = full_p_trend[entry_idx + 1 : effective_end]
 
-    # Guard an toàn nếu lệnh vào đúng nến cuối của Fold hoặc vượt biên
+    # Guard an toàn nếu lệnh vào đúng nến cuối của Fold hoặc vượt biên:
+    # Trả về bản ghi TIME_STOP với cờ boundary_truncated=True thay vì None
+    # để giữ trọn vẹn trong thống kê tổng thể OOS, đồng thời được bộ lọc Kelly tự động loại bỏ.
     if len(future_highs) == 0:
-        return None
+        exit_idx_absolute = min(entry_idx + 1, len(full_highs) - 1)
+        return {
+            "entry_idx": entry_idx,
+            "exit_idx": 0,
+            "exit_idx_relative": 0,
+            "exit_idx_absolute": exit_idx_absolute,
+            "reason": "TIME_STOP",
+            "exit_reason": "TIME_STOP",
+            "boundary_truncated": True,
+        }
 
     # [STREAMING_CHUNK: SIMULATE_TRAILING_EXIT_CALL]
     exit_result = compute_regime_aware_trailing_exit_v3_liquidation_aware(
@@ -392,14 +406,21 @@ def simulate_trailing_exit_within_fold_bounds(
     )
 
     # [ARMOR GUARD — BẢO VỆ CHỐNG LỖ HỔNG NẾN CẬN BIÊN]:
-    # Khi nến vào lệnh chỉ cách biên fold hoặc t_max_live đúng 1 bar (n_bars <= 1),
-    # compute_regime_aware_trailing_exit_v3_liquidation_aware trả về None.
-    # Phải kiểm tra và trả về None ngay lập tức để ngăn crash TypeError: 'NoneType' object is not subscriptable.
+    # Nếu exit_result là None (kịch bản cực đoan), trả về bản ghi boundary_truncated=True
     if exit_result is None:
-        return None
+        exit_idx_absolute = min(entry_idx + 1, len(full_highs) - 1)
+        return {
+            "entry_idx": entry_idx,
+            "exit_idx": 0,
+            "exit_idx_relative": 0,
+            "exit_idx_absolute": exit_idx_absolute,
+            "reason": "TIME_STOP",
+            "exit_reason": "TIME_STOP",
+            "boundary_truncated": True,
+        }
 
     exit_idx_relative = int(exit_result["exit_idx"])
-    exit_idx_absolute = entry_idx + 1 + exit_idx_relative
+    exit_idx_absolute = min(entry_idx + 1 + exit_idx_relative, len(full_highs) - 1)
 
     return {
         "entry_idx": entry_idx,

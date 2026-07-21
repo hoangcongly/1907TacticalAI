@@ -307,18 +307,19 @@ def test_regime_probability_blend_and_bayesian():
     """
     [BAYESIAN-HMM] Kiểm tra chức năng phối trộn Kelly theo xác suất Regime
     và trừng phạt kích thước mẫu Bayesian Shrinkage.
+    Tuân thủ tuyệt đối kiến trúc HMM 2 trạng thái chốt của Module B (Trending vs Choppy).
     """
-    # Giả lập: HMM đang lưỡng lự 60% Bull, 40% Bear
-    regime_probs = {"bull": 0.6, "bear": 0.4}
+    # Giả lập: HMM đang lưỡng lự 60% Trending, 40% Choppy
+    regime_probs = {"trending": 0.6, "choppy": 0.4}
     
-    # Bull có 100 lệnh (Đủ mẫu), winrate rất tốt -> Kelly sẽ cao
+    # Trending có 100 lệnh (Đủ mẫu), winrate rất tốt -> Kelly sẽ cao
     np.random.seed(42)
-    returns_bull = np.random.choice([0.1, -0.05], p=[0.55, 0.45], size=100)
+    returns_trending = np.random.choice([0.1, -0.05], p=[0.55, 0.45], size=100)
     
-    # Bear chưa có lệnh nào (Đói data) -> Kelly phải bị ép về Prior (0.1)
-    returns_bear = np.array([])
+    # Choppy chưa có lệnh nào (Đói data) -> Kelly phải bị ép về Prior (0.1)
+    returns_choppy = np.array([])
     
-    regime_returns = {"bull": returns_bull, "bear": returns_bear}
+    regime_returns = {"trending": returns_trending, "choppy": returns_choppy}
     
     # Kiểm tra
     f_safe = compute_regime_weighted_bayesian_kelly(

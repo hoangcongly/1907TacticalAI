@@ -332,10 +332,10 @@ $$f_{\text{bayesian}} = \frac{N}{N + C} \cdot f_{\text{conservative}} + \frac{C}
 - **$C = 20.0$ (`confidence_constant_C`)**: Hằng số tin cậy định chế. Khi $N = 20$, trọng số dữ liệu thực tế mới đạt $50\%$ ($w = \frac{20}{20+20} = 0.5$). Nếu $N < 5$, hệ thống lập tức từ chối dữ liệu thực nghiệm và ép dùng hoàn toàn $f_{\text{prior}} = 0.1$ để tối đa hóa an toàn.
 
 #### B. Tầng 1 — Mượt Mà Hóa Xác Suất Chuyển Pha (`HMM Probability-Weighted Blending`)
-Tuyệt đối không sử dụng câu lệnh `if/else` cứng nhắc để chọn duy nhất một regime (vì thị trường tại vùng chuyển giao thường lưỡng lự gây ra hiện tượng lật nhãn `Whipsaw`). Tại mỗi cây nến, bộ lọc HMM trả về phân phối xác suất liên tục trên 3 trạng thái $\mathbf{p} = (p_{\text{bull}}, p_{\text{bear}}, p_{\text{chop}})$ với $\sum p_k = 1.0$.
+Tuyệt đối không sử dụng câu lệnh `if/else` cứng nhắc để chọn duy nhất một regime (vì thị trường tại vùng chuyển giao thường lưỡng lự gây ra hiện tượng lật nhãn `Whipsaw`). Tại mỗi cây nến, bộ lọc HMM trả về phân phối xác suất liên tục trên 2 trạng thái chốt cấu trúc biến động của Module B $\mathbf{p} = (p_{\text{trending}}, p_{\text{choppy}})$ với $\sum p_k = 1.0$ (chú ý: HMM cấu trúc 2 trạng thái phân loại độ ổn định xu hướng/biến động `N=2`, không phân loại chiều Buy/Sell).
 
 Tỷ lệ Kelly tổng hợp ($f_{\text{blend}}$) được tính toán bằng trung bình cộng có trọng số theo đúng xác suất HMM:
-$$f_{\text{blend}} = \sum_{k \in \{\text{bull, bear, chop}\}} p_k \cdot f_{\text{bayesian}}^{(k)}$$
+$$f_{\text{blend}} = \sum_{k \in \{\text{trending, choppy}\}} p_k \cdot f_{\text{bayesian}}^{(k)}$$
 Code bóc tách thực tế từ `src/aegis/meta_labeling/sizing/kelly_empirical.py`:
 ```python
 for regime_name, prob in regime_probs.items():
@@ -377,7 +377,7 @@ $$\text{size notional} = f_{\text{blend}} \cdot \lambda_{\text{kelly}} \cdot \te
 
 ### 5. Nghiệm Thu TDD Toàn Khối 3 Tầng Sizing (`Verifiable TDD Suite`)
 Toàn bộ kiến trúc phòng thủ kép 3 tầng được kiểm định tự động qua các bài test nghiêm ngặt:
-- **`test_regime_probability_blend_and_bayesian` (`test_kelly_empirical.py`)**: Kiểm chứng khả năng phối trộn $60\%$ Bull ($N=100$ lệnh đủ mẫu) và $40\%$ Bear ($N=0$ lệnh, bị ép về prior $0.1x$), xác nhận $f_{\text{blend}}$ ra đời mượt mà và chuẩn xác.
+- **`test_regime_probability_blend_and_bayesian` (`test_kelly_empirical.py`)**: Kiểm chứng khả năng phối trộn $60\%$ Trending ($N=100$ lệnh đủ mẫu) và $40\%$ Choppy ($N=0$ lệnh, bị ép về prior $0.1x$), xác nhận $f_{\text{blend}}$ ra đời mượt mà và chuẩn xác theo đúng HMM `N=2` của Module B.
 - **`test_position_size_vol_ratio_black_swan` (`test_position_sizer.py`)**: Kiểm chứng khi $ATR_{\text{current}} = 4.0$ so với $ATR_{\text{hist}} = 1.0$, `size_notional` bị bóp nghẹt chính xác xuống $25\%$ giá trị thông thường.
 - **`test_position_size_armor_guards` & `test_position_size_inf_guards` (`test_position_sizer.py`)**: Đảm bảo mọi input rác `NaN`, `Inf`, số âm cho $f^*$, $equity$, hay $ATR$ đều bị chốt chặn ném ngoại lệ `ValueError` tức thời trước khi chạm vào sàn giao dịch.
 
@@ -727,19 +727,19 @@ $$
 Khi một lệnh bị sàn phái sinh quét thanh lý (`LIQUIDATION`), cơ chế tính toán tổn thất hoàn toàn khác so với chốt lời/cắt lỗ thông thường:
 - **Sai lầm ngây thơ:** Dùng công thức PnL thường $\text{Loss} = \text{size notional} \times (1 + \text{fee})$. Việc trừ thẳng `size_notional` sẽ báo cáo quỹ bị lỗ gấp `10 lần` số vốn ký quỹ thực tế (nếu dùng đòn bẩy 10x).
 - **Chuẩn hóa định chế (`compute_realized_pnl`):** Trong cơ chế `Isolated Margin`, số tiền tối đa quỹ mất khi thanh lý (`gross_pnl`) chính là toàn bộ tiền thế chấp ban đầu (`Margin = size_notional / leverage`). 
-- **[Quyết Định #7] Thống Nhất Xử Lý Phí:** Thay vì gộp `fee_entry` làm chi phí chìm vào `gross_pnl`, hệ thống tách bạch để 2 nhánh (Normal và Liquidation) xử lý phí giống hệt nhau ở bước tính `net_pnl`.
+- **[Quyết Định #7] Thống Nhất Xử Lý Phí & Chống Đếm Kép Funding:** Thay vì gộp `fee_entry` làm chi phí chìm vào `gross_pnl`, hệ thống tách bạch để nhánh Thanh lý khấu trừ `fee_entry` ở bước tính `net_pnl`. Đặc biệt, vì toàn bộ tiền thế chấp ban đầu (`Initial Margin`) đã bị sàn tịch thu trọn vẹn, khoản `funding_accrued` phát sinh trong thời gian giữ lệnh tuyệt đối KHÔNG được khấu trừ tiếp vào `Net PnL` để ngăn chặn lỗi đếm kép (`Double-Count Funding Fee`).
 
 $$
 \text{Gross PnL}_{\text{Liq}} = -\left( \frac{\text{size notional}}{\text{leverage}} \right)
 $$
 $$
-\text{Net PnL}_{\text{Liq}} = \text{Gross PnL}_{\text{Liq}} - \text{fee entry} - \text{funding accrued}
+\text{Net PnL}_{\text{Liq}} = \text{Gross PnL}_{\text{Liq}} - \text{fee entry}
 $$
 
 ---
 
 ### 3. Kiểm Tra Hợp Lệ & Bảo Vệ 4 Lỗi Rủi Ro (`Strict Validation Guards B-1-5`)
-1. **Kiểm tra mảng rỗng sát biên (`Zero-Length Slice Guard`):** Nếu lệnh mở đúng tại cây nến cuối cùng của Fold (`entry_idx + 1 >= test_window_end_idx`), mảng sau khi `Pre-Slice` sẽ rỗng (`len <= 1`). Hệ thống tự động bắt lỗi và hoàn trả `None` (Hủy bỏ sự kiện) thay vì tạo ra một bản ghi giả 0 nến, ngăn chặn việc làm ô nhiễm mẫu thống kê Kelly.
+1. **Kiểm tra mảng rỗng sát biên (`Zero-Length Slice & Boundary Truncation Guard`):** Nếu lệnh mở sát ranh giới fold (`n_bars <= 1` hoặc `entry_idx + 1 >= test_window_end_idx`), thay vì trả về `None` (làm mất lệnh khỏi thống kê Sharpe/DSR/PBO tổng thể), hệ thống trả về bản ghi `TIME_STOP` với cờ `boundary_truncated = True`. Nhờ cờ này, bộ lọc Kelly ở Module F tự động loại bỏ lệnh cận biên khỏi bảng tính Kelly (`ngăn Kelly Pollution 0%`), trong khi thống kê OOS toàn cục giữ lại trọn vẹn mẫu (`ngăn OOS Exclusion Bias`).
 2. **Kiểm tra giới hạn kép (`Dual-Boundary Cut`):** Cắt vật lý đồng thời theo cả `t_max_live` và `test_window_end_idx`.
 3. **Kiểm tra chuẩn hóa đơn vị `size_notional` (`USD Notional vs Units Guard`):** Tách rõ cờ `is_notional_in_usd` để chuẩn hóa phép tính PnL theo tỷ suất sinh lời hoặc theo số lượng coin.
 4. **Kiểm tra tham số đầu vào (`Side & Leverage Guard`):** Bảo đảm tính hợp lệ tuyệt đối cho `side in (1, -1)` và `leverage >= 1.0`.
@@ -968,9 +968,9 @@ def finalize_trade_record(
 1. **Tra cứu Giá Khớp Lệnh Tuyệt Đối (`Step 1: Absolute Exit Price Lookup`):**
    Hàm lấy ra `exit_idx_absolute = partial_record["exit_idx_absolute"]` và tra cứu trực tiếp trên mảng gốc: `exit_price_stub = float(full_closes[exit_idx_absolute])`. Giá này đóng vai trò là `exit_price` tạm thời (sẽ được tích hợp trọn vẹn với giá khớp lệnh thực tế từ Module G ở Task B-8-4).
 2. **Phân Định Nhánh PnL Minh Bạch (`Step 2: Transparent PnL Branching Engine via Task v11.8 & v11.9`):**
-   - **Nhánh `LIQUIDATION` (Quét thanh lý):** Tôn trọng tuyệt đối Quyết định Kiến trúc #7, tổn thất tối đa của quỹ bị khóa chặt tại mức Mất Trắng Tiền Thế Chấp (`Initial Margin`). Hàm gọi `compute_liquidation_loss` (hoặc tính toán trực tiếp):
-     $$\text{pnl}_{\text{liq}} = -\left(\frac{\text{size notional}}{\text{leverage used}}\right) - \text{funding accrued}$$
-     Đồng thời gắn `fee_entry = size_notional * fee_rate` và `fee_exit = 0.0` (vì không tốn phí chốt lời lệnh mà phí phạt đã trừ thẳng vào margin), loại bỏ hoàn toàn rủi ro khấu trừ đúp.
+   - **Nhánh `LIQUIDATION` (Quét thanh lý):** Tôn trọng tuyệt đối Quyết định Kiến trúc #7, tổn thất tối đa của quỹ bị khóa chặt tại mức Mất Trắng Tiền Thế Chấp (`Initial Margin = size_notional / leverage`). Hàm gọi `compute_liquidation_loss` (hoặc tính toán trực tiếp từ `pnl.py`):
+     $$\text{pnl}_{\text{liq}} = -\left(\frac{\text{size notional}}{\text{leverage used}}\right) - \text{fee entry}$$
+     Đồng thời gắn `fee_entry = size_notional * fee_rate` và `fee_exit = 0.0` (vì không tốn phí chốt lời lệnh mà phí phạt đã trừ thẳng vào margin), TUYỆT ĐỐI KHÔNG trừ thêm `funding_accrued` vào nhánh thanh lý để loại bỏ hoàn toàn rủi ro khấu trừ đúp (`Double-Count Funding Fee`).
    - **Nhánh Thông Thường (`SL / TRAIL / REGIME_FLIP / TIME_STOP`):** Gọi `compute_realized_pnl` (`src/aegis/execution/pnl.py`) để tính toán chuẩn xác lời/lỗ gộp (`gross_pnl`), trừ đi `fee_entry`, `fee_exit`, và phí lãi qua đêm (`funding_accrued`) để ra `net_pnl`.
 3. **Hoàn Thiện Từ Điển 24 Trường (`Step 3: Complete 24-Field Dictionary Construction`):**
    Hàm bổ sung các trường siêu dữ liệu dòng dõi (`lineage metadata`) bắt buộc: `schema_version`, `dataset_manifest_hash`, `fold_id`, `symbol`, `entry_timestamp_ms`, `exit_timestamp_ms`, cùng với `is_notional_in_usd`, `fee_paid`, `net_pnl`, và `realized_return`.
@@ -1141,17 +1141,17 @@ Tham số `sigma` (thường trích xuất từ `ATR / Price`) về nguyên tắ
 - **Giải pháp `math.exp()`:** Hệ thống Aegis chủ ý sử dụng phép biến đổi $e^{-\text{cushion}}$ và $e^{+\text{cushion}}$ bất chấp việc đầu vào là Linear Sigma. Dựa trên chuỗi Taylor $e^{-x} \approx 1 - x$ (với $x$ nhỏ), nó xấp xỉ hoàn hảo cho các biến động thông thường, nhưng tạo ra đường cong tiệm cận $0$ cho các biến động khổng lồ, đảm bảo an toàn tuyệt đối cho không gian giá.
 - **Quy ước:** Thiết kế này được gọi là **Quy ước Geometric Symmetry**. Hệ thống thống nhất xử lý biến động rủi ro giá thông qua hàm mũ Logarithm, kể cả khi tham số gốc là Linear %.
 
-### 7.3. Tách Bạch Phí Funding Khỏi Tổn Thất Ký Quỹ (`Gross vs Net Separation` — Vá Issue #4)
+### 7.3. Tách Bạch Phí Funding Khỏi Tổn Thất Ký Quỹ (`Gross vs Net Separation` — Vá Issue #4 & Quyết Định #7)
 Khi lệnh bị sàn thanh lý cưỡng chế (`Liquidation`), sự phân định giữa tổn thất ký quỹ và số dư ròng là ranh giới định chế bắt buộc để tránh nhầm lẫn cho lập trình viên:
-- **Tổn Thất Ký Quỹ Sàn Phái Sinh (`Gross Liquidation Loss`):** Khi lệnh chạm giá thanh lý, khoản lỗ tối đa trên sàn Perpetual Futures thu hồi chính xác bằng lượng Ký Quỹ Ban Đầu (`Initial Margin = size_notional / leverage`). Hàm `compute_liquidation_loss` giữ nguyên công thức chuẩn mực $-\frac{\text{size notional}}{\text{leverage}}$, TUYỆT ĐỐI KHÔNG cộng dồn `funding_accrued` hay `fee_exit` vào con số `Gross Loss` này vì sàn chỉ tịch thu đúng phần tài sản cọc (`Collateral`).
-- **Tổn Thất Ròng Sổ Sách Của Quỹ (`Net Realized PnL`):** Trong sổ sách kế toán tổng thể của quỹ (tại `pnl.py` và khâu `finalize_trade_record`), sau khi đã ghi nhận khoản lỗ ký quỹ `Gross Loss = -Initial Margin`, số dư Equity thực tế của tài khoản vẫn phải chịu thêm khấu trừ khoản phí lãi qua đêm (`funding_accrued`) đã tích lũy trong suốt thời gian giữ lệnh trước thời điểm bị thanh lý:
-  $$\text{Net PnL} = \text{Gross Loss} - \text{funding accrued} = -\frac{\text{size notional}}{\text{leverage}} - \text{funding accrued}$$
-- **Quy ước tối cao:** Sự tách bạch `Gross vs Net Separation` triệt tiêu hoàn toàn mâu thuẫn "đếm kép" (`Double-Count Funding Fee`), vừa bảo đảm phản ánh đúng vi cấu trúc thanh lý trên sàn (không thu quá số cọc), vừa minh bạch 100% dòng tiền tài khoản quỹ (chịu trách nhiệm trả chi phí funding qua đêm thực tế phát sinh).
+- **Tổn Thất Ký Quỹ Sàn Phái Sinh (`Gross Liquidation Loss`):** Khi lệnh chạm giá thanh lý trên cơ chế `Isolated Margin`, khoản lỗ tối đa trên sàn Perpetual Futures thu hồi chính xác bằng lượng Ký Quỹ Ban Đầu (`Initial Margin = size_notional / leverage`). Hàm `compute_liquidation_loss` giữ nguyên công thức chuẩn mực $-\frac{\text{size notional}}{\text{leverage}}$, TUYỆT ĐỐI KHÔNG cộng dồn `funding_accrued` hay `fee_exit` vào con số `Gross Loss` này vì sàn chỉ tịch thu đúng phần tài sản cọc (`Collateral`).
+- **Tổn Thất Ròng Sổ Sách Của Quỹ (`Net Realized PnL`):** Trong sổ sách kế toán tổng thể của quỹ (tại `pnl.py` và khâu `finalize_trade_record`), sau khi đã ghi nhận khoản lỗ ký quỹ `Gross Loss = -Initial Margin`, số dư Equity thực tế chỉ bị khấu trừ thêm `fee_entry` đã thanh toán lúc mở lệnh:
+  $$\text{Net PnL}_{\text{Liq}} = \text{Gross Loss} - \text{fee entry} = -\frac{\text{size notional}}{\text{leverage}} - \text{fee entry}$$
+- **Quy ước tối cao chống đếm kép (`Anti-Double-Counting Rule`):** Vì toàn bộ tiền ký quỹ ban đầu (`Initial Margin`) đã bị sàn phái sinh tịch thu (trong đó đã tự động cấn trừ hoặc bào mòn bởi các khoản `funding_accrued` phát sinh định kỳ 8h trước khi thanh lý), hệ thống TUYỆT ĐỐI KHÔNG trừ tiếp `funding_accrued` lần thứ hai vào `Net PnL` của nhánh `LIQUIDATION`. Đây là nguyên tắc bảo vệ sự minh bạch kế toán 100%, phản ánh chuẩn xác vi cấu trúc `Isolated Margin`.
 
-### 7.4. Kiến Trúc Cắt Trước Khi Tính (`Pre-Slice Zero-Leakage`) và Quy Ước Chỉ Số Tuyệt Đối (`Absolute Indexing v11.8`)
-Trong cụm Task Wiring Layer (`B-1-6 $	o$ B-1-9`), hệ thống thống nhất hai quy chuẩn thiết kế tối cao:
-- **Cắt Trước Khi Tính (`Pre-Slice before Exit Simulation`):** Mảng nến tương lai buộc phải được cắt vật lý sát ranh giới fold (`future_highs = full_highs[entry+1 : effective_end]`) trước khi truyền vào động cơ Trailing Stop. Nếu độ dài mảng sau khi cắt $\le 1$ (lệnh vào sát biên fold), hệ thống **trả về `None` hủy bỏ sự kiện** thay vì tự ngụy tạo bản ghi `TIME_STOP` 0 nến. Điều này bảo vệ sự tinh khiết tuyệt đối cho ma trận lợi suất nạp vào Kelly Sizer.
-- **Hệ Quy Chiếu Chỉ Số Tuyệt Đối (`Absolute Index Single Source of Truth`):** Mọi bản ghi giao dịch (`TradeRecord`) khi xuất ra ngoài tầng định tuyến đều phải đính kèm `exit_idx_absolute = entry_idx + 1 + exit_idx_relative`. Bất kỳ mô-đun thực thi nào (`Module G`) hay bộ kiểm định (`Pandera TradeRecordSchema`) khi tra cứu giá khớp lệnh đều phải sử dụng đúng chỉ số tuyệt đối này trên mảng dữ liệu gốc, ngăn chặn 100% rủi ro lệch nhịp thời gian (`Time-Shift Bug`).
+### 7.4. Kiến Trúc Cắt Trước Khi Tính (`Pre-Slice Zero-Leakage`) và Bảo Tồn Lệnh Cận Biên (`Boundary Preservation v11.9`)
+Trong cụm Task Wiring Layer (`B-1-6 -> B-1-9`), hệ thống thống nhất hai quy chuẩn thiết kế tối cao:
+- **Cắt Trước Khi Tính & Bảo Tồn Lệnh Cận Biên (`Pre-Slice & Boundary Truncation`):** Mảng nến tương lai buộc phải được cắt vật lý sát ranh giới fold (`future_highs = full_highs[entry+1 : effective_end]`) trước khi truyền vào động cơ Trailing Stop. Nếu độ dài mảng sau khi cắt $\le 1$ hoặc lệnh chạm ranh giới fold trước khi chạm stop-loss (`effective_t_max < t_max_live`), thay vì trả về `None` làm mất mẫu, hệ thống **bảo tồn sự kiện dưới dạng bản ghi `TIME_STOP` với cờ `boundary_truncated = True`**. Theo chuẩn `DATA_CONTRACTS_v11_9.md`, cờ này cho phép bộ lọc Module F (`kelly_empirical.py`) gạt bỏ lệnh khỏi bảng Kelly để chống `Kelly Pollution 0%`, đồng thời giữ lại lệnh trong toàn bộ thống kê OOS tổng thể (Sharpe/Return/PBO) để ngăn `OOS Exclusion Bias`.
+- **Hệ Quy Chiếu Chỉ Số Tuyệt Đối (`Absolute Index Single Source of Truth`):** Mọi bản ghi giao dịch (`TradeRecord`) khi xuất ra ngoài tầng định tuyến đều phải đính kèm `exit_idx_absolute = min(entry_idx + 1 + exit_idx_relative, len(full_closes) - 1)`. Bất kỳ mô-đun thực thi nào (`Module G`) hay bộ kiểm định (`Pandera TradeRecordSchema`) khi tra cứu giá khớp lệnh đều phải sử dụng đúng chỉ số tuyệt đối này trên mảng dữ liệu gốc, ngăn chặn 100% rủi ro lệch nhịp thời gian (`Time-Shift Bug`) và lỗi vượt biên chỉ số (`IndexOutOfBounds`).
 
 ### 7.5. 3 Bọ Chí Mạng Và Cơ Chế Phòng Thủ Định Chế (`Institutional Armor Patches v11.9`)
 Để đạt chuẩn mực an toàn quỹ định chế (`Institutional Asset Management Standards`), hệ thống đã triệt tiêu vĩnh viễn 3 lỗ hổng chí mạng:

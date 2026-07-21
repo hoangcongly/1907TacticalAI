@@ -260,7 +260,9 @@ def test_b_1_5_no_leakage_past_fold_boundary():
         liquidation_price=80.0,
         t_max_live=120,
     )
-    assert result_empty is None, f"Kỳ vọng None cho lệnh mảng rỗng, nhận {result_empty}"
+    assert result_empty is not None and result_empty["boundary_truncated"] is True, (
+        f"Kỳ vọng bản ghi boundary_truncated=True cho lệnh mảng rỗng, nhận {result_empty}"
+    )
 
     # [STREAMING_CHUNK: TEST_TRAILING_ONE_BAR_BOUNDARY]
     # Kiểm thử case: Nếu lệnh vào cận biên fold (chỉ còn đúng 1 bar tương lai, len=1)
@@ -278,7 +280,9 @@ def test_b_1_5_no_leakage_past_fold_boundary():
         liquidation_price=80.0,
         t_max_live=120,
     )
-    assert result_one_bar is None, f"Kỳ vọng None khi chỉ còn 1 bar tương lai, nhận {result_one_bar}"
+    assert result_one_bar is not None and result_one_bar["boundary_truncated"] is True, (
+        f"Kỳ vọng bản ghi boundary_truncated=True khi chỉ còn 1 bar tương lai, nhận {result_one_bar}"
+    )
 
     from aegis.meta_labeling.sizing.liquidation_layer import compute_liquidation_loss
 
@@ -346,7 +350,7 @@ def test_run_trailing_exit_for_oos_event_full_pipeline():
     )
     assert result_none is None
 
-    # Case 3: entry tại nến cuối cùng của fold -> future array rỗng -> None
+    # Case 3: entry tại nến cuối cùng của fold -> future array rỗng -> trả về bản ghi boundary_truncated=True (thay vì None)
     result_boundary = run_trailing_exit_for_oos_event(
         entry_idx=n - 1, entry_price=100.0, test_window_end_idx=n,
         p_i=0.8, p_chop_i=0.3, side_primary=1,
@@ -354,7 +358,9 @@ def test_run_trailing_exit_for_oos_event_full_pipeline():
         fade_enabled=True, fade_regime_gate_threshold=0.6,
         full_highs=highs, full_lows=lows, full_atr=atr, full_p_trend=p_trend
     )
-    assert result_boundary is None, "Zero-length slice PHẢI trả None, không phải TIME_STOP giả"
+    assert result_boundary is not None and result_boundary["boundary_truncated"] is True, (
+        "Zero-length slice PHẢI trả về bản ghi boundary_truncated=True theo đúng Data Contracts v11.9"
+    )
 
 
 def test_finalize_trade_record_reads_price_at_absolute_index():

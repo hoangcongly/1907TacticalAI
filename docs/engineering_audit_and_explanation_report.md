@@ -18,40 +18,50 @@ Trong các định chế tài chính quant trading hàng đầu thế giới (nh
    Sử dụng mô hình kiểm duyệt kép (`TypedDict` trên RAM cho từng lệnh lẻ và `Pandera DataFrameSchema` cho lô lớn), kết hợp cơ chế Tem Niêm Phong `dataset_manifest_hash` (SHA-256). Trụ cột này đảm bảo 100% dữ liệu đầu vào sạch tuyệt đối, ngăn chặn triệt để các lỗi vi cấu trúc số học trước khi bước vào tính toán.
 2. **Trụ Cột 2 — Lớp Phân Loại Chế Độ & Khóa Cổng An Toàn (`Regime Gate — trade_mode.py / Task B-1-2`)**:  
    Là hàm định tuyến duy nhất (`Single Source of Truth`) phân chia thị trường thành 3 nhánh: `Follow` (khi xu hướng mạnh $p_i \ge 0.50$), `Fade` (khi xu hướng yếu $p_i < 0.20$ VÀ thị trường đi ngang $p_{\text{chop}} > 0.60$), và `none` (vùng Deadzone $[0.20, 0.50)$ hoặc khi thị trường hỗn mang). Tính năng này giúp giảm thiểu rủi ro khi thị trường không rõ xu hướng.
-3. **Trụ Cột 3 — Lớp Quản Trị Vốn Động Phi Tuyến (`Non-Linear Kelly Sizing — kelly_empirical.py / Task B-1-1`)**:  
-   Động cơ giải tích phi tuyến (`brentq`) giải trực tiếp bài toán cực đại hóa tốc độ tăng trưởng log kỳ vọng $E[\ln(1 + f \cdot r)] \to \max$ trên phân phối thực nghiệm của chiến lược, tích hợp phanh khẩn cấp `Singularity Guard` ngăn rủi ro cháy tài khoản ($1 + f \cdot r_i \le 0$).
+3. **Trụ Cột 3 — Lớp Quản Trị Vốn Phòng Thủ Kép 3 Tầng v11.9 (`Regime Bayesian Kelly & Vol-Targeting — kelly_empirical.py & position_sizer.py / Task B-1-1 & B-1-11`)**:  
+   Thay thế hoàn toàn bóng ma Kelly tĩnh bằng cấu trúc định lượng 3 lớp phòng thủ liên hoàn:
+   - **Tầng 1 (HMM Probability-Weighted Blending):** Phối trộn động tỷ lệ đặt cược tối ưu $f^*$ theo xác suất chuyển pha thời gian thực của HMM (`bull`, `bear`, `chop`), loại bỏ hiện tượng giật lắc (`whipsaw`) khi thị trường lật nhịp.
+   - **Tầng 2 (Bayesian Shrinkage & Conservative Bootstrap):** Trừng phạt kép phương sai mẫu bằng phân vị thứ 25 (`lower_percentile=25.0`) và trừng phạt kích thước mẫu nhỏ bằng công thức Shrinkage về niềm tin tiên nghiệm ($f_{\text{prior}} = 0.1$) khi $N < C=20$ lệnh (`compute_regime_weighted_bayesian_kelly`).
+   - **Tầng 3 (Volatility Targeting & Fractional Kelly):** Bóp nghẹt quy mô lệnh tức thì khi xảy ra biến động Thiên Nga Đen thông qua tỷ lệ chiết khấu $Vol\_Ratio = \min(1.0, ATR_{\text{hist}} / ATR_t)$ kết hợp chiết khấu rủi ro mô hình Half-Kelly ($\lambda = 0.5$) tại `position_sizer.py`.
 
-### Sơ Đồ Kiến Trúc Tổng Thể Hệ Thống (`Master System Architecture Pipeline`)
+### Sơ Đồ Kiến Trúc Tổng Thể Hệ Thống (`Master System Architecture Pipeline v11.9`)
 ```mermaid
 flowchart TD
-    subgraph Pillar1["Trụ Cột 1: Data Gatekeeper (schemas.py & Task B-1-10)"]
-        RawTick["Raw OHLCV Market Data"] --> Hash["SHA-256 Manifest Hash Seal"]
-        RawTick --> SchemaIn["Pandera: SignalBarSchema Checks"]
-        SchemaIn --> Sim["Module B/G: Trade Simulation (RAM)"]
-        Sim --> TDict["Task B-1-10: TradeRecord TypedDict Guard"]
-        TDict --> TSchema["Pandera: TradeRecordSchema & Lineage Check"]
-    end
+    subgraph ModuleJ["HỆ ĐIỀU HÀNH SINH TỒN & GIÁM SÁT NGOẠI LỆ (MODULE J — CIRCUIT BREAKER & EXCEPTION HANDLER)"]
+        subgraph Pillar1["Trụ Cột 1: Data Gatekeeper (schemas.py & Task B-1-10)"]
+            RawTick["Raw OHLCV Market Data"] --> Hash["SHA-256 Manifest Hash Seal"]
+            RawTick --> SchemaIn["Pandera: SignalBarSchema Checks"]
+            SchemaIn --> Sim["Module B/G: Trade Simulation (RAM)"]
+            Sim --> TDict["Task B-1-10: TradeRecord TypedDict Guard"]
+            TDict --> TSchema["Pandera: TradeRecordSchema & Lineage Check"]
+        end
 
-    subgraph Pillar2["Trụ Cột 2: Regime Gate & Trade Mode (trade_mode.py - Task B-1-2)"]
-        Prob["p_i (Trend) & p_chop_i (Chop)"] --> Classifier["classify_trade_mode(p_i, p_chop_i)"]
-        Classifier -->|p_i >= 0.5| ModeFollow["Mode: follow (Trend Following)"]
-        Classifier -->|p_i < 0.2 & p_chop > 0.6| ModeFade["Mode: fade (Mean Reversion)"]
-        Classifier -->|Deadzone or Locked| ModeNone["Mode: none (STAND ASIDE - Zero Risk)"]
-    end
+        subgraph Pillar2["Trụ Cột 2: Regime Gate & Trade Mode (trade_mode.py - Task B-1-2)"]
+            Prob["p_i (Trend) & p_chop_i (Chop)"] --> Classifier["classify_trade_mode(p_i, p_chop_i)"]
+            Classifier -->|p_i >= 0.5| ModeFollow["Mode: follow (Trend Following)"]
+            Classifier -->|p_i < 0.2 & p_chop > 0.6| ModeFade["Mode: fade (Mean Reversion)"]
+            Classifier -->|Deadzone or Locked| ModeNone["Mode: none (STAND ASIDE - Zero Risk)"]
+        end
 
-    subgraph Pillar3["Trụ Cột 3: Non-Linear Kelly Engine (kelly_empirical.py - Task B-1-1)"]
-        TSchema -->|Clean Returns Sample| Solver["solve_empirical_kelly_fraction (brentq)"]
-        Solver --> CheckABS["Singularity Guard: Check 1 + f*r > 0"]
-        CheckABS -->|Safe| OptKelly["Optimal Fraction f* (Log-Growth Maximized)"]
-    end
+        subgraph Pillar3["Trụ Cột 3: 3-Layer Bayesian Kelly & Vol-Targeting (v11.9 Engine)"]
+            TSchema -->|Regime Returns & Probs| Solver["Tầng 1: solve_empirical_kelly_with_confidence (Bootstrap 25th)"]
+            Solver --> Bayes["Tầng 2: Bayesian Shrinkage f_bayes = w*f_cons + (1-w)*f_prior"]
+            Bayes --> HMMBlend["compute_regime_weighted_bayesian_kelly (HMM Probability Blend)"]
+            HMMBlend --> VolTarget["Tầng 3: Vol-Targeting f_final = f_blend * min(1.0, ATR_hist / ATR_t)"]
+        end
 
-    ModeFollow --> SizingOutput["Final Order Execution: Size = f* * Account Value"]
-    ModeFade --> SizingOutput
-    OptKelly --> SizingOutput
+        ModeFollow --> PositionSizer["position_sizer.py: compute_position_size (Half-Kelly λ=0.5)"]
+        ModeFade --> PositionSizer
+        VolTarget --> PositionSizer
+
+        PositionSizer --> BreakerCheck{"Circuit Breaker Gate:<br/>Check Drawdown / NaN / Inf / ValueError Guard"}
+        BreakerCheck -->|Exception / Breach| Intercept["Module J Interception:<br/>Emergency Halt & Log Warning (Prevent Crash)"]
+        BreakerCheck -->|Safe & Valid| SizingOutput["Final Order Execution: size_notional = f_final * λ * current_equity"]
+    end
 ```
 
 > [!NOTE]
-> **Trạng Thái Hoàn Thành & Phạm Vi Kiến Trúc (`Architectural Scope & Reality Check`):** Cấu trúc 3 trụ cột (Data Gatekeeper -> Regime Gate -> Kelly Sizing) tạo ra nền tảng phòng thủ kiên cố cho hệ thống. Tuy nhiên, tính đến thời điểm báo cáo, chúng ta mới xây dựng và hoàn thiện kiểm định TDD cho khoảng ~8 module/hàm cốt lõi (schemas, trade_mode, sl_initial, trailing_exit v3, liquidation_layer, kelly solver). Các trụ cột xử lý dữ liệu tick (Module A), bộ lọc Kalman/HMM (Module B), phát hiện sự kiện CUSUM (Module C), chọn đặc trưng (Module D), kiểm định chéo CPCV/PBO (Module F), khớp lệnh thực tế (Module G) và Circuit Breaker (Module J) là phần việc lớn nằm trong lộ trình ~80 task tiếp theo cần kiên trì hoàn thiện.
+> **Trạng Thái Hoàn Thành & Phạm Vi Kiến Trúc (`Architectural Scope & Reality Check`):** Cấu trúc 3 trụ cột (Data Gatekeeper -> Regime Gate -> 3-Layer Bayesian Kelly & Vol-Targeting Sizing) cùng lớp giáp bảo vệ Module J (Circuit Breaker & Exception Handler) tạo ra nền tảng phòng thủ kiên cố cho hệ thống. Tuy nhiên, tính đến thời điểm báo cáo, chúng ta mới xây dựng và hoàn thiện kiểm định TDD cho các module/hàm cốt lõi (schemas, trade_mode, sl_initial, trailing_exit v3, liquidation_layer, kelly empirical/bayesian blend, position sizer). Các trụ cột xử lý dữ liệu tick (Module A), bộ lọc Kalman/HMM (Module B), phát hiện sự kiện CUSUM (Module C), chọn đặc trưng (Module D), kiểm định chéo CPCV/PBO (Module F), khớp lệnh thực tế (Module G) và cơ chế tự ngắt mạch toàn cục Circuit Breaker (Module J full service) là phần việc lớn nằm trong lộ trình các task tiếp theo cần kiên trì hoàn thiện.
 
 ### Sơ Đồ Trạng Thái Kiến Trúc Toàn Hệ Thống (v11.8 Status Map)
 
@@ -249,149 +259,127 @@ flowchart TD
 
 ---
 
-## PHẦN III: GIẢI PHẪU CHI TIẾT MÃ NGUỒN `kelly_empirical.py` & TASK B-1-1 (`solve_empirical_kelly_fraction`)
+## PHẦN III: GIẢI PHẪU CHI TIẾT KIẾN TRÚC QUẢN TRỊ VỐN PHÒNG THỦ KÉP 3 TẦNG v11.9 (`kelly_empirical.py` & `position_sizer.py` — TASK B-1-1 & B-1-11)
 
-File [src/aegis/meta_labeling/sizing/kelly_empirical.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/meta_labeling/sizing/kelly_empirical.py) giải bài toán định lượng cốt lõi: **Tìm tỷ lệ đặt cược $f^*$ cực đại hóa tốc độ tăng trưởng log kỳ vọng của tài khoản trên phân phối thực nghiệm (`Empirical Kelly Solver`).**
+Các hệ thống giao dịch thuật toán thế hệ cũ thường sụp đổ vì phụ thuộc vào một **"Bóng ma Kelly Tĩnh" (`Static Kelly Illusion`)**: tính toán đòn bẩy tối ưu dựa trên một rổ dữ liệu lịch sử tĩnh gộp chung, rồi áp đặt con số đó cho thị trường hiện tại. Lỗ hổng này cực kỳ nguy hiểm vì thị trường liên tục chuyển đổi cấu trúc (`Regimes`), và khi xảy ra các cú sốc biến động đột ngột (`Black Swans`), Kelly tĩnh hoàn toàn mù quáng và tiếp tục cược đòn bẩy cao, dẫn đến thảm họa cháy tài khoản.
 
-### 1. Tại Sao Task B-1-1 Là Động Cơ Lõi Của Kiến Trúc Quản Trị Vốn?
-Trong kiến trúc Master Blueprint v11.8, `solve_empirical_kelly_fraction` đảm nhận 3 vai trò nền tảng:
-1. **Máy Tính Đạo Hàm & Dò Nghiệm Tối Ưu (`Non-linear Solver`):**  
-   - **`assert np.all(returns_sample >= -1.0)`**: Đây là chốt chặn bảo vệ tính toàn vẹn của dữ liệu mô phỏng. Mảng `returns_sample` đưa vào Kelly BẮT BUỘC phải là **Lợi suất Cơ sở Chưa dùng đòn bẩy (Unleveraged Return)**. Ví dụ: Nếu tài sản biến động 5%, $r = \pm 0.05$. Từ đó Kelly sẽ tìm ra đòn bẩy tối ưu $f^*$. Lỗi rò rỉ "Nghịch lý Thanh lý" xảy ra nếu ta truyền nhầm lợi suất ký quỹ (Margin Return) vào Kelly. Khi bị thanh lý (lỗ 100% tiền cọc $\implies r_{\text{margin}} = -1.0$), nếu đưa sai giá trị này vào, Kelly sẽ tưởng lầm rằng chính tài sản cơ sở đã rớt về 0 (như vụ sập LUNA), và nó sẽ vĩnh viễn khóa đòn bẩy quỹ ở mức $f \le 1.0$! Chốt chặn này ngăn ngừa những sai sót "ngây thơ" về vi cấu trúc thị trường khi lập trình.
-   - **Hàm Objective (`growth_derivative`)**: Theo tiêu chuẩn định lượng, mục tiêu không phải là tối đa hóa lợi nhuận tuyệt đối (dễ dẫn đến cháy túi), mà là tối đa hóa **Tỷ lệ tăng trưởng kép (`Geometric Growth Rate`)**. Đạo hàm của hàm tăng trưởng $G(f) = E[\ln(1 + f \cdot r)]$ bằng $0$ tại điểm Kelly tối ưu. Do đó, ta đi tìm nghiệm $f^*$ sao cho $E[\frac{r}{1 + f \cdot r}] = 0$.
-2. **Khối Lõi Phục Vụ Xây Bảng Tra Cứu Kelly 2D (`Kelly 2D Lookup Table Engine`):**  
-   Để phục vụ giao dịch thực chiến tốc độ cao, hệ thống chia không gian xác suất $[0, 1] \times [0, 1]$ thành lưới 10x10 (`100 buckets`). Với mỗi ô lưới, hệ thống gom mẫu giao dịch tương ứng và gọi trực tiếp hàm `solve_empirical_kelly_fraction` (Task B-1-1) 100 lần để tính tỷ lệ tối ưu $f_{ij}^*$ điền vào bảng tra cứu.
-3. **Cơ Chế Phanh Khẩn Cấp (`Severe Drawdown Prevention Guard`):**  
-   Nhờ dòng kiểm tra `if np.any(denom <= 1e-6): return -1e6`, Task B-1-1 đóng vai trò như một bộ phanh an toàn tự động: Ngăn chặn triệt để các mức tỷ lệ đặt cược gây suy kiệt vốn ($1 + f \cdot r_i \le 0$) ngay trong bước dò nghiệm.
+Để triệt tiêu tuyệt đối rủi ro trên, bản kiến trúc **v11.9** đã "đập đi xây lại" hệ thống quản trị vốn, thiết lập **Kiến Trúc Phòng Thủ Kép 3 Tầng (`3-Layer Defensive Sizing Architecture`)** bao bọc xung quanh động cơ dò nghiệm phi tuyến lõi.
 
-> [!NOTE]
-> **Phân Tích Độ Nhạy Mẫu Số & Bootstrap CI (`Bootstrap Confidence Interval`):** Mặc dù $N \ge 30$ là quy tắc CLT tối thiểu, nhưng do rủi ro "Fat Tails", chúng ta sử dụng hàm bọc ngoài `solve_empirical_kelly_fraction_with_confidence`. Hàm này sử dụng **Bootstrapping** (lấy mẫu lại có hoàn lại `n_bootstraps=1000` lần) để tạo ra một dải phân phối các $f^*$. Thay vì lấy giá trị điểm (`Point Estimate`), hệ thống bảo thủ trích xuất phân vị thứ 25 (`lower_percentile=25.0`), đảm bảo tỷ lệ cược luôn được hạ thấp an toàn trước những sai số nhiễu trong mẫu nhỏ, triệt tiêu rủi ro Overfitting.
+---
 
-### 2. Giải Phẫu Hàm Lõi `solve_empirical_kelly_fraction`
-```python
-DEFAULT_F_MAX = 20.0          # Giới hạn tìm kiếm brentq (= leverage cap Perp Futures)
-DEFAULT_LAMBDA_KELLY = 0.5    # Half-Kelly chiết khấu rủi ro mô hình
-
-class KellyConfidenceResult(NamedTuple):
-    f_star_point: float        # Ước lượng điểm
-    f_star_conservative: float # Phân vị bảo thủ 25%
-    bootstrap_std: float       # Độ lệch chuẩn bootstrap
-    uncertainty_ratio: float   # Cờ cảnh báo bất định
-
-def solve_empirical_kelly_fraction(returns_sample, f_max=DEFAULT_F_MAX) -> float:
-    returns_sample = returns_sample[np.isfinite(returns_sample)]
-    if len(returns_sample) < 30: return 0.0
-    assert np.all(returns_sample >= -1.0), "Canary Error"
-
-def solve_empirical_kelly_fraction_with_confidence(...) -> KellyConfidenceResult:
-```
-
-#### Phòng Thủ Chiều Sâu 3 Lớp (`Defense-in-Depth`) & Fractional Kelly ($\lambda$)
-> [!IMPORTANT]
-> **Kiến trúc f_max = 20.0 được bảo vệ bởi 3 lớp phòng thủ đồng thời:**
-> 1. **Lớp 1 — Dynamic Cap:** $f_{\text{max-safe}} = \min(f_{\max}, \frac{0.999}{|r_{\min}|})$. Nếu mẫu chứa lệnh thanh lý ($r_{\min}=-1.0$), trần tìm kiếm tự động co lại về $0.999$ bất kể `f_max=20.0`.
-> 2. **Lớp 2 — Liquidation Layer:** `validate_leverage_against_sl` đảm bảo SL luôn nằm an toàn bên trong giá thanh lý (15% buffer).
-> 3. **Lớp 3 — Half-Kelly ($\lambda = 0.5$):** Vị thế thực tế $f_{\text{allocated}} = \lambda \cdot f^*$ giảm 75% biến động tài khoản (`Drawdown Variance`) trong khi chỉ mất 25% tốc độ tăng trưởng kép.
->
-> **`MARGIN_LEVERAGE_CAP = 20.0` (Trần Hiệu Quả Ký Quỹ Margin):** Chỉ ảnh hưởng khoảng cách tới giá thanh lý, KHÔNG ảnh hưởng PnL lệnh thoát thông thường.
->
-> **[Phát hiện M] `KellyConfidenceResult`:** Hàm bootstrap nay trả về `NamedTuple` chứa đầy đủ thông tin chẩn đoán (`f_star_point`, `f_star_conservative`, `bootstrap_std`, `uncertainty_ratio`) phục vụ tầng giám sát/logging.
-
-#### Canary Error Assertion (Thứ Tự NaN-Safe)
-- **`assert np.all(returns_sample >= -1.0)`**: Chạy **SAU** khi đã lọc bỏ `NaN/Inf` (`returns_sample[np.isfinite(...)]`). Mảng `returns_sample` BẮT BUỘC phải là **Lợi suất Cơ sở Chưa đòn bẩy (Unleveraged Return)**. Chốt chặn này ngăn ngừa lỗi rò rỉ "Nghịch lý Thanh lý" khi truyền nhầm lợi suất ký quỹ vào Kelly.
-
-
-#### A. Lọc Dữ Liệu và Kiểm Tra Kích Thước Mẫu (`Sample Size Guard`)
-```python
-returns_sample = returns_sample[np.isfinite(returns_sample)]
-if len(returns_sample) < 30:
-    return 0.0
-```
-- Lọc bỏ các số `NaN` hoặc `Inf` để bảo đảm đạo hàm hợp lệ.
-- Kiểm tra số lượng lệnh tối thiểu $N \ge 30$. Nếu dưới 30 lệnh, Định lý Giới Hạn Trung Tâm (`Central Limit Theorem`) chưa đủ lực để đảm bảo phân phối mẫu đại diện cho thực tế $\implies$ Trả về $f^* = 0.0$ (Không cược tiền khi thiếu dữ liệu để chống Overfitting).
-
-#### A.1. Giới Hạn Đòn Bẩy Động (`Dynamic Leverage Cap — f_max_safe`)
-```python
-min_return = np.min(returns_sample)
-if min_return < 0:
-    f_max_safe = min(f_max, 0.999 / abs(min_return))
-else:
-    f_max_safe = f_max
-```
-- **Nền tảng Toán học:**
-  Hàm $\ln(1 + f \cdot r)$ chỉ hợp lệ khi $1 + f \cdot r > 0$. Nếu mẫu chứa lệnh bị thanh lý ($r_{\min} = -1.0$), thì $f$ tối đa cho phép là $f < \frac{1}{|r_{\min}|} = 1.0$. Khi gọi `brentq` với `f_max = 3.0` (hoặc bất kỳ $f_{\max} > 1.0$) trên mẫu này, thuật toán sẽ thử $f = 2.0$ → $1 + 2 \times (-1) = -1 \le 0$ → $\ln(\le 0)$ **vô nghĩa** → crash!
-- **Giải pháp:** Trước khi gọi `brentq`, hệ thống tính $f_{\text{max-safe}} = \min(f_{\max}, \frac{0.999}{|r_{\min}|})$ để đảm bảo miền dò nghiệm $[0, f_{\text{max-safe}}]$ luôn nằm trong vùng $\ln$ hợp lệ. Kết quả: Nếu mẫu có lệnh thanh lý $-100\%$, Kelly tự động hiểu rằng **không thể dùng đòn bẩy** ($f^* \le 0.999$). (Với `f_max = DEFAULT_F_MAX_NOTIONAL_CAP = 3.0`).
-
-> [!NOTE]
-> **Phân Tích Độ Nhạy Mẫu Số & Bootstrap CI (`Bootstrap Confidence Interval`):** Mặc dù $N \ge 30$ là quy tắc CLT tối thiểu, nhưng do rủi ro "Fat Tails", chúng ta sử dụng hàm bọc ngoài `solve_empirical_kelly_fraction_with_confidence`. Hàm này sử dụng **Bootstrapping** (lấy mẫu lại có hoàn lại `n_bootstraps=1000` lần) để tạo ra một dải phân phối các $f^*$. Thay vì lấy giá trị điểm (`Point Estimate`), hệ thống bảo thủ trích xuất phân vị thứ 25 (`lower_percentile=25.0`), đảm bảo tỷ lệ cược luôn được hạ thấp an toàn trước những sai số nhiễu trong mẫu nhỏ, triệt tiêu rủi ro Overfitting.
-
-#### B. Phương Trình Đạo Hàm Tăng Trưởng Log Kỳ Vọng (`growth_derivative`)
-```python
-def growth_derivative(f):
-    denom = 1.0 + f * returns_sample
-    if np.any(denom <= 1e-6):
-        return -1e6
-    return np.mean(returns_sample / denom)
-```
-- **Nền tảng Toán học:**  
-  Mục tiêu là cực đại hóa hàm tăng trưởng: $G(f) = E\left[ \ln(1 + f \cdot r) \right]$. Đạo hàm bậc nhất theo $f$ là $G'(f) = E\left[ \frac{r}{1 + f \cdot r} \right] = 0$.
-- **Cơ chế bảo vệ thâm hụt vốn (`if np.any(denom <= 1e-6): return -1e6`):**  
-  Đây là chốt chặn quan trọng! Nếu thử nghiệm một tỷ lệ `f` quá lớn khiến lệnh thua ($r_i < 0$) làm số dư $1 + f \cdot r_i \le 0$ (Suy kiệt vốn), code trả về `-1e6` để báo hiệu thuật toán dò nghiệm `brentq` cần lùi về vùng tỷ lệ an toàn hơn.
-
-#### C. Chốt Chặn Hai Đầu Mút & Thuật Toán Brent's Method (`brentq`)
-```python
-if growth_derivative(0.0) <= 0: return 0.0
-if growth_derivative(f_max_safe) > 0: return f_max_safe
-return brentq(growth_derivative, 0.0, f_max_safe, xtol=1e-6)
-```
-- **Chốt 1 ($f = 0.0$):** Tại $f=0$, $G'(0) = E[r]$. Nếu trung bình lợi suất của chiến lược $E[r] \le 0$ (chiến lược không có kỳ vọng dương), hệ thống khóa nghiệm tại `0.0` (Không cược tiền).
-- **Chốt 2 ($f = f_{\text{max-safe}}$):** Nếu tại mức đòn bẩy tối đa an toàn (đã được giới hạn động bởi `f_max_safe`), đường cong tăng trưởng vẫn dốc lên ($G'(f_{\text{max-safe}}) > 0$), khóa nghiệm tại trần an toàn để tuân thủ giới hạn quản trị rủi ro.
-- **Chốt 3 (`brentq`):** Nếu $G'(0) > 0$ và $G'(f_{\text{max-safe}}) \le 0$, theo Định lý Giá Trị Trung Gian (`Intermediate Value Theorem`), chắc chắn tồn tại duy nhất một nghiệm $f^* \in (0, f_{\text{max-safe}})$ nơi đạo hàm bằng 0. Vì `f_max_safe` đã đảm bảo $1 + f \cdot r_{\min} > 0 \; \forall f \in [0, f_{\text{max-safe}}]$, hàm `growth_derivative` hoàn toàn **liên tục** trên miền dò nghiệm, thuật toán `brentq` dò tìm ra nghiệm với sai số $< 10^{-6}$ mà không bao giờ va vào bức tường phá sản.
-
-### 3. Kiểm Thử TDD Phân Phối Bernoulli (`test_solve_empirical_kelly_fraction` & Coin Toss)
-```python
-def test_b_1_1_kelly_classical_coin_toss():
-    np.random.seed(42)
-    sample = np.random.choice([1.0, -0.999], p=[0.6, 0.4], size=10000)
-    f_star = solve_empirical_kelly_fraction(sample, f_max=1.0)
-    assert abs(f_star - 0.2) < 0.05
-```
-- **Kiểm chứng bằng toán học nhị thức Bernoulli:** Với phân phối nhị thức ($60\%$ lệnh thắng $+100\%$, $40\%$ lệnh thua $-100\%$), công thức Kelly kinh điển cho kết quả lời giải chuẩn xác là:
-  
-
-$$
-f^* = p - \frac{1-p}{b} = 0.6 - \frac{0.4}{1.0} = 0.20 \quad (20\%)
-$$
-
-- **Nghiệm thu thực tế:** Kết quả `f_star` tính trên 10,000 mẫu xấp xỉ `0.20`, xác nhận động cơ giải tích phi tuyến (`solve_empirical_kelly_fraction`) đạt chuẩn chính xác tuyệt đối.
-
-#### Sơ Đồ Luồng Tối Ưu Hóa Kelly Phi Tuyến (`Empirical Kelly Solver Pipeline`)
+### 1. Kiến Trúc Tổng Thể 3 Tầng Sizing v11.9 (`Master 3-Layer Sizing Pipeline`)
 ```mermaid
 flowchart TD
-    Input["Input: returns_sample Array, f_max=20.0"] --> Filter["Filter: Remove NaN/Inf & check len >= 30"]
-    Filter -->|len < 30| ReturnZero["Return f* = 0.0 (Data Insufficient Guard)"]
-    Filter -->|len >= 30| DynCap["Dynamic Leverage Cap: f_max_safe = min(f_max, 0.999 / abs(min_return))"]
-    
-    DynCap --> EvalZero["Eval growth_derivative(f=0.0)"]
-    EvalZero -->|"E[r] <= 0"| ReturnZero
-    EvalZero -->|"E[r] > 0"| EvalMax["Eval growth_derivative(f=f_max_safe)"]
-    
-    EvalMax -->|Deriv > 0| ReturnMax["Return f* = f_max_safe (Cap at Safe Leverage Limit)"]
-    EvalMax -->|Deriv <= 0| Brentq["scipy.optimize.brentq(growth_derivative, 0, f_max_safe)"]
-    
-    Brentq --> CheckSing["growth_derivative checks denom <= 1e-6"]
-    CheckSing -->|Singularity Risk| Penalty["Return -1e6 (Singularity Guard - Prevent Ruin)"]
-    CheckSing -->|Safe| Mean["Return E[r / (1 + f*r)]"]
-    Mean -->|Iterate until = 0| Optimal["Found Optimal Fraction f*"]
+    subgraph Layer0["TẦNG NỀN: ĐỘNG CƠ DÒ NGHIỆM PHI TUYẾN (solve_empirical_kelly_fraction)"]
+        RawRet["returns_sample (Unleveraged Base Returns)"] --> SingCheck["assert np.all(returns >= -1.0) & Check len >= 30"]
+        SingCheck --> DynCap["Dynamic Safe Cap: f_max_safe = min(20.0, 0.999 / abs(r_min))"]
+        DynCap --> Brentq["scipy.optimize.brentq(growth_derivative, 0, f_max_safe)"]
+        Brentq --> Boot["Bootstrap 500x Resampling -> Extract lower_percentile=25.0"]
+        Boot --> FCons["f_conservative (Variance-Penalized Kelly)"]
+    end
+
+    subgraph Layer1_2["TẦNG 1 & 2: HMM PROBABILITY BLEND & BAYESIAN SHRINKAGE (compute_regime_weighted_bayesian_kelly)"]
+        FCons --> Shrink{"Check Sample Size N vs C=20"}
+        Shrink -->|N < 5| Prior["f_bayes = f_prior (0.1x - Extreme Safety)"]
+        Shrink -->|N >= 5| EmpiricalBayes["f_bayes = (N / (N + C)) * f_cons + (C / (N + C)) * f_prior"]
+        
+        EmpiricalBayes --> ProbBlend["HMM Regime Probabilities: p_bull, p_bear, p_chop"]
+        Prior --> ProbBlend
+        ProbBlend --> FBlend["f_blend = sum(p_regime * f_bayes_regime)"]
+    end
+
+    subgraph Layer3["TẦNG 3: VOLATILITY TARGETING & COMPOUNDING (compute_position_size - Module G)"]
+        FBlend --> VolRatio["Check Vol Scaling: Vol_Ratio = ATR_hist / ATR_current"]
+        VolRatio --> Clamp["vol_multiplier = min(1.0, Vol_Ratio)"]
+        Clamp --> HalfKelly["Apply Model Risk Discount: λ = 0.5 (Half-Kelly)"]
+        HalfKelly --> Eq["Multiply Mark-to-Market current_equity"]
+        Eq --> Notional["Final Order Notional: size_notional = f_blend * λ * current_equity * vol_multiplier"]
+    end
 ```
 
-### 5. Phòng Thủ Kép: HMM Bayesian Kelly & Volatility Targeting (Vá Lỗ Hổng "Ảo Giác Tĩnh")
-Kelly truyền thống mắc phải một lỗ hổng chí mạng: **Ảo giác tĩnh**. Nó dùng toàn bộ dữ liệu lịch sử tĩnh để đánh cược cho một thị trường có thể đã hoàn toàn thay đổi cấu trúc (Market Regime) hoặc đang bước vào một đợt bùng nổ biến động đột ngột (Thiên Nga Đen). Để triệt tiêu lỗ hổng này, hệ thống áp dụng cấu trúc phòng thủ 3 tầng:
+---
 
-- **Tầng 1 - Mượt Mà Hóa Xác Suất (HMM Probability-Weighted):** Thay vì ném toàn bộ dữ liệu vào 1 rổ, hệ thống tách bảng Kelly theo từng Regime (Bull, Bear, Chop). Tuy nhiên, hệ thống không "chốt cứng" một regime. Tại mỗi thời điểm, HMM xuất ra xác suất của 3 regime, và Kelly cuối cùng là trung bình cộng có trọng số của 3 giá trị $f^*$ tương ứng, đảm bảo chuyển pha cực kỳ mượt mà.
-- **Tầng 2 - Phanh Khẩn Cấp Bằng Nhánh Shrinkage (Bayesian Shrinkage):** Khi HMM vừa báo chuyển pha, dữ liệu quá khứ cho regime mới có thể cực kỳ ít (Data Starvation). Kelly có thể báo $f^*$ rất cao do "ảo giác" mẫu nhỏ. Cơ chế Bayesian Shrinkage sẽ trừng phạt mẫu nhỏ bằng công thức:
-  $$f_{\text{bayesian}} = \frac{N}{N + C} f_{\text{conservative}} + \frac{C}{N + C} f_{\text{prior}}$$
-  Nếu số lệnh $N$ quá nhỏ so với ngưỡng $C=20$, tỷ lệ phân bổ bị ép về mức an toàn tối thiểu ($f_{\text{prior}} = 0.1$).
-- **Tầng 3 - Bóp Nghẹt Thiên Nga Đen (Volatility Scaling Ratio):** Kelly giải quyết bài toán tăng trưởng chứ không phải sụt giảm tức thời. Hàm `compute_position_size` áp dụng tỷ lệ chiết khấu biến động: $Vol\_Ratio = ATR_{\text{hist}} / ATR_t$. Nếu biến động hiện tại vọt lên gấp 5 lần quá khứ, quy mô lệnh tự động bị chém đi $80\%$ ngay trong phần nghìn giây, không cần đợi Kelly thu thập đủ mẫu để hiểu chuyện gì đang xảy ra.
+### 2. Tầng Nền (Tầng 0): Động Cơ Dò Nghiệm Phi Tuyến & Phân Vị Bảo Thủ (`solve_empirical_kelly_fraction`)
+File [src/aegis/meta_labeling/sizing/kelly_empirical.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/meta_labeling/sizing/kelly_empirical.py) giải bài toán định lượng lõi trên từng tập con dữ liệu: **Tìm tỷ lệ đặt cược $f^*$ cực đại hóa tốc độ tăng trưởng log kỳ vọng $E[\ln(1 + f \cdot r)] \to \max$.**
+
+#### A. Các Chốt Chặn Vi Cấu Trúc Bắt Buộc (`Micro-structural Guards`)
+- **`assert np.all(returns_sample >= -1.0)`**: Mảng `returns_sample` nạp vào Kelly BẮT BUỘC phải là **Lợi suất Cơ sở Chưa dùng đòn bẩy (`Unleveraged Return`)**. Lỗi rò rỉ nghiêm trọng xảy ra nếu lập trình viên truyền nhầm lợi suất ký quỹ (`Margin Return`). Khi bị thanh lý (lỗ $100\%$ tiền cọc $\implies r_{\text{margin}} = -1.0$), nếu nạp sai giá trị này vào, Kelly sẽ tưởng lầm rằng chính tài sản cơ sở đã rớt về $0$ (như thảm họa LUNA), và nó sẽ vĩnh viễn khóa đòn bẩy quỹ ở mức $f \le 1.0$.
+- **Giới Hạn Đòn Bẩy Động (`f_max_safe`)**:
+  ```python
+  min_return = np.min(returns_sample)
+  if min_return < 0:
+      f_max_safe = min(f_max, 0.999 / abs(min_return))
+  else:
+      f_max_safe = f_max
+  ```
+  Hàm $\ln(1 + f \cdot r)$ chỉ hợp lệ khi $1 + f \cdot r > 0$. Nếu mẫu chứa lệnh bị thanh lý ($r_{\min} = -1.0$), thì $f$ tối đa cho phép là $f < \frac{1}{|r_{\min}|} = 1.0$. Việc giới hạn động $f_{\text{max-safe}} = \min(20.0, \frac{0.999}{|r_{\min}|})$ ngăn chặn tuyệt đối thuật toán `brentq` gọi vào miền $\ln(\le 0)$ gây crash hệ thống.
+
+#### B. Phân Vị Bảo Thủ Bootstrap (`Variance Penalization via Bootstrapping`)
+Thay vì dùng ước lượng điểm (`Point Estimate`), hàm `solve_empirical_kelly_fraction_with_confidence` thực hiện **Bootstrapping** (`n_bootstraps=500` lần resampling) để xây dựng phân phối của $f^*$. Hệ thống trích xuất **phân vị thứ 25 (`lower_percentile=25.0`)** làm $f_{\text{conservative}}$, chủ động trừng phạt các phương sai lớn để triệt tiêu rủi ro Overfitting trên mẫu nhỏ.
+
+---
+
+### 3. Tầng 1 & Tầng 2: Mượt Mà Hóa HMM & Trừng Phạt Mẫu Nhỏ Bayesian Shrinkage (`compute_regime_weighted_bayesian_kelly`)
+
+Đây là bước đột phá định chế của bản vá v11.9, giải quyết bài toán thị trường chuyển pha liên tục và hiện tượng đói dữ liệu (`Data Starvation`).
+
+#### A. Tầng 2 — Trừng Phạt Kích Thước Mẫu (`Empirical Bayes Shrinkage`)
+Khi mô hình HMM vừa nhận diện thị trường chuyển sang một cấu trúc mới (ví dụ từ `bull` sang `bear`), số lượng lệnh giao dịch lịch sử trong chế độ `bear` có thể cực kỳ ít ($N$ nhỏ). Trong điều kiện đói dữ liệu, ước lượng Kelly thực nghiệm thường bị biến động cực đoan (ảo giác mẫu nhỏ).
+
+Hệ thống áp dụng phương trình **Bayesian Shrinkage** để co giá trị Kelly về niềm tin tiên nghiệm an toàn (`f_prior = 0.1` — tương ứng đòn bẩy cực tiểu $0.1x$):
+$$f_{\text{bayesian}} = \frac{N}{N + C} \cdot f_{\text{conservative}} + \frac{C}{N + C} \cdot f_{\text{prior}}$$
+- **$N$**: Số lượng lệnh thực tế thu thập được trong regime.
+- **$C = 20.0$ (`confidence_constant_C`)**: Hằng số tin cậy định chế. Khi $N = 20$, trọng số dữ liệu thực tế mới đạt $50\%$ ($w = \frac{20}{20+20} = 0.5$). Nếu $N < 5$, hệ thống lập tức từ chối dữ liệu thực nghiệm và ép dùng hoàn toàn $f_{\text{prior}} = 0.1$ để tối đa hóa an toàn.
+
+#### B. Tầng 1 — Mượt Mà Hóa Xác Suất Chuyển Pha (`HMM Probability-Weighted Blending`)
+Tuyệt đối không sử dụng câu lệnh `if/else` cứng nhắc để chọn duy nhất một regime (vì thị trường tại vùng chuyển giao thường lưỡng lự gây ra hiện tượng lật nhãn `Whipsaw`). Tại mỗi cây nến, bộ lọc HMM trả về phân phối xác suất liên tục trên 3 trạng thái $\mathbf{p} = (p_{\text{bull}}, p_{\text{bear}}, p_{\text{chop}})$ với $\sum p_k = 1.0$.
+
+Tỷ lệ Kelly tổng hợp ($f_{\text{blend}}$) được tính toán bằng trung bình cộng có trọng số theo đúng xác suất HMM:
+$$f_{\text{blend}} = \sum_{k \in \{\text{bull, bear, chop}\}} p_k \cdot f_{\text{bayesian}}^{(k)}$$
+Code bóc tách thực tế từ `src/aegis/meta_labeling/sizing/kelly_empirical.py`:
+```python
+for regime_name, prob in regime_probs.items():
+    if prob == 0.0: continue
+    returns_sample = regime_returns.get(regime_name, np.array([]))
+    n_samples = len(returns_sample)
+    if n_samples < 5:
+        f_bayesian = prior_f
+    else:
+        kelly_result = solve_empirical_kelly_fraction_with_confidence(
+            returns_sample, f_max=f_max_cap, n_bootstraps=500, lower_percentile=25.0
+        )
+        weight_data = n_samples / (n_samples + confidence_constant_C)
+        f_bayesian = (weight_data * kelly_result.f_star_conservative) + ((1.0 - weight_data) * prior_f)
+    blended_f += prob * f_bayesian
+```
+
+---
+
+### 4. Tầng 3: Nhắm Mục Tiêu Biến Động & Quy Đổi Lệnh Thật (`Volatility Targeting via compute_position_size`)
+
+Sau khi có $f_{\text{blend}}$ từ tầng Bayesian Kelly, con số này vẫn là một tỷ lệ trừu tượng trên không gian rủi ro lịch sử. Để quy đổi thành quy mô vốn thực tế ($USD$) đưa lệnh ra sàn, hệ thống gọi hàm `compute_position_size` tại module [src/aegis/execution/position_sizer.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/execution/position_sizer.py) (`Task B-1-11 / Module G`).
+
+#### A. Phương Trình Quy Đổi Lõi (`Physical Notional Equation`)
+$$\text{size\_notional} = f_{\text{blend}} \cdot \lambda_{\text{kelly}} \cdot \text{current\_equity} \cdot \min\left(1.0, \frac{ATR_{\text{hist}}}{ATR_t}\right)$$
+
+1. **Chiết Khấu Rủi Ro Mô Hình Half-Kelly ($\lambda_{\text{kelly}} = 0.5$)**:  
+   Theo định lý quản trị rủi ro định chế, việc áp dụng Full Kelly ($\lambda = 1.0$) mang lại sụt giảm tài khoản cực kỳ khủng khiếp (`Drawdown Variance`). Khi đặt $\lambda = 0.5$ (`Half-Kelly`), phương sai sụt giảm tài khoản bị cắt giảm $75\%$, trong khi tốc độ tăng trưởng kép kỳ vọng chỉ giảm nhẹ $25\%$. Đây là "tỷ lệ vàng" được kiểm chứng TDD qua bài kiểm tra `test_fractional_kelly_lambda_discount`.
+2. **Lãi Kép Động với `current_equity` (`Mark-to-Market Compounding`)**:  
+   Hệ thống BẮT BUỘC dùng giá trị tài khoản ròng hiện tại (`current_equity` cập nhật realtime sau mỗi lệnh) thay vì vốn gốc ban đầu (`Initial Capital`). Khi tài khoản thắng lợi và phình to, `size_notional` tự động mở rộng để tận dụng sức mạnh lãi kép; khi tài khoản sụt giảm, `size_notional` tự động co nhỏ lại để bảo vệ phần vốn sinh tồn còn lại.
+3. **Bóp Nghẹt Thiên Nga Đen (`Volatility Scaling Ratio — Vol-Targeting`)**:  
+   Kelly giải quyết bài toán tăng trưởng dài hạn chứ không phải sụt giảm tức thời. Nếu thị trường đột ngột bùng nổ biến động phi mã (ví dụ tin tức chiến tranh hay chấn động kinh tế vĩ mô), $ATR_t$ hiện tại có thể vọt lên gấp 4-5 lần so với biến động trung bình quá khứ ($ATR_{\text{hist}}$).  
+   Hệ thống áp dụng bộ nhân chiết khấu khẩn cấp:
+   $$Vol\_Ratio = \min\left(1.0, \frac{ATR_{\text{hist}}}{ATR_t}\right)$$
+   - Nếu $ATR_t = 5 \times ATR_{\text{hist}} \implies Vol\_Ratio = 0.2$. Quy mô lệnh ngay lập tức **bị chém đi $80\%$ trong phần nghìn giây**, bảo vệ tài khoản khỏi những cú văng tài khoản tàn khốc mà không cần chờ mô hình Kelly thu thập hàng chục nến mới để nhận ra bão.
+   - Hàm `min(1.0, ...)` khóa chặt cận trên: chỉ cho phép GIẢM quy mô khi thị trường bão tố, tuyệt đối KHÔNG cho phép tự ý phình to quy mô lệnh khi thị trường quá phẳng lặng ($ATR_t < ATR_{\text{hist}}$).
+
+---
+
+### 5. Nghiệm Thu TDD Toàn Khối 3 Tầng Sizing (`Verifiable TDD Suite`)
+Toàn bộ kiến trúc phòng thủ kép 3 tầng được kiểm định tự động qua các bài test nghiêm ngặt:
+- **`test_regime_probability_blend_and_bayesian` (`test_kelly_empirical.py`)**: Kiểm chứng khả năng phối trộn $60\%$ Bull ($N=100$ lệnh đủ mẫu) và $40\%$ Bear ($N=0$ lệnh, bị ép về prior $0.1x$), xác nhận $f_{\text{blend}}$ ra đời mượt mà và chuẩn xác.
+- **`test_position_size_vol_ratio_black_swan` (`test_position_sizer.py`)**: Kiểm chứng khi $ATR_{\text{current}} = 4.0$ so với $ATR_{\text{hist}} = 1.0$, `size_notional` bị bóp nghẹt chính xác xuống $25\%$ giá trị thông thường.
+- **`test_position_size_armor_guards` & `test_position_size_inf_guards` (`test_position_sizer.py`)**: Đảm bảo mọi input rác `NaN`, `Inf`, số âm cho $f^*$, $equity$, hay $ATR$ đều bị chốt chặn ném ngoại lệ `ValueError` tức thời trước khi chạm vào sàn giao dịch.
 
 ---
 
@@ -1152,10 +1140,12 @@ Tham số `sigma` (thường trích xuất từ `ATR / Price`) về nguyên tắ
 - **Giải pháp `math.exp()`:** Hệ thống Aegis chủ ý sử dụng phép biến đổi $e^{-\text{cushion}}$ và $e^{+\text{cushion}}$ bất chấp việc đầu vào là Linear Sigma. Dựa trên chuỗi Taylor $e^{-x} \approx 1 - x$ (với $x$ nhỏ), nó xấp xỉ hoàn hảo cho các biến động thông thường, nhưng tạo ra đường cong tiệm cận $0$ cho các biến động khổng lồ, đảm bảo an toàn tuyệt đối cho không gian giá.
 - **Quy ước:** Thiết kế này được gọi là **Quy ước Geometric Symmetry**. Hệ thống thống nhất xử lý biến động rủi ro giá thông qua hàm mũ Logarithm, kể cả khi tham số gốc là Linear %.
 
-### 7.3. Từ Chối Double-Count Funding Fee Khi Thanh Lý (Vá Issue #4)
-Khi lệnh bị thanh lý, hệ thống tính tổn thất giới hạn ở mức Mất Trắng Initial Margin: `Loss_Liq = -size_notional/leverage`.
-- **Lý do không cộng dồn Funding Fee:** Funding Fee là khoản chi phí cấu rỉa liên tục vào dư nợ Ký Quỹ (Margin Balance). Việc trừ dần funding fee khiến số dư Ký Quỹ cạn kiệt nhanh hơn, làm giá thanh lý $P_{liq}$ bị kéo gần lại Entry hơn. Tuy nhiên, khi chạm ngưỡng thanh lý, số tiền tài khoản thực sự bốc hơi (so với trạng thái ban đầu) chính xác là lượng Ký Quỹ đã đóng vào. 
-- **Quy ước:** Khấu trừ Funding Fee ở bước thanh lý sẽ gây ra sai số đếm kép (Double-count). Hàm `compute_liquidation_loss` giữ nguyên công thức chuẩn mực.
+### 7.3. Tách Bạch Phí Funding Khỏi Tổn Thất Ký Quỹ (`Gross vs Net Separation` — Vá Issue #4)
+Khi lệnh bị sàn thanh lý cưỡng chế (`Liquidation`), sự phân định giữa tổn thất ký quỹ và số dư ròng là ranh giới định chế bắt buộc để tránh nhầm lẫn cho lập trình viên:
+- **Tổn Thất Ký Quỹ Sàn Phái Sinh (`Gross Liquidation Loss`):** Khi lệnh chạm giá thanh lý, khoản lỗ tối đa trên sàn Perpetual Futures thu hồi chính xác bằng lượng Ký Quỹ Ban Đầu (`Initial Margin = size_notional / leverage`). Hàm `compute_liquidation_loss` giữ nguyên công thức chuẩn mực $-\frac{\text{size\_notional}}{\text{leverage}}$, TUYỆT ĐỐI KHÔNG cộng dồn `funding_accrued` hay `fee_exit` vào con số `Gross Loss` này vì sàn chỉ tịch thu đúng phần tài sản cọc (`Collateral`).
+- **Tổn Thất Ròng Sổ Sách Của Quỹ (`Net Realized PnL`):** Trong sổ sách kế toán tổng thể của quỹ (tại `pnl.py` và khâu `finalize_trade_record`), sau khi đã ghi nhận khoản lỗ ký quỹ `Gross Loss = -Initial Margin`, số dư Equity thực tế của tài khoản vẫn phải chịu thêm khấu trừ khoản phí lãi qua đêm (`funding_accrued`) đã tích lũy trong suốt thời gian giữ lệnh trước thời điểm bị thanh lý:
+  $$\text{Net PnL} = \text{Gross Loss} - \text{funding\_accrued} = -\frac{\text{size\_notional}}{\text{leverage}} - \text{funding\_accrued}$$
+- **Quy ước tối cao:** Sự tách bạch `Gross vs Net Separation` triệt tiêu hoàn toàn mâu thuẫn "đếm kép" (`Double-Count Funding Fee`), vừa bảo đảm phản ánh đúng vi cấu trúc thanh lý trên sàn (không thu quá số cọc), vừa minh bạch 100% dòng tiền tài khoản quỹ (chịu trách nhiệm trả chi phí funding qua đêm thực tế phát sinh).
 
 ### 7.4. Kiến Trúc Cắt Trước Khi Tính (`Pre-Slice Zero-Leakage`) và Quy Ước Chỉ Số Tuyệt Đối (`Absolute Indexing v11.8`)
 Trong cụm Task Wiring Layer (`B-1-6 -> B-1-9`), hệ thống thống nhất hai quy chuẩn thiết kế tối cao:

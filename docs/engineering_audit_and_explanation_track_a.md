@@ -89,3 +89,36 @@ Trong quá trình rà soát toàn bộ dự án (`src/aegis/`), 5 lỗi tiềm �
 2. **Khắc phục lỗi lệch `exit_idx_absolute` khi mảng tương lai rỗng**: Trong `trailing_exit.py` (dòng 452), khi mảng rỗng (nến cuối fold), hệ thống trả về sai `exit_idx_absolute = entry_idx` (đúng chuẩn theo Data Contract phải là `entry_idx + 1`). Đã sửa đổi để đồng bộ với định lý chỉ số tuyệt đối tuyệt đối tại `CONSTRACT.md`.
 3. **Bọc thép (Armor-Plated Guards) cho mảng giá ở `trailing_exit_v3`**: Hàm v3 vô tình loại bỏ các bước xác thực `NaN/Inf` từ v2. Đã phục hồi và chèn bổ sung các ngoại lệ (`ValueError`) chặn ngay đầu vào nếu mảng giá chứa rác (`NaN/Inf`) hoặc biểu đồ nến bị hỏng (`High < Low`), chặn rủi ro *silent corruption*.
 4. **Cảnh báo `ExperimentTracker` Singleton**: Thêm cảnh báo (`warnings.warn`) khi người dùng cố gắng gọi `ExperimentTracker(log_dir=...)` với một đường dẫn mới nhưng đối tượng Singleton đã được khởi tạo trước đó. Tránh hiểu nhầm về tính năng thay đổi thư mục lưu log.
+
+---
+
+## PHẦN IV: GIẢI PHẪU CHI TIẾT TASK A-1-1 — LỌC NHIỄU VI CẤU TRÚC (`Tick-Level Outlier Filter`)
+
+### 1. Hàm `compute_rolling_mad` (Bảo vệ dữ liệu gốc)
+- **Vị trí Module:** `src/aegis/data/outlier_detection.py` (Mới được khởi tạo).
+- **Trách nhiệm:** Trích xuất đặc trưng kháng nhiễu cực đại từ luồng Tick Data.
+- **Tại sao lại dùng MAD thay vì Standard Deviation (Std)?**
+  - Trong thị trường Crypto (Perp Futures), hiện tượng râu nến giả (spikes) hoặc lỗi đường truyền (bad ticks) xảy ra liên tục.
+  - Nếu dùng hàm `np.std()`, chỉ cần 1 cú giật 1000 giá sẽ làm độ lệch chuẩn của toàn bộ cửa sổ 100-tick phình to gấp hàng chục lần, dẫn đến việc bộ lọc bị mù và cho phép các Bad Tick tiếp theo lọt qua.
+  - **Median Absolute Deviation (MAD)** đo lường độ lệch tuyệt đối so với giá trị trung vị, hoàn toàn miễn nhiễm với các điểm ngoại lai cục bộ.
+- **Biến đổi sang Robust Sigma:** Hệ số $1.4826$ được nhân với MAD để quy đổi nó về cùng thang đo với độ lệch chuẩn của phân phối chuẩn $\mathcal{N}(\mu, \sigma^2)$, giúp hệ thống dễ dàng cấu hình ngưỡng $5\sigma$.
+
+### 2. Tối ưu Hiệu năng với Numba (`@njit`)
+- Việc quét cửa sổ trượt (rolling window) và tính Median hai lần liên tiếp tại mức độ Tick-Level là một thảm họa về hiệu năng nếu chạy bằng vòng lặp Python thuần hoặc Pandas.
+- Hàm đã được biên dịch thẳng ra mã máy C (C-level Machine Code) thông qua `Numba JIT`, giảm độ trễ xuống cấp độ Micro-giây (µs) trên mỗi Tick, đáp ứng đúng yêu cầu của Master Blueprint.
+
+### 3. Nguyên Tắc Causal (Chống Nhìn Trước Tương Lai)
+- Tại vòng lặp `i`, cửa sổ trượt được định nghĩa là `prices[i - window : i]`.
+- Việc **Tách biệt hoàn toàn** điểm `i` ra khỏi cửa sổ quá khứ đảm bảo rằng hệ thống không lấy chính Bad Tick hiện tại để đánh giá bản thân nó (Triệt tiêu Look-ahead Bias).
+
+```mermaid
+flowchart TD
+    A[Tick thứ i] --> B{i < Window?}
+    B -- Yes --> C[Gán NaN]
+    B -- No --> D[Trích xuất mảng W = P_i-100 tới P_i-1]
+    D --> E[Trung vị m = median_W]
+    E --> F[Độ lệch d = abs_W - m]
+    F --> G[MAD = median_d]
+    G --> H[Robust Sigma = 1.4826 * MAD]
+    H --> I[Trả về Sigma_i]
+```

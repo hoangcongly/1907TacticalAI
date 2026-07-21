@@ -46,6 +46,12 @@ def classify_trade_mode(
             f"Lỗi hải quan B-1-2: p_chop_i phải là số thực hợp lệ trong đoạn [0, 1], nhận {p_chop_i}"
         )
 
+    if fade_enabled:
+        if not isinstance(fade_regime_gate_threshold, (int, float)) or math.isnan(fade_regime_gate_threshold) or math.isinf(fade_regime_gate_threshold) or not (0.0 <= fade_regime_gate_threshold <= 1.0):
+            raise ValueError(
+                f"Lỗi hải quan B-1-2: fade_regime_gate_threshold phải là số hợp lệ [0, 1], nhận {fade_regime_gate_threshold}"
+            )
+
     if p_i >= 0.5:
         return "follow"
 

@@ -57,6 +57,9 @@ def solve_empirical_kelly_fraction(
       (Loss = -f/leverage).
     """
     # [ARMOR GUARD] Lọc NaN/Inf TRƯỚC khi chạy Canary Assertion
+    import math
+    if not isinstance(f_max, (int, float)) or math.isnan(f_max) or math.isinf(f_max) or f_max <= 0:
+        raise ValueError(f"Lỗi hải quan B-1-1: f_max (tỷ lệ cược tối đa) phải là số dương hợp lệ, nhận {f_max}")
     returns_sample = returns_sample[np.isfinite(returns_sample)]
 
     if len(returns_sample) < 30:

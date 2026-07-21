@@ -37,6 +37,13 @@ def compute_realized_pnl(
     if math.isnan(entry_price) or math.isnan(exit_price):
         raise ValueError("Phát hiện giá rác NaN, dừng tính toán để bảo vệ PnL!")
 
+    if not isinstance(fee_entry_rate, (int, float)) or math.isnan(fee_entry_rate) or math.isinf(fee_entry_rate) or fee_entry_rate < 0:
+        raise ValueError(f"Lỗi hải quan: fee_entry_rate phải >= 0, nhận {fee_entry_rate}")
+    if not isinstance(fee_exit_rate, (int, float)) or math.isnan(fee_exit_rate) or math.isinf(fee_exit_rate) or fee_exit_rate < 0:
+        raise ValueError(f"Lỗi hải quan: fee_exit_rate phải >= 0, nhận {fee_exit_rate}")
+    if not isinstance(funding_accrued_usd, (int, float)) or math.isnan(funding_accrued_usd) or math.isinf(funding_accrued_usd):
+        raise ValueError(f"Lỗi hải quan: funding_accrued_usd không hợp lệ, nhận {funding_accrued_usd}")
+
     # Phí vào lệnh luôn tính (chung cho cả 2 nhánh)
     fee_entry_cost = size_notional * fee_entry_rate
 

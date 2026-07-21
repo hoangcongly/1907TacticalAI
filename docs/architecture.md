@@ -1356,20 +1356,33 @@ def select_fractional_kelly_lambda(candidates_metrics: dict, maxdd_budget=0.20, 
    theo nguyên tắc v11.6 Patch B.3), KHÔNG chỉ tập "clean".
 ```
 
-#### 4.0.1 Schema Chuẩn Hóa (`TRADE_RECORD_SCHEMA` - v11.8 DEFINITIVE)
+#### 4.0.1 Schema Chuẩn Hóa (`TRADE_RECORD_SCHEMA` - v11.9 DEFINITIVE)
 
-Mọi nơi trong pipeline (Module F, Module G, `filter_boundary_truncated_for_kelly_table`, `build_empirical_kelly_tables_v2`) BẮT BUỘC dùng đúng các key và phân định minh bạch chỉ số offset như sau cho bản ghi giao dịch OOS:
+Mọi nơi trong pipeline (Module F, Module G, `filter_boundary_truncated_for_kelly_table`, `build_empirical_kelly_tables_v2`) BẮT BUỘC dùng đúng các key (24 trường chuẩn theo Pandera) và phân định minh bạch chỉ số offset/thời gian như sau cho bản ghi giao dịch OOS:
 
+- `schema_version`: str (`"1.0.0"`)
+- `dataset_manifest_hash`: str (SHA-256 hash của chuỗi nến)
+- `fold_id`: Optional[str]
+- `symbol`: str
 - `entry_idx`: int (chỉ số bar vào lệnh trên toàn bộ mảng dữ liệu gốc)
+- **`entry_timestamp_ms`**: int (thời gian đóng nến vào lệnh tính bằng mili giây epoch)
+- `entry_price`: float (giá thực tế vào lệnh)
 - `p_i`: float (xác suất Isotonic meta-labeler)
 - `p_chop_i`: float (xác suất chế độ Choppy từ HMM)
 - `mode`: str (`"follow"` hoặc `"fade"`)
 - `side`: int (`+1` hoặc `-1`, ĐÃ resolve, KHÔNG phải `side_primary` chưa đảo dấu)
 - `sl_initial`: float (giá cắt lỗ ban đầu tính chính xác cho `side` thực tế)
+- `size_notional`: float (quy mô danh nghĩa của lệnh)
 - **`exit_idx_relative`**: int (offset tương đối $k \ge 0$ tính từ nến kế tiếp sau điểm vào lệnh, tức `entry_idx + 1`, đúng bằng giá trị `exit_idx` thô trả về từ `compute_regime_aware_trailing_exit_v3_liquidation_aware`)
-- **`exit_idx_absolute`**: int ($= \text{entry-idx} + 1 + \text{exit-idx-relative}$, **chỉ số bar tuyệt đối trên toàn bộ chuỗi thời gian đầy đủ**, bắt buộc phải dùng để tra cứu giá fill từ `simulate_market_fill`/`simulate_limit_fill_with_queue` của Module G, cũng như tra cứu timestamp thật để tính `funding_accrued` trong Module K.1)
-- `exit_reason`: str (`"SL"`, `"TRAIL"`, `"REGIME_FLIP"`, `"TIME_STOP"`)
+- **`exit_idx_absolute`**: int ($= \text{entry-idx} + 1 + \text{exit-idx-relative}$, **chỉ số bar tuyệt đối trên toàn bộ chuỗi thời gian đầy đủ**, bắt buộc phải dùng để tra cứu giá fill và timestamp thật)
+- **`exit_timestamp_ms`**: int (thời gian đóng nến thoát lệnh tính bằng mili giây epoch, thỏa mãn `exit_timestamp_ms >= entry_timestamp_ms`)
+- `exit_reason`: str (`"SL"`, `"TRAIL"`, `"REGIME_FLIP"`, `"TIME_STOP"`, `"LIQUIDATION"`)
+- `fill_price_exit`: float
 - `boundary_truncated`: bool (`True` nếu lệnh bị cắt bởi ranh giới fold CPCV)
+- `fee_entry`: float (phí mở lệnh $= \text{notional} \times \text{fee\_rate}$)
+- `fee_exit`: float (phí đóng lệnh, tính theo `exit_notional = notional + gross_pnl` nếu định giá USD)
+- `funding_accrued`: float (chi phí/lợi tức lãi qua đêm tích lũy)
+- `gross_pnl`: float (lợi nhuận gộp chưa trừ phí)
 - `realized_return`: float (% return $= \text{PnL} / \text{notional}$, gắn vào SAU bước tra cứu giá tuyệt đối qua `finalize_trade_record`)
 
 #### 4.0.2 Hàm Chuyển Đổi Offset Tuyệt Đối `resolve_absolute_exit_idx` & Wiring Glue (v11.8 DEFINITIVE)
@@ -1445,33 +1458,25 @@ def run_trailing_exit_for_oos_event(
     }
 ```
 
-#### 4.0.3 Hoàn Thiện Bản Ghi Với `finalize_trade_record` & Tra Cứu Tuyệt Đối (v11.8 DEFINITIVE)
+#### 4.0.3 Hoàn Thiện Bản Ghi Với `finalize_trade_record` & Tra Cứu Tuyệt Đối (v11.9 DEFINITIVE)
 
 ```python
 def finalize_trade_record(
     partial_record: dict,
-    fill_price_entry: float,
-    fill_price_exit: float,
+    full_closes: np.ndarray,
     size_notional: float,
-    fee_entry_rate: float,
-    fee_exit_rate: float,
-    funding_accrued: float = 0.0
+    fee_entry_rate: float = 0.0004,
+    fee_exit_rate: float = 0.0004,
+    funding_accrued: float = 0.0,
+    full_timestamps: Optional[np.ndarray] = None
 ) -> dict:
     """
-    HOÀN THIỆN BẢN GHI (v11.8):
-    Gắn realized_return (dạng % trên size_notional) vào partial_record từ run_trailing_exit_for_oos_event.
-    LƯU Ý QUAN TRỌNG: fill_price_exit và funding_accrued (Module K.1) BẮT BUỘC phải được tra cứu từ
-    thời điểm tuyệt đối partial_record["exit_idx_absolute"] (và entry_idx tương ứng), tuyệt đối KHÔNG
-    dùng exit_idx_relative. Biến size_notional là duy nhất, được dùng chung cho cả compute_realized_pnl
-    và tính toán chi phí funding.
+    HOÀN THIỆN BẢN GHI (v11.9):
+    1. Trích xuất timestamp chính xác tại entry_idx và exit_idx_absolute từ full_timestamps (khắc phục Temporal Blindness).
+    2. Gọi compute_realized_pnl (hoặc nhánh LIQUIDATION) với exit_notional động để tính đúng fee_exit (khắc phục Exit Fee Flaw).
+    3. Gắn realized_return = pnl / size_notional và kiểm duyệt nghiêm ngặt qua Pandera TradeRecordSchema (24 trường).
     """
-    pnl_abs = compute_realized_pnl(
-        side=partial_record["side"], size_notional=size_notional,
-        fill_price_entry=fill_price_entry, fill_price_exit=fill_price_exit,
-        fee_entry_rate=fee_entry_rate, fee_exit_rate=fee_exit_rate, funding_accrued=funding_accrued
-    )
-    realized_return_pct = pnl_abs / max(size_notional, 1e-8)
-    return {**partial_record, "realized_return": realized_return_pct}
+```
 
 def simulate_trailing_exit_within_fold_bounds(
     entry_idx: int, entry_price: float, test_window_end_idx: int, side: int, trade_mode: str,

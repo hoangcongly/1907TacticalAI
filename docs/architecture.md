@@ -172,7 +172,7 @@ $$
 
 #### 1.0.2 Bar Toxicity Flag (Định lượng Độc tính Dòng lệnh theo Khối lượng Nến)
 
-Khi gộp nến theo Dollar-Volume ($V\_{\text{dollar}} = \sum P\_k V\_k \ge \theta\_{\text{PIT}}$), một nến hoàn thành trong số lượng tick quá nhỏ ($N\_{\text{ticks}} \ll \text{median}$) đồng nghĩa với việc có các lệnh thị trường (Market Orders) quy mô lớn ăn thẳng vào sổ lệnh, gây sốc thanh khoản (Toxic Order Flow).
+Khi gộp nến theo Dollar-Volume ($V\_{\text{dollar}} = \sum P\_k V\_k \ge \theta_{\text{PIT}}$), một nến hoàn thành trong số lượng tick quá nhỏ ($N\_{\text{ticks}} \ll \text{median}$) đồng nghĩa với việc có các lệnh thị trường (Market Orders) quy mô lớn ăn thẳng vào sổ lệnh, gây sốc thanh khoản (Toxic Order Flow).
 
 $$
 \text{tick-count-to-fill}_t < 0.5 \times \text{median}\left( \text{tick-count-to-fill}_{t-100:t-1} \right) \implies \text{is-high-toxicity-bar} = \text{True}
@@ -252,7 +252,7 @@ class TickLevelKalmanReplacer:
 
 #### 1.1.1 Toán Học Ngưỡng Động Point-in-Time (PIT)
 
-Để ngăn chặn tuyệt đối hiện tượng rò rỉ thông tin tương lai (Look-ahead Bias / Data Leakage) khi tính ngưỡng tạo nến Dollar-Volume, ngưỡng $\theta\_{\text{PIT}}$ cho ngày $T$ chỉ được phép sử dụng tổng Dollar-Volume của 21 ngày giao dịch hoàn tất **trước đó** ($T-21$ đến $T-1$), chia cho tần suất mục tiêu $\text{target-freq} = 50$ nến/ngày:
+Để ngăn chặn tuyệt đối hiện tượng rò rỉ thông tin tương lai (Look-ahead Bias / Data Leakage) khi tính ngưỡng tạo nến Dollar-Volume, ngưỡng $\theta_{\text{PIT}}$ cho ngày $T$ chỉ được phép sử dụng tổng Dollar-Volume của 21 ngày giao dịch hoàn tất **trước đó** ($T-21$ đến $T-1$), chia cho tần suất mục tiêu $\text{target-freq} = 50$ nến/ngày:
 
 $$
 \theta_{\text{PIT}}(T) = \frac{1}{\text{target-freq}} \times \frac{1}{21} \sum_{k=1}^{21} \text{Daily-Dollar-Volume}(T-k)
@@ -275,7 +275,7 @@ def compute_pit_safe_daily_threshold(df_daily: pl.DataFrame, window: int = 21, t
 
 #### 1.1.2 Ánh Xạ `daily_thresholds` Xuống Tick-Level bằng ASOF Backward Join O(N)
 
-Để tránh vòng lặp chậm trong Python khi gán $\theta\_{\text{PIT}}(T)$ cho từng tick $i$, hệ thống sử dụng thuật toán `join_asof` theo chiến lược `backward` trên trục thời gian ngày epoch (`date_epoch_day`), đảm bảo độ phức tạp $O(N \log M)$ hoặc $O(N)$ tuyến tính:
+Để tránh vòng lặp chậm trong Python khi gán $\theta_{\text{PIT}}(T)$ cho từng tick $i$, hệ thống sử dụng thuật toán `join_asof` theo chiến lược `backward` trên trục thời gian ngày epoch (`date_epoch_day`), đảm bảo độ phức tạp $O(N \log M)$ hoặc $O(N)$ tuyến tính:
 
 ```python
 import polars as pl
@@ -458,12 +458,12 @@ $$
 
 #### 1.4.1 Phân định Trách nhiệm Ghi nhận Thử nghiệm (DSR Counting Rule)
 
-Để ngăn chặn việc tính sai số lượng thử nghiệm $N\_{\text{DSR}}$ trong công thức Deflated Sharpe Ratio (AFML Chương 14), hệ thống phân tách nghiêm ngặt 3 lớp:
+Để ngăn chặn việc tính sai số lượng thử nghiệm $N_{\text{DSR}}$ trong công thức Deflated Sharpe Ratio (AFML Chương 14), hệ thống phân tách nghiêm ngặt 3 lớp:
 
-| Lớp (Trial Class) | Có tính vào $N\_{\text{DSR}}$? | Lý do Toán học / Thống kê | Ví dụ các tham số thuộc lớp (Bổ sung v11.7 Patch C.2) |
+| Lớp (Trial Class) | Có tính vào $N_{\text{DSR}}$? | Lý do Toán học / Thống kê | Ví dụ các tham số thuộc lớp (Bổ sung v11.7 Patch C.2) |
 |---|---|---|---|
 | `model_fitting` | **KHÔNG** | Đây là quá trình tối ưu hóa nội bộ trên tập Train (fitting) để tìm nghiệm cực tiểu hóa hàm mất mát (MLE/ADF), không phải lựa chọn chiến lược OOS. | $d^*$ (ADF), $\mathbf{Q}/\alpha$ (Kalman MLE), EM multi-restart (HMM) |
-| `strategy_selection` | **CÓ** | Con người hoặc thuật toán thử nghiệm nhiều cấu hình siêu tham số chiến lược, chọn cấu hình có Sharpe OOS cao nhất $\implies$ Phải phạt qua $N\_{\text{DSR}}$. | $m\_{pt}/m\_{sl}$, $\lambda$, $h\_{\text{Brier}}$, $\delta\_{\text{spatial}}$, $\kappa$, $k\_{\text{cooldown}}$, `n_buckets`, `f_max`, **`t_max_live_fade` (=40 - v11.7 C.2)** |
+| `strategy_selection` | **CÓ** | Con người hoặc thuật toán thử nghiệm nhiều cấu hình siêu tham số chiến lược, chọn cấu hình có Sharpe OOS cao nhất $\implies$ Phải phạt qua $N_{\text{DSR}}$. | $m_{pt}/m_{sl}$, $\lambda$, $h_{\text{Brier}}$, $\delta_{\text{spatial}}$, $\kappa$, $k\_{\text{cooldown}}$, `n_buckets`, `f_max`, **`t_max_live_fade` (=40 - v11.7 C.2)** |
 | `production_fit` | **KHÔNG** | Sau khi cấu hình duy nhất đã vượt qua kiểm định DSR $\ge 0.95$ và PBO $\le 0.40$, fit lại 100% dữ liệu lịch sử để xuất trọng số production. | `magic_numbers` đã khóa, không quét thêm |
 
 ```python
@@ -694,7 +694,7 @@ def compute_causal_hmm_posteriors_safe(O_array: np.ndarray, A: np.ndarray, mu: n
 
 #### 2.3.1 Nền Tảng Lý Thuyết IMM (Interacting Multiple Model) & Sửa Lỗi U-D Factorization
 
-Kiến trúc IMM Kalman gồm 2 bộ lọc chạy song song: Bộ lọc $j=1$ (`Trending Kalman`) có nhiễu quá trình lớn $\mathbf{Q}\_{\text{trend}}$ để bám sát vận tốc drift $\nu\_t$; Bộ lọc $j=2$ (`Choppy Kalman`) có nhiễu quá trình cực nhỏ $\mathbf{Q}\_{\text{chop}} \approx 0$ để triệt tiêu dao động quanh mean.
+Kiến trúc IMM Kalman gồm 2 bộ lọc chạy song song: Bộ lọc $j=1$ (`Trending Kalman`) có nhiễu quá trình lớn $\mathbf{Q}_{\text{trend}}$ để bám sát vận tốc drift $\nu\_t$; Bộ lọc $j=2$ (`Choppy Kalman`) có nhiễu quá trình cực nhỏ $\mathbf{Q}_{\text{chop}} \approx 0$ để triệt tiêu dao động quanh mean.
 
 Thay vì sử dụng thuật toán U-D Factorization phức tạp và dễ gặp lỗi triển khai (đã gây bug trong v11.4), hệ thống sử dụng kiến trúc Kalman P-matrix chuẩn kèm hàm làm sạch số học **`sanitize_covariance_matrix`** chạy **NGAY SAU mỗi bước Update**, đảm bảo tính đối xứng tuyệt đối và xác định dương ($P \succ 0$) thông qua kẹp sàn trị riêng (`eigenvalue floor`).
 
@@ -877,7 +877,7 @@ $$
 
 #### 3.2.1 Tầng 1: Dán Nhãn Thống Kê Triple-Barrier cho Meta-Labeler Train (C.2 Gốc)
 
-Để huấn luyện Meta-Labeler (Random Forest), mỗi sự kiện $i$ tại thời điểm $t\_{0, i}$ được dán nhãn theo phương pháp Triple-Barrier (AFML Chương 3). Các rào cản chốt lời ($m\_{pt}$) và cắt lỗ ($m\_{sl}$) được co giãn động theo xác suất chế độ HMM ($p\_{\text{trend, i}}, p\_{\text{chop, i}}$):
+Để huấn luyện Meta-Labeler (Random Forest), mỗi sự kiện $i$ tại thời điểm $t\_{0, i}$ được dán nhãn theo phương pháp Triple-Barrier (AFML Chương 3). Các rào cản chốt lời ($m_{pt}$) và cắt lỗ ($m_{sl}$) được co giãn động theo xác suất chế độ HMM ($p\_{\text{trend, i}}, p\_{\text{chop, i}}$):
 
 $$
 m_{pt, i} = p_{\text{chop}, i} \times 1.5 + p_{\text{trend}, i} \times 3.0, \qquad m_{sl, i} = p_{\text{chop}, i} \times 1.5 + p_{\text{trend}, i} \times 2.0
@@ -1548,7 +1548,7 @@ CPCV chia chuỗi thời gian thành $M = 6$ cụm nối tiếp nhau, tổ hợp
 
 ### 4.2 Deflated Sharpe Ratio (DSR — Bailey & López de Prado 2014)
 
-Chỉ số Sharpe OOS quan sát được $\widehat{SR}$ phải được chiết khấu (deflate) để tính đến số lượng thử nghiệm $N\_{\text{DSR}}$, độ lệch phi chuẩn (Skewness $\gamma\_3$, Kurtosis $\gamma\_4$) và phương sai ước lượng cực đại:
+Chỉ số Sharpe OOS quan sát được $\widehat{SR}$ phải được chiết khấu (deflate) để tính đến số lượng thử nghiệm $N_{\text{DSR}}$, độ lệch phi chuẩn (Skewness $\gamma\_3$, Kurtosis $\gamma\_4$) và phương sai ước lượng cực đại:
 
 $$
 \text{DSR} = \Phi \left( \frac{\left( \widehat{SR} - \mathbb{E}[SR_0] \right) \sqrt{T - 1}}{\sqrt{1 - \gamma_3 \widehat{SR} + \frac{\gamma_4 - 1}{4} \widehat{SR}^2}} \right) \ge 0.95
@@ -1564,7 +1564,7 @@ $$
 
 ### 4.3 Probability of Backtest Overfitting (PBO CSCV $S=16$ Blocks)
 
-Thuật toán CSCV (Combinatorial Symmetric Cross-Validation) chia ma trận PnL OOS thành $S=16$ khối bằng nhau, tổ hợp chập $S/2 = 8$ khối làm tập huấn luyện tối ưu hóa ($J\_c$) và $8$ khối còn lại làm kiểm định ngoài mẫu ($\bar{J}\_c$). Tỷ lệ PBO được tính bằng logit phân phối hạng tương đối:
+Thuật toán CSCV (Combinatorial Symmetric Cross-Validation) chia ma trận PnL OOS thành $S=16$ khối bằng nhau, tổ hợp chập $S/2 = 8$ khối làm tập huấn luyện tối ưu hóa ($J_c$) và $8$ khối còn lại làm kiểm định ngoài mẫu ($\bar{J}_c$). Tỷ lệ PBO được tính bằng logit phân phối hạng tương đối:
 
 $$
 \text{PBO} = P\left( \text{Rank}_{\bar{J}_c}(\theta^*) < 0.5 \right) \le 0.40
@@ -1574,7 +1574,7 @@ $$
 
 ### 4.4 Flat Plateau Robustness Check (Cân nhắc `t_max_live_fade` - v11.7 Patch C.3)
 
-Mô hình phải nằm trên một cao nguyên ổn định (Flat Plateau) thay vì một đỉnh nhọn đơn lẻ (Spike / Overfitting). Quét không gian lưới $\pm 5\%$ xung quanh 4 tham số macro ($m\_{pt}, m\_{sl}, \lambda, \delta\_{\text{spatial}}$) tạo ra 81 cấu hình lân cận. Tiêu chí bền vững:
+Mô hình phải nằm trên một cao nguyên ổn định (Flat Plateau) thay vì một đỉnh nhọn đơn lẻ (Spike / Overfitting). Quét không gian lưới $\pm 5\%$ xung quanh 4 tham số macro ($m_{pt}, m_{sl}, \lambda, \delta_{\text{spatial}}$) tạo ra 81 cấu hình lân cận. Tiêu chí bền vững:
 
 $$
 \frac{1}{81} \sum_{k=1}^{81} \widehat{SR}(\theta_k) \ge 0.80 \times \widehat{SR}(\theta^*)
@@ -1590,7 +1590,7 @@ $$
 
 #### 5.1.1 Độ Trễ Phụ Thuộc Chế Độ & Khớp Lệnh Thị Trường Căn Bậc Hai
 
-Độ trễ truyền nhận tín hiệu (Latency $\Delta t\_{\text{lat}}$) được mô phỏng theo phân phối Lognormal, co giãn theo độc tính thanh khoản và phân vị biến động giá:
+Độ trễ truyền nhận tín hiệu (Latency $\Delta t_{\text{lat}}$) được mô phỏng theo phân phối Lognormal, co giãn theo độc tính thanh khoản và phân vị biến động giá:
 
 $$
 \Delta t_{\text{lat}} \sim \text{Lognormal}\left( \ln\left( 15.0\text{ms} \times (1 + 1.5 \cdot \mathbb{1}[\text{toxic}]) \times (1 + \text{Percentile}(\sigma_{\text{realized}})) \right), 0.3 \right)
@@ -1642,7 +1642,7 @@ def compute_realized_pnl(side, size_notional, fill_price_entry, fill_price_exit,
 | HMM Causal Alpha Pass | Cùng `O_array`, ma trận `A`, `mu`, `Sigma` | `max_abs_diff < 1e-9` |
 | IMM Kalman + `sanitize` | Cùng chuỗi `y_t`, cấu hình ma trận nhiễu | `max_abs_diff < 1e-8`, $P \succ 0$ ($100\%$) |
 | Isotonic Interpolation | 10,000 điểm xác suất thô `raw_prob` | `max_abs_diff < 1e-9` |
-| Dollar-Bar Generator | Cùng luồng tick thô và mảng $\theta\_{\text{PIT}}$ | OHLCV + OFI khớp `max_abs_diff < 1e-9` |
+| Dollar-Bar Generator | Cùng luồng tick thô và mảng $\theta_{\text{PIT}}$ | OHLCV + OFI khớp `max_abs_diff < 1e-9` |
 | Tick Kalman Replacer | 100,000 ticks kèm cờ bad ticks | `max_abs_diff < 1e-9` Predict-Only |
 | CUSUM Brier + Reset | Chuỗi xác suất và nhãn thực tế | Khớp `max_abs_diff < 1e-9` |
 | **Full-Chain Golden Path** | **100,000 tick thô chạy trọn vẹn toàn bộ pipeline** | **`max_diff < 1e-6` VÀ `sign_flip_count == 0`** |
@@ -1679,12 +1679,12 @@ def check_shadow_mode_readiness(n_events_observed: int, weeks_elapsed: float, mi
 
 #### 5.4.1 Ngắt Mạch Sụt Giảm Tài Khoản (Drawdown Circuit Breakers)
 
-| Cấp Độ | Điều Kiện Kích Hoạt ($\text{DD}\_t$) | Hành Động Vận Hành |
+| Cấp Độ | Điều Kiện Kích Hoạt ($\text{DD}_t$) | Hành Động Vận Hành |
 |---|---|---|
-| **Tier 0** | $\text{DD}\_t < 5\%$ | Giao dịch bình thường với quy mô Kelly trọn vẹn. |
-| **Tier 1** | $5\% \le \text{DD}\_t < 10\%$ | Cắt giảm 50% quy mô mọi lệnh (`size = size * 0.5`). |
-| **Tier 2** | $10\% \le \text{DD}\_t < 15\%$ | Flatten (đóng 100% vị thế hiện tại), dừng mở lệnh mới 24 giờ. |
-| **Tier 3** | $\text{DD}\_t \ge 15\%$ | Kill Switch tuyệt đối: Hủy mọi lệnh, dừng hệ thống, yêu cầu sign-off thủ công từ con người. |
+| **Tier 0** | $\text{DD}_t < 5\%$ | Giao dịch bình thường với quy mô Kelly trọn vẹn. |
+| **Tier 1** | $5\% \le \text{DD}_t < 10\%$ | Cắt giảm 50% quy mô mọi lệnh (`size = size * 0.5`). |
+| **Tier 2** | $10\% \le \text{DD}_t < 15\%$ | Flatten (đóng 100% vị thế hiện tại), dừng mở lệnh mới 24 giờ. |
+| **Tier 3** | $\text{DD}_t \ge 15\%$ | Kill Switch tuyệt đối: Hủy mọi lệnh, dừng hệ thống, yêu cầu sign-off thủ công từ con người. |
 
 #### 5.4.2 Hiệp Phương Sai Ledoit-Wolf Shrinkage & Stressed Correlation Overlay
 
@@ -1736,7 +1736,7 @@ $$
 G_t = \max \left( 0, G_{t-1} + e_t - \bar{e}_{\text{OOS}} \right), \qquad \text{Alarm if } G_t > h_{\text{Brier}}
 $$
 
-**Chính sách Refresh Ngưỡng Tái Sinh (`refresh_cusum_thresholds`)**: Ngưỡng $\bar{e}\_{\text{OOS}}$ và $h\_{\text{Brier}} = 2 \cdot \sigma\_{\text{Brier-OOS}}$ không được khóa cứng vĩnh viễn từ lần backtest đầu tiên, mà phải được tái sinh ngay lập tức sau mỗi lần `production_fit` mới:
+**Chính sách Refresh Ngưỡng Tái Sinh (`refresh_cusum_thresholds`)**: Ngưỡng $\bar{e}_{\text{OOS}}$ và $h_{\text{Brier}} = 2 \cdot \sigma_{\text{Brier-OOS}}$ không được khóa cứng vĩnh viễn từ lần backtest đầu tiên, mà phải được tái sinh ngay lập tức sau mỗi lần `production_fit` mới:
 
 ```python
 def update_prediction_error_cusum(G_prev: float, e_i: float, e_bar_oos: float, h_brier: float) -> tuple:
@@ -1789,11 +1789,11 @@ def estimate_queue_ahead(order_book_snapshot: dict, limit_price: float, side: in
 Artifacts (`/artifacts`) khi đạt $\text{DSR} \ge 0.95$, $\text{PBO} \le 0.40$, Flat Plateau & Parity Pass:
 
 1. `ffd_weights.bin` hoặc `ffd_prony.json`: Quyết định bởi `select_ffd_production_engine`.
-2. `kalman_matrices.json`: $F, H, \mathbf{Q}\_{\text{trend}}, \mathbf{Q}\_{\text{chop}}, \alpha$ + `eigenvalue_floor`.
-3. `hmm_transitions.json`: $A, \boldsymbol{\mu}\_j, \boldsymbol{\Sigma}\_j^{-1}, \det(\boldsymbol{\Sigma}\_j)$.
+2. `kalman_matrices.json`: $F, H, \mathbf{Q}_{\text{trend}}, \mathbf{Q}_{\text{chop}}, \alpha$ + `eigenvalue_floor`.
+3. `hmm_transitions.json`: $A, \boldsymbol{\mu}_j, \boldsymbol{\Sigma}_j^{-1}, \det(\boldsymbol{\Sigma}_j)$.
 4. `meta_labeler_raw.onnx`: Random Forest ONNX (chạy qua Microsoft `ort` crate).
 5. `iso_knots.json`: Mảng điểm nút isotonic cho `interpolate_isotonic`.
-6. `kelly_lookup_table_follow.json`: Bảng Empirical Kelly Follow (cùng format iso\_knots, dùng lại `interpolate_isotonic`).
+6. `kelly_lookup_table_follow.json`: Bảng Empirical Kelly Follow (cùng format iso_knots, dùng lại `interpolate_isotonic`).
 7. `kelly_lookup_table_fade.json`: Bảng Empirical Kelly Fade.
 8. `cusum_thresholds.json`: `e_bar_oos`, `h_brier` (tái sinh mỗi `production_fit`).
 9. `dataset_manifest.json`: SHA-256 + `ffd_engine_type` + `orderbook_feed_source`.
@@ -1872,7 +1872,7 @@ impl FfdStateApprox {
 - [ ] **[v11.8 Patch — ABSOLUTE INDEX RESOLUTION]** Triển khai hàm `resolve_absolute_exit_idx` và cập nhật `TRADE_RECORD_SCHEMA` phân định minh bạch `exit_idx_relative` vs `exit_idx_absolute`. Đảm bảo `finalize_trade_record` và `accrue_funding_cost` (Module K.1) tra cứu giá fill/tick/timestamp tại đúng chỉ số bar tuyệt đối `exit_idx_absolute` và dùng chung biến `size_notional`.
 - [ ] **[v11.7 Patch A — WIRING GLUE]** Triển khai hàm `resolve_trade_execution_params` và `run_trailing_exit_for_oos_event`. Thay mọi lời gọi trực tiếp `simulate_trailing_exit_within_fold_bounds` trong quy trình Module F bằng `run_trailing_exit_for_oos_event`. Chạy unit test bắt buộc `test_resolve_trade_execution_params_symmetry` pass 100%.
 - [ ] **[v11.7 Patch B — SCHEMA CHUẨN]** Thống nhất `TRADE_RECORD_SCHEMA` xuyên suốt Module F/G. Triển khai `finalize_trade_record` và `trade_records_to_kelly_table_inputs`. Cập nhật quy trình Mục 4.0 theo đúng thứ tự 5 bước v11.8 (1 -> 2 -> 2.5 -> 3 -> 4).
-- [ ] **[v11.7 Patch C — TÁCH T\_MAX\_LIVE]** Thêm tham số `t_max_live_fade` (mặc định khởi điểm $40$) tách khỏi `t_max_live_follow` ($120$). Đăng ký vào `ExperimentTracker` (`strategy_selection`). Cân nhắc đưa vào Flat Plateau Check nếu Fade đóng góp PnL đáng kể.
+- [ ] **[v11.7 Patch C — TÁCH T_MAX_LIVE]** Thêm tham số `t_max_live_fade` (mặc định khởi điểm $40$) tách khỏi `t_max_live_follow` ($120$). Đăng ký vào `ExperimentTracker` (`strategy_selection`). Cân nhắc đưa vào Flat Plateau Check nếu Fade đóng góp PnL đáng kể.
 - [ ] **[v11.6 Patch A — NGHIÊM TRỌNG]** Thay `compute_regime_aware_trailing_exit` bằng `compute_regime_aware_trailing_exit_v3_liquidation_aware` (đối xứng hóa `side<0`, đảo chiều Regime-Flip theo `trade_mode`). Bổ sung `compute_sl_initial` đối xứng. `test_regime_aware_trailing_exit_symmetry` CI test bắt buộc pass 100%. Golden Fixture chứa Fade SL/Trail fixtures.
 - [ ] **[v11.6 Patch B]** Triển khai `simulate_trailing_exit_within_fold_bounds` (giới hạn biên fold CPCV). `filter_boundary_truncated_for_kelly_table` (bước 2.5). Sharpe OOS dùng toàn bộ record, Kelly table chỉ dùng "clean". Cảnh báo nếu truncation > 15%.
 - [ ] **[v11.6 Patch C]** Hàm `classify_trade_mode` duy nhất. `build_empirical_kelly_tables_v2`. `compute_bi_directional_kelly_v14_unified`. Lưu `trade_mode`/`side` cùng sự kiện CUSUM (C.4).
@@ -1884,9 +1884,9 @@ impl FfdStateApprox {
 - [ ] **[v11.5 Patch G]** `PurgedKFold` (`t1` = integer bar-index), `test_purged_kfold_toy_example` CI test bắt buộc pass.
 - [ ] **A.0 & A.5**: Bộ lọc 4 điều kiện Raw Ticks + Bar Toxicity Flag (`is_high_toxicity_bar`).
 - [ ] **TickLevelKalmanReplacer** Predict-Only Protocol.
-- [ ] **map\_daily\_threshold\_to\_ticks** (`join_asof backward`) + **compute\_median\_ticks\_to\_fill** Worst-Case Two-Pass.
-- [ ] **validate\_two\_regime\_architecture\_bootstrap** Parametric Bootstrap LRT ($p < 0.01$).
-- [ ] Đăng ký `n_buckets`, `min_samples_per_bucket`, `f_max` vào $N\_{\text{DSR}}$ tracker.
+- [ ] **map_daily_threshold_to_ticks** (`join_asof backward`) + **compute_median_ticks_to_fill** Worst-Case Two-Pass.
+- [ ] **validate_two_regime_architecture_bootstrap** Parametric Bootstrap LRT ($p < 0.01$).
+- [ ] Đăng ký `n_buckets`, `min_samples_per_bucket`, `f_max` vào $N_{\text{DSR}}$ tracker.
 - [ ] Module F: CPCV 15-Fold theo đúng quy trình tuần tự Mục 4.0 (v11.8). $\text{DSR} \ge 0.95$, $\text{PBO} \le 0.40$, Flat Plateau $\ge 80\%$.
 - [ ] Module G: Execution Simulator (`sample_latency_regime_aware`, `simulate_limit_fill_with_queue`, `compute_realized_pnl`).
 - [ ] Module H: Golden Fixture SHA-256 + 8 thành phần Parity + `full_chain_parity_check` (zero sign flips).

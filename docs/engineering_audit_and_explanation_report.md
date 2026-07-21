@@ -288,7 +288,7 @@ def solve_empirical_kelly_fraction_with_confidence(...) -> KellyConfidenceResult
 #### Phòng Thủ Chiều Sâu 3 Lớp (`Defense-in-Depth`) & Fractional Kelly ($\lambda$)
 > [!IMPORTANT]
 > **Kiến trúc f_max = 20.0 được bảo vệ bởi 3 lớp phòng thủ đồng thời:**
-> 1. **Lớp 1 — Dynamic Cap:** $f_{\max\_safe} = \min(f_{\max}, \frac{0.999}{|r_{\min}|})$. Nếu mẫu chứa lệnh thanh lý ($r_{\min}=-1.0$), trần tìm kiếm tự động co lại về $0.999$ bất kể `f_max=20.0`.
+> 1. **Lớp 1 — Dynamic Cap:** $f_{\text{max-safe}} = \min(f_{\max}, \frac{0.999}{|r_{\min}|})$. Nếu mẫu chứa lệnh thanh lý ($r_{\min}=-1.0$), trần tìm kiếm tự động co lại về $0.999$ bất kể `f_max=20.0`.
 > 2. **Lớp 2 — Liquidation Layer:** `validate_leverage_against_sl` đảm bảo SL luôn nằm an toàn bên trong giá thanh lý (15% buffer).
 > 3. **Lớp 3 — Half-Kelly ($\lambda = 0.5$):** Vị thế thực tế $f_{\text{allocated}} = \lambda \cdot f^*$ giảm 75% biến động tài khoản (`Drawdown Variance`) trong khi chỉ mất 25% tốc độ tăng trưởng kép.
 >
@@ -319,7 +319,7 @@ else:
 ```
 - **Nền tảng Toán học:**
   Hàm $\ln(1 + f \cdot r)$ chỉ hợp lệ khi $1 + f \cdot r > 0$. Nếu mẫu chứa lệnh bị thanh lý ($r_{\min} = -1.0$), thì $f$ tối đa cho phép là $f < \frac{1}{|r_{\min}|} = 1.0$. Khi gọi `brentq` với `f_max = 3.0` (hoặc bất kỳ $f_{\max} > 1.0$) trên mẫu này, thuật toán sẽ thử $f = 2.0$ → $1 + 2 \times (-1) = -1 \le 0$ → $\ln(\le 0)$ **vô nghĩa** → crash!
-- **Giải pháp:** Trước khi gọi `brentq`, hệ thống tính $f_{\max\_safe} = \min(f_{\max}, \frac{0.999}{|r_{\min}|})$ để đảm bảo miền dò nghiệm $[0, f_{\max\_safe}]$ luôn nằm trong vùng $\ln$ hợp lệ. Kết quả: Nếu mẫu có lệnh thanh lý $-100\%$, Kelly tự động hiểu rằng **không thể dùng đòn bẩy** ($f^* \le 0.999$). (Với `f_max = DEFAULT_F_MAX_NOTIONAL_CAP = 3.0`).
+- **Giải pháp:** Trước khi gọi `brentq`, hệ thống tính $f_{\text{max-safe}} = \min(f_{\max}, \frac{0.999}{|r_{\min}|})$ để đảm bảo miền dò nghiệm $[0, f_{\text{max-safe}}]$ luôn nằm trong vùng $\ln$ hợp lệ. Kết quả: Nếu mẫu có lệnh thanh lý $-100\%$, Kelly tự động hiểu rằng **không thể dùng đòn bẩy** ($f^* \le 0.999$). (Với `f_max = DEFAULT_F_MAX_NOTIONAL_CAP = 3.0`).
 
 > [!NOTE]
 > **Phân Tích Độ Nhạy Mẫu Số & Bootstrap CI (`Bootstrap Confidence Interval`):** Mặc dù $N \ge 30$ là quy tắc CLT tối thiểu, nhưng do rủi ro "Fat Tails", chúng ta sử dụng hàm bọc ngoài `solve_empirical_kelly_fraction_with_confidence`. Hàm này sử dụng **Bootstrapping** (lấy mẫu lại có hoàn lại `n_bootstraps=1000` lần) để tạo ra một dải phân phối các $f^*$. Thay vì lấy giá trị điểm (`Point Estimate`), hệ thống bảo thủ trích xuất phân vị thứ 25 (`lower_percentile=25.0`), đảm bảo tỷ lệ cược luôn được hạ thấp an toàn trước những sai số nhiễu trong mẫu nhỏ, triệt tiêu rủi ro Overfitting.
@@ -344,8 +344,8 @@ if growth_derivative(f_max_safe) > 0: return f_max_safe
 return brentq(growth_derivative, 0.0, f_max_safe, xtol=1e-6)
 ```
 - **Chốt 1 ($f = 0.0$):** Tại $f=0$, $G'(0) = E[r]$. Nếu trung bình lợi suất của chiến lược $E[r] \le 0$ (chiến lược không có kỳ vọng dương), hệ thống khóa nghiệm tại `0.0` (Không cược tiền).
-- **Chốt 2 ($f = f_{\max\_safe}$):** Nếu tại mức đòn bẩy tối đa an toàn (đã được giới hạn động bởi `f_max_safe`), đường cong tăng trưởng vẫn dốc lên ($G'(f_{\max\_safe}) > 0$), khóa nghiệm tại trần an toàn để tuân thủ giới hạn quản trị rủi ro.
-- **Chốt 3 (`brentq`):** Nếu $G'(0) > 0$ và $G'(f_{\max\_safe}) \le 0$, theo Định lý Giá Trị Trung Gian (`Intermediate Value Theorem`), chắc chắn tồn tại duy nhất một nghiệm $f^* \in (0, f_{\max\_safe})$ nơi đạo hàm bằng 0. Vì `f_max_safe` đã đảm bảo $1 + f \cdot r_{\min} > 0 \; \forall f \in [0, f_{\max\_safe}]$, hàm `growth_derivative` hoàn toàn **liên tục** trên miền dò nghiệm, thuật toán `brentq` dò tìm ra nghiệm với sai số $< 10^{-6}$ mà không bao giờ va vào bức tường phá sản.
+- **Chốt 2 ($f = f_{\text{max-safe}}$):** Nếu tại mức đòn bẩy tối đa an toàn (đã được giới hạn động bởi `f_max_safe`), đường cong tăng trưởng vẫn dốc lên ($G'(f_{\text{max-safe}}) > 0$), khóa nghiệm tại trần an toàn để tuân thủ giới hạn quản trị rủi ro.
+- **Chốt 3 (`brentq`):** Nếu $G'(0) > 0$ và $G'(f_{\text{max-safe}}) \le 0$, theo Định lý Giá Trị Trung Gian (`Intermediate Value Theorem`), chắc chắn tồn tại duy nhất một nghiệm $f^* \in (0, f_{\text{max-safe}})$ nơi đạo hàm bằng 0. Vì `f_max_safe` đã đảm bảo $1 + f \cdot r_{\min} > 0 \; \forall f \in [0, f_{\text{max-safe}}]$, hàm `growth_derivative` hoàn toàn **liên tục** trên miền dò nghiệm, thuật toán `brentq` dò tìm ra nghiệm với sai số $< 10^{-6}$ mà không bao giờ va vào bức tường phá sản.
 
 ### 3. Kiểm Thử TDD Phân Phối Bernoulli (`test_solve_empirical_kelly_fraction` & Coin Toss)
 ```python
@@ -514,7 +514,7 @@ else:
   - Để giải quyết lỗ hổng cấu trúc này, hệ thống áp dụng **Hàm Mũ (Exponential)**.
   - **Với lệnh Mua (`side > 0`):** Giá cắt lỗ được tính theo $\text{Entry} \cdot e^{-R}$.
   - **Với lệnh Bán (`side < 0`):** Giá cắt lỗ được tính theo $\text{Entry} \cdot e^{+R}$.
-  - Điều này đảm bảo khoảng cách Logarithm $\ln(\frac{\text{Entry}}{\text{SL\_Long}}) = \ln(\frac{\text{SL\_Short}}{\text{Entry}}) = R$, mang lại sự công bằng xác suất thống kê đối xứng 100% cho cả 2 chiều mua bán.
+  - Điều này đảm bảo khoảng cách Logarithm $\ln(\frac{\text{Entry}}{\text{SL-Long}}) = \ln(\frac{\text{SL-Short}}{\text{Entry}}) = R$, mang lại sự công bằng xác suất thống kê đối xứng 100% cho cả 2 chiều mua bán.
 
 ### 3. Nghiệm Thu Kiểm Thử TDD & Stress Test (`test_b_1_3_compute_sl_initial`)
 Bài test phản ánh sự kết hợp chuẩn xác giữa Tư duy Thiết kế (`4-Step Quant Architect Mindset`) và Kiểm toán Kỹ thuật Khắt khe (`Rigorous Engineering Audit`):
@@ -638,27 +638,27 @@ Gọi $S = \frac{|\text{Entry} - \text{SL}|}{\text{Entry}}$ là tỷ lệ % cắ
 Với lệnh Long (`side = 1`), giá thanh lý là:
 
 $$
-P_{\text{liq}} = \text{Entry} \times \left(1 - \frac{1}{L} + M + \text{fee\_rate} + \text{liquidation\_fee\_rate}\right)
+P_{\text{liq}} = \text{Entry} \times \left(1 - \frac{1}{L} + M + \text{fee-rate} + \text{liquidation-fee-rate}\right)
 $$
 
 Trong đó $L$ là đòn bẩy, $M$ là `maintenance_margin_rate`. Khi đó khoảng cách đến điểm thanh lý là:
 
 $$
-\text{Entry} - P_{\text{liq}} = \text{Entry} \times \left(\frac{1}{L} - M - \text{fee\_rate} - \text{liquidation\_fee\_rate}\right)
+\text{Entry} - P_{\text{liq}} = \text{Entry} \times \left(\frac{1}{L} - M - \text{fee-rate} - \text{liquidation-fee-rate}\right)
 $$
 
 Thay vào bất phương trình an toàn:
 
 $$
-S \times \text{Entry} \le \text{Entry} \times \left(\frac{1}{L} - M - \text{fee\_rate} - \text{liquidation\_fee\_rate}\right) \times (1 - B)
+S \times \text{Entry} \le \text{Entry} \times \left(\frac{1}{L} - M - \text{fee-rate} - \text{liquidation-fee-rate}\right) \times (1 - B)
 $$
 
 $$
-\frac{S}{1 - B} \le \frac{1}{L} - M - \text{fee\_rate} - \text{liquidation\_fee\_rate} \implies \frac{1}{L} \ge \frac{S}{1 - B} + M + \text{fee\_rate} + \text{liquidation\_fee\_rate}
+\frac{S}{1 - B} \le \frac{1}{L} - M - \text{fee-rate} - \text{liquidation-fee-rate} \implies \frac{1}{L} \ge \frac{S}{1 - B} + M + \text{fee-rate} + \text{liquidation-fee-rate}
 $$
 
 $$
-L_{\max} = \frac{1}{\frac{S}{1 - B} + M + \text{fee\_rate} + \text{liquidation\_fee\_rate}}
+L_{\max} = \frac{1}{\frac{S}{1 - B} + M + \text{fee-rate} + \text{liquidation-fee-rate}}
 $$
 
 👉 Đây chính là công thức giải tích được cài đặt trong hàm `resolve_max_safe_leverage`, với độ chính xác tuyệt đối và thời gian thực thi $O(1)$.
@@ -668,19 +668,19 @@ $$
 Với lệnh Short, giá thanh lý nằm **phía trên** giá vào lệnh:
 
 $$
-P_{\text{liq\_short}} = \text{Entry} \times \left(1 + \frac{1}{L} - M - \text{fee\_rate} - \text{liquidation\_fee\_rate}\right)
+P_{\text{liq-short}} = \text{Entry} \times \left(1 + \frac{1}{L} - M - \text{fee-rate} - \text{liquidation-fee-rate}\right)
 $$
 
 Khoảng cách đến điểm thanh lý là:
 
 $$
-P_{\text{liq\_short}} - \text{Entry} = \text{Entry} \times \left(\frac{1}{L} - M - \text{fee\_rate} - \text{liquidation\_fee\_rate}\right)
+P_{\text{liq-short}} - \text{Entry} = \text{Entry} \times \left(\frac{1}{L} - M - \text{fee-rate} - \text{liquidation-fee-rate}\right)
 $$
 
-Vì cấu trúc toán học của khoảng cách đến điểm thanh lý của phe Short tương đương với phe Long (cùng biểu thức $\frac{1}{L} - M - \text{fee\_rate} - \text{liquidation\_fee\_rate}$), bất phương trình an toàn và công thức $L_{\max}$ cuối cùng **đồng nhất cho cả 2 chiều**:
+Vì cấu trúc toán học của khoảng cách đến điểm thanh lý của phe Short tương đương với phe Long (cùng biểu thức $\frac{1}{L} - M - \text{fee-rate} - \text{liquidation-fee-rate}$), bất phương trình an toàn và công thức $L_{\max}$ cuối cùng **đồng nhất cho cả 2 chiều**:
 
 $$
-L_{\max}^{\text{Short}} = \frac{1}{\frac{S}{1 - B} + M + \text{fee\_rate} + \text{liquidation\_fee\_rate}} = L_{\max}^{\text{Long}}
+L_{\max}^{\text{Short}} = \frac{1}{\frac{S}{1 - B} + M + \text{fee-rate} + \text{liquidation-fee-rate}} = L_{\max}^{\text{Long}}
 $$
 
 > [!NOTE]
@@ -742,10 +742,10 @@ Khi một lệnh bị sàn phái sinh quét thanh lý (`LIQUIDATION`), cơ chế
 - **[Quyết Định #7] Thống Nhất Xử Lý Phí:** Thay vì gộp `fee_entry` làm chi phí chìm vào `gross_pnl`, hệ thống tách bạch để 2 nhánh (Normal và Liquidation) xử lý phí giống hệt nhau ở bước tính `net_pnl`.
 
 $$
-\text{Gross\_PnL}_{\text{Liq}} = -\left( \frac{\text{size\_notional}}{\text{leverage}} \right)
+\text{Gross-PnL}_{\text{Liq}} = -\left( \frac{\text{size-notional}}{\text{leverage}} \right)
 $$
 $$
-\text{Net\_PnL}_{\text{Liq}} = \text{Gross\_PnL}_{\text{Liq}} - \text{fee\_entry} - \text{funding\_accrued}
+\text{Net-PnL}_{\text{Liq}} = \text{Gross-PnL}_{\text{Liq}} - \text{fee-entry} - \text{funding-accrued}
 $$
 
 ---

@@ -3,7 +3,7 @@
 import math
 import numpy as np
 from scipy.optimize import brentq
-from typing import NamedTuple, Dict
+from typing import NamedTuple, Dict, Tuple, Any, Union, List
 
 
 # ============================================================================
@@ -201,6 +201,192 @@ def compute_regime_weighted_bayesian_kelly(
 
 
 # ============================================================================
+# [TASK B-1-11] MAP TRADE RECORDS TO 2D GRID KELLY TABLE INPUTS
+# ============================================================================
+def trade_records_to_kelly_table_inputs(
+    records: List[Dict[str, Any]],
+    num_bins: int = 10,
+) -> Dict[Tuple[int, int], np.ndarray]:
+    """
+    [TASK B-1-11] Ánh xạ danh sách bản ghi giao dịch (TradeRecord dicts)
+    vào lưới 2D coordinate (idx_p, idx_chop) để dựng bảng Kelly.
+
+    Quy tắc & Kiểm duyệt:
+    - Lọc bỏ các bản ghi thiếu 'realized_return' hoặc có giá trị NaN/Inf.
+    - Lọc bỏ các bản ghi bị cắt cụt sát biên fold ('boundary_truncated' == True)
+      để chống Kelly Pollution (theo chuẩn Data Contracts v11.9).
+    - Kiểm tra và clamp p_i, p_chop_i chặt chẽ trong đoạn [0.0, 1.0]:
+        min(int(math.floor(clamped_p * num_bins)), num_bins - 1)
+      để ngăn lỗi out-of-bounds index khi p = 1.0.
+    - Không biến đổi hay mutate input (Pure function).
+    """
+    if not isinstance(num_bins, int) or num_bins <= 0:
+        raise ValueError(f"Lỗi B-1-11: num_bins phải là số nguyên dương, nhận {num_bins}")
+
+    grid_returns: Dict[Tuple[int, int], List[float]] = {}
+
+    for r in records:
+        if not isinstance(r, dict):
+            continue
+        # Bỏ qua nếu là bản ghi bị cắt cụt sát biên fold (bảo vệ khỏi Kelly Pollution)
+        if r.get("boundary_truncated", False) is True:
+            continue
+
+        ret = r.get("realized_return")
+        if ret is None or not isinstance(ret, (int, float)) or math.isnan(ret) or math.isinf(ret):
+            continue
+
+        p_i = r.get("p_i")
+        p_chop_i = r.get("p_chop_i")
+        if p_i is None or not isinstance(p_i, (int, float)) or math.isnan(p_i) or math.isinf(p_i):
+            continue
+        if p_chop_i is None or not isinstance(p_chop_i, (int, float)) or math.isnan(p_chop_i) or math.isinf(p_chop_i):
+            continue
+
+        clamped_p = min(max(float(p_i), 0.0), 1.0)
+        clamped_chop = min(max(float(p_chop_i), 0.0), 1.0)
+
+        idx_p = min(int(math.floor(clamped_p * num_bins)), num_bins - 1)
+        idx_chop = min(int(math.floor(clamped_chop * num_bins)), num_bins - 1)
+
+        coord = (idx_p, idx_chop)
+        if coord not in grid_returns:
+            grid_returns[coord] = []
+        grid_returns[coord].append(float(ret))
+
+    result: Dict[Tuple[int, int], np.ndarray] = {}
+    for coord, ret_list in grid_returns.items():
+        result[coord] = np.array(ret_list, dtype=float)
+
+    return result
+
+
+# ============================================================================
+# [TASK B-1-12] BUILD EMPIRICAL KELLY TABLE V2 WITH BAYESIAN PENALTY
+# ============================================================================
+def build_empirical_kelly_table_v2(
+    inputs: Union[Dict[Tuple[int, int], np.ndarray], List[Dict[str, Any]]],
+    num_bins: int = 10,
+    f_max: float = DEFAULT_F_MAX,
+    prior_f: float = 0.0,
+    confidence_constant_C: float = 20.0,
+    n_bootstraps: int = 500,
+    lower_percentile: float = 25.0,
+) -> np.ndarray:
+    """
+    [TASK B-1-12] Dựng ma trận Kelly 2D (shape: num_bins x num_bins) từ đầu ra B-1-11
+    hoặc trực tiếp từ danh sách TradeRecord dicts.
+
+    [CRUCIAL PENALTY LOGIC — BAYESIAN SHRINKAGE]:
+    Duyệt qua tất cả các ô (idx_p, idx_chop):
+    - Nếu số lượng mẫu hữu hạn trong ô len(returns) < 5:
+        Gán f = prior_f (mặc định 0.0).
+    - Ngược lại (len(returns) >= 5):
+        1. Tính f_cons bằng solve_empirical_kelly_fraction_with_confidence(lower_percentile=25.0).f_star_conservative
+        2. Áp dụng Bayesian Shrinkage theo quy mô mẫu N:
+           w = N / (N + C) (với C = confidence_constant_C, mặc định 20.0)
+           f_bayesian = w * f_cons + (1.0 - w) * prior_f
+    """
+    if not isinstance(num_bins, int) or num_bins <= 0:
+        raise ValueError(f"Lỗi B-1-12: num_bins phải là số nguyên dương, nhận {num_bins}")
+    if not isinstance(f_max, (int, float)) or math.isnan(f_max) or math.isinf(f_max) or f_max <= 0:
+        raise ValueError(f"Lỗi B-1-12: f_max phải > 0, nhận {f_max}")
+    if not isinstance(prior_f, (int, float)) or math.isnan(prior_f) or math.isinf(prior_f) or prior_f < 0:
+        raise ValueError(f"Lỗi B-1-12: prior_f không hợp lệ, nhận {prior_f}")
+    if not isinstance(confidence_constant_C, (int, float)) or math.isnan(confidence_constant_C) or math.isinf(confidence_constant_C) or confidence_constant_C < 0:
+        raise ValueError(f"Lỗi B-1-12: confidence_constant_C không hợp lệ, nhận {confidence_constant_C}")
+
+    if isinstance(inputs, list):
+        bin_inputs = trade_records_to_kelly_table_inputs(inputs, num_bins=num_bins)
+    elif isinstance(inputs, dict):
+        bin_inputs = inputs
+    else:
+        raise ValueError(f"Lỗi B-1-12: inputs phải là Dict hoặc List[Dict], nhận {type(inputs)}")
+
+    kelly_table = np.zeros((num_bins, num_bins), dtype=float)
+
+    for idx_p in range(num_bins):
+        for idx_chop in range(num_bins):
+            coord = (idx_p, idx_chop)
+            returns = bin_inputs.get(coord, np.array([], dtype=float))
+            # Lọc rác NaN/Inf nếu có trong array
+            returns = returns[np.isfinite(returns)]
+            N = len(returns)
+
+            if N < 5:
+                f_target = float(prior_f)
+            else:
+                ci_result = solve_empirical_kelly_fraction_with_confidence(
+                    returns,
+                    f_max=f_max,
+                    n_bootstraps=n_bootstraps,
+                    lower_percentile=lower_percentile,
+                )
+                f_cons = ci_result.f_star_conservative
+                w = float(N) / (float(N) + float(confidence_constant_C))
+                f_bayesian = (w * f_cons) + ((1.0 - w) * float(prior_f))
+                f_target = float(f_bayesian)
+
+            kelly_table[idx_p, idx_chop] = max(0.0, float(f_target))
+
+    return kelly_table
+
+
+# ============================================================================
+# [TASK B-1-13] COMPUTE BI-DIRECTIONAL KELLY V14 UNIFIED INFERENCE
+# ============================================================================
+def compute_bi_directional_kelly_v14_unified(
+    p_i: float,
+    p_chop_i: float,
+    kelly_table: np.ndarray,
+    fade_enabled: bool,
+    fade_regime_gate_threshold: float = 0.60,
+) -> dict:
+    """
+    [TASK B-1-13] Hàm suy luận O(1) thống nhất cho Sizing (Inference Layer).
+
+    Input: p_i, p_chop_i, kelly_table 2D, fade_enabled, fade_regime_gate_threshold.
+    Quy trình:
+    1. Kiểm tra nghiêm ngặt input (p_i, p_chop_i trong [0, 1], kelly_table là ma trận 2D vuông).
+       Nếu NaN/Inf hoặc sai định dạng -> raise ValueError.
+    2. Gọi classify_trade_mode(p_i, p_chop_i, fade_enabled, fade_regime_gate_threshold).
+    3. Nếu mode == 'none', trả về {'f_target': 0.0, 'mode': 'none'} ngay lập tức.
+    4. Nếu mode thuộc ('follow', 'fade'), tra cứu f_target trên kelly_table
+       với cùng logic index mapping (clamping + math.floor) như B-1-11.
+    5. Trả về {'f_target': float(f_target), 'mode': mode}.
+    """
+    from aegis.meta_labeling.sizing.trade_mode import classify_trade_mode
+
+    if not isinstance(p_i, (int, float)) or math.isnan(p_i) or math.isinf(p_i) or not (0.0 <= p_i <= 1.0):
+        raise ValueError(f"Lỗi B-1-13: p_i không hợp lệ [0, 1], nhận {p_i}")
+    if not isinstance(p_chop_i, (int, float)) or math.isnan(p_chop_i) or math.isinf(p_chop_i) or not (0.0 <= p_chop_i <= 1.0):
+        raise ValueError(f"Lỗi B-1-13: p_chop_i không hợp lệ [0, 1], nhận {p_chop_i}")
+
+    if not isinstance(kelly_table, np.ndarray) or kelly_table.ndim != 2 or kelly_table.shape[0] != kelly_table.shape[1] or kelly_table.shape[0] <= 0:
+        raise ValueError(f"Lỗi B-1-13: kelly_table phải là mảng 2D vuông với num_bins > 0, nhận shape {getattr(kelly_table, 'shape', None)}")
+
+    mode = classify_trade_mode(
+        p_i=float(p_i),
+        p_chop_i=float(p_chop_i),
+        fade_enabled=fade_enabled,
+        fade_regime_gate_threshold=fade_regime_gate_threshold,
+    )
+
+    if mode == "none":
+        return {"f_target": 0.0, "mode": "none"}
+
+    num_bins = kelly_table.shape[0]
+    clamped_p = min(max(float(p_i), 0.0), 1.0)
+    clamped_chop = min(max(float(p_chop_i), 0.0), 1.0)
+
+    idx_p = min(int(math.floor(clamped_p * num_bins)), num_bins - 1)
+    idx_chop = min(int(math.floor(clamped_chop * num_bins)), num_bins - 1)
+
+    f_target = float(kelly_table[idx_p, idx_chop])
+    return {"f_target": max(0.0, f_target), "mode": mode}
+
+
+# ============================================================================
 # UNIT TESTS (TDD)
 # ============================================================================
 def test_f_max_is_leverage_search_bound():
@@ -330,6 +516,86 @@ def test_regime_probability_blend_and_bayesian():
     print(f"✅ [BAYESIAN-HMM] Phối trộn mượt mà thành công. F_Blend = {f_safe:.3f}")
 
 
+def test_b_1_11_trade_records_to_kelly_table_inputs():
+    """
+    Kiểm tra Task B-1-11:
+    - Ánh xạ p_i, p_chop_i về index lưới (idx_p, idx_chop).
+    - Lọc bỏ bản ghi thiếu realized_return hoặc boundary_truncated=True.
+    - Xử lý p=1.0 bằng math.floor không bị out-of-bounds (idx <= num_bins-1).
+    """
+    records = [
+        {"p_i": 0.05, "p_chop_i": 0.95, "realized_return": 0.04, "boundary_truncated": False}, # bin (0, 9)
+        {"p_i": 1.00, "p_chop_i": 1.00, "realized_return": -0.02, "boundary_truncated": False}, # bin (9, 9) khi num_bins=10
+        {"p_i": 0.55, "p_chop_i": 0.25, "realized_return": 0.10, "boundary_truncated": True},  # Bỏ qua vì boundary_truncated
+        {"p_i": 0.55, "p_chop_i": 0.25, "realized_return": None},                                # Bỏ qua vì thiếu realized_return
+        {"p_i": -0.1, "p_chop_i": 1.2, "realized_return": 0.01, "boundary_truncated": False},   # Clamped về (0, 9)
+    ]
+    grid = trade_records_to_kelly_table_inputs(records, num_bins=10)
+    assert (0, 9) in grid
+    assert len(grid[(0, 9)]) == 2  # 0.04 và 0.01
+    assert (9, 9) in grid
+    assert len(grid[(9, 9)]) == 1  # -0.02
+    assert (5, 2) not in grid      # Không có vì đã bỏ qua bản ghi boundary_truncated và None
+    print("✅ [TASK B-1-11] trade_records_to_kelly_table_inputs PASSED!")
+
+
+def test_b_1_12_build_empirical_kelly_table_v2():
+    """
+    Kiểm tra Task B-1-12:
+    - Nếu len(returns) < 5 -> f = prior_f.
+    - Nếu len(returns) >= 5 -> f_bayesian = w*f_cons + (1-w)*prior_f.
+    """
+    np.random.seed(42)
+    # Lưới có 1 bin (9, 9) chứa 50 mẫu thắng tốt, và 1 bin (0, 0) chứa 3 mẫu (<5)
+    returns_good = np.random.choice([0.08, -0.03], p=[0.6, 0.4], size=50)
+    grid_inputs = {
+        (9, 9): returns_good,
+        (0, 0): np.array([0.05, 0.02, -0.01]), # Chỉ 3 lệnh < 5
+    }
+    table = build_empirical_kelly_table_v2(
+        grid_inputs, num_bins=10, prior_f=0.0, confidence_constant_C=20.0
+    )
+    assert table.shape == (10, 10)
+    assert table[0, 0] == 0.0  # < 5 lệnh -> prior_f = 0.0
+    assert table[9, 9] > 0.0   # >= 5 lệnh thắng -> có f_bayesian dương
+    print(f"✅ [TASK B-1-12] build_empirical_kelly_table_v2 PASSED (f[9,9]={table[9,9]:.4f})!")
+
+
+def test_b_1_13_compute_bi_directional_kelly_v14_unified():
+    """
+    Kiểm tra Task B-1-13:
+    - O(1) inference tra cứu kelly_table.
+    - Trả về {'f_target': 0.0, 'mode': 'none'} nếu mode none.
+    - Trả về đúng f_target nếu mode follow hoặc fade.
+    """
+    table = np.zeros((10, 10), dtype=float)
+    table[8, 2] = 3.5  # p_i around 0.8, p_chop around 0.2 -> follow
+    table[1, 8] = 1.8  # p_i around 0.1, p_chop around 0.8 -> fade
+
+    # Follow mode
+    res_follow = compute_bi_directional_kelly_v14_unified(
+        p_i=0.85, p_chop_i=0.25, kelly_table=table, fade_enabled=True
+    )
+    assert res_follow["mode"] == "follow"
+    assert math.isclose(res_follow["f_target"], 3.5, rel_tol=1e-6)
+
+    # Fade mode
+    res_fade = compute_bi_directional_kelly_v14_unified(
+        p_i=0.15, p_chop_i=0.85, kelly_table=table, fade_enabled=True, fade_regime_gate_threshold=0.60
+    )
+    assert res_fade["mode"] == "fade"
+    assert math.isclose(res_fade["f_target"], 1.8, rel_tol=1e-6)
+
+    # None mode (deadzone)
+    res_none = compute_bi_directional_kelly_v14_unified(
+        p_i=0.35, p_chop_i=0.50, kelly_table=table, fade_enabled=True
+    )
+    assert res_none["mode"] == "none"
+    assert res_none["f_target"] == 0.0
+
+    print("✅ [TASK B-1-13] compute_bi_directional_kelly_v14_unified PASSED!")
+
+
 if __name__ == "__main__":
     test_f_max_is_leverage_search_bound()
     test_fractional_kelly_lambda_discount()
@@ -337,3 +603,6 @@ if __name__ == "__main__":
     test_kelly_canary_and_nan_safety()
     test_kelly_dynamic_cap_with_liquidation()
     test_regime_probability_blend_and_bayesian()
+    test_b_1_11_trade_records_to_kelly_table_inputs()
+    test_b_1_12_build_empirical_kelly_table_v2()
+    test_b_1_13_compute_bi_directional_kelly_v14_unified()

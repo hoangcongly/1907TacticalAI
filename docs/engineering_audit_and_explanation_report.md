@@ -357,7 +357,7 @@ for regime_name, prob in regime_probs.items():
 
 ### 4. Tầng 3: Nhắm Mục Tiêu Biến Động & Quy Đổi Lệnh Thật (`Volatility Targeting via compute_position_size`)
 
-Sau khi có $f_{\text{blend}}$ từ tầng Bayesian Kelly, con số này vẫn là một tỷ lệ trừu tượng trên không gian rủi ro lịch sử. Để quy đổi thành quy mô vốn thực tế ($USD$) đưa lệnh ra sàn, hệ thống gọi hàm `compute_position_size` tại module [src/aegis/execution/position_sizer.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/execution/position_sizer.py) (`Task B-1-11 / Module G`).
+Sau khi có $f_{\text{blend}}$ từ tầng Bayesian Kelly, con số này vẫn là một tỷ lệ trừu tượng trên không gian rủi ro lịch sử. Để quy đổi thành quy mô vốn thực tế ($USD$) đưa lệnh ra sàn, hệ thống gọi hàm `compute_position_size` tại module [src/aegis/execution/position_sizer.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/execution/position_sizer.py) (`Module G — compute_position_size`).
 
 #### A. Phương Trình Quy Đổi Lõi (`Physical Notional Equation`)
 $$\text{size notional} = f_{\text{blend}} \cdot \lambda_{\text{kelly}} \cdot \text{current equity} \cdot \min\left(1.0, \frac{ATR_{\text{hist}}}{ATR_t}\right)$$
@@ -380,6 +380,58 @@ Toàn bộ kiến trúc phòng thủ kép 3 tầng được kiểm định tự 
 - **`test_regime_probability_blend_and_bayesian` (`test_kelly_empirical.py`)**: Kiểm chứng khả năng phối trộn $60\%$ Trending ($N=100$ lệnh đủ mẫu) và $40\%$ Choppy ($N=0$ lệnh, bị ép về prior $0.1x$), xác nhận $f_{\text{blend}}$ ra đời mượt mà và chuẩn xác theo đúng HMM `N=2` của Module B.
 - **`test_position_size_vol_ratio_black_swan` (`test_position_sizer.py`)**: Kiểm chứng khi $ATR_{\text{current}} = 4.0$ so với $ATR_{\text{hist}} = 1.0$, `size_notional` bị bóp nghẹt chính xác xuống $25\%$ giá trị thông thường.
 - **`test_position_size_armor_guards` & `test_position_size_inf_guards` (`test_position_sizer.py`)**: Đảm bảo mọi input rác `NaN`, `Inf`, số âm cho $f^*$, $equity$, hay $ATR$ đều bị chốt chặn ném ngoại lệ `ValueError` tức thời trước khi chạm vào sàn giao dịch.
+
+---
+
+## PHẦN III-B: HỆ THỐNG ĐỊNH CỠ KELLY THỰC NGHIỆM 2D & KIỂM ĐỊNH CHÉO PURGED KFOLD (`TASK B-1-11 ĐẾN B-1-14`)
+
+Nhằm hiện thực hóa triết lý định lượng của Marcos Lopez de Prado (Advances in Financial Machine Learning - AFML), tầng **Meta-Labeling & Kelly Sizing Engine** được triển khai hoàn chỉnh qua 4 mô-đun lõi tuân thủ tuyệt đối nguyên tắc **Zero-Leakage** (Không rò rỉ tương lai), **Bayesian Shrinkage** (Co rút Bayes theo quy mô mẫu) và **Pure Functions** (Hàm thuần túy, không biến đổi cấu trúc dữ liệu đầu vào).
+
+### 1. Ánh Xạ Bản Ghi Giao Dịch Vào Lưới Kelly (`Task B-1-11 — trade_records_to_kelly_table_inputs`)
+* **Vị trí tệp:** [src/aegis/meta_labeling/sizing/kelly_empirical.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/meta_labeling/sizing/kelly_empirical.py)
+* **Chức năng định chế:** Chuyển đổi danh sách bản ghi `TradeRecord` (chứa `realized_return`, `p_i`, `p_chop_i`) thành từ điển tọa độ lưới 2D `Dict[Tuple[int, int], np.ndarray]`.
+* **Cơ chế lọc bọc thép:**
+  - Lọc bỏ ngay lập tức các bản ghi thiếu `realized_return` hoặc có giá trị `NaN`/`Inf`.
+  - **Chống ô nhiễm Kelly (`Anti-Kelly Pollution Guard v11.9`):** gạt bỏ mọi bản ghi có cờ `boundary_truncated = True`. Đây là các lệnh bị cắt cụt do hết giờ (`Pre-Slice Boundary`) mang lợi suất xấp xỉ $0\%$; nếu giữ lại sẽ làm loãng kỳ vọng lợi nhuận $E[R]$ của ô lưới, khiến công thức Kelly suy giảm sai lệch.
+* **Quy ước kẹp biên an toàn (`Strict Clamping & Floor Logic`):**
+  $$\text{clamp}(x) = \min(\max(float(x), 0.0), 1.0)$$
+  $$\text{idx\_p} = \min\left(\lfloor \text{clamp}(p_i) \times \text{num\_bins} \rfloor, \, \text{num\_bins} - 1\right)$$
+  $$\text{idx\_chop} = \min\left(\lfloor \text{clamp}(p\_chop_i) \times \text{num\_bins} \rfloor, \, \text{num\_bins} - 1\right)$$
+  Quy ước `min(..., num_bins - 1)` đảm bảo khi xác suất đạt mức trần $1.0$, chỉ số không bị tràn ra ngoài (`IndexOutOfBounds`) mà rơi gọn vào bin cuối cùng `(num_bins - 1)`.
+
+### 2. Xây Dựng Bảng Kelly 2D Có Trừng Phạt Bayes (`Task B-1-12 — build_empirical_kelly_table_v2`)
+* **Vị trí tệp:** [src/aegis/meta_labeling/sizing/kelly_empirical.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/meta_labeling/sizing/kelly_empirical.py)
+* **Chức năng định chế:** Xây dựng ma trận 2D `numpy.ndarray` kích thước `(num_bins, num_bins)` chứa tỷ lệ đòn bẩy tối ưu $f^*$ cho từng cặp trạng thái thị trường.
+* **Cơ chế phòng thủ quy mô mẫu kép (`Sample-Size Double Defense`):**
+  - **Nhánh Thiếu Mẫu (`len(returns) < 5`):** Nếu một ô lưới không đủ $5$ lệnh lịch sử, hệ thống từ chối dò nghiệm phi tuyến (vì rủi ro quá khớp thống kê cực cao) và gán thẳng về giá trị tiên nghiệm `prior_f` (mặc định $0.0$).
+  - **Nhánh Trừng Phạt Bayes (`len(returns) >= 5`):**
+    1. Dùng kỹ thuật Resampling Bootstrap (500 lần lặp) qua `solve_empirical_kelly_fraction_with_confidence` để trích xuất phân vị bảo thủ $25\%$ (`lower_percentile=25.0`), ký hiệu là $f_{\text{cons}}$.
+    2. Áp dụng công thức co rút Bayes (`Bayesian Shrinkage`) với hằng số niềm tin $C = 20.0$:
+       $$w = \frac{N}{N + C}$$
+       $$f_{\text{bayesian}} = w \cdot f_{\text{cons}} + (1 - w) \cdot \text{prior\_f}$$
+       Khi số mẫu $N$ nhỏ (nhưng $\ge 5$), trọng số $w$ thấp khiến $f^*$ bị kéo mạnh về `prior_f` an toàn. Khi $N \to \infty$, $w \to 1.0$ và hệ thống tin tưởng hoàn toàn vào Kelly thực nghiệm.
+
+### 3. Engine Tra Cứu Suy Luận Thống Nhất $O(1)$ (`Task B-1-13 — compute_bi_directional_kelly_v14_unified`)
+* **Vị trí tệp:** [src/aegis/meta_labeling/sizing/kelly_empirical.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/meta_labeling/sizing/kelly_empirical.py)
+* **Chức năng định chế:** Hàm suy luận (`Inference Engine`) duy nhất phục vụ môi trường giao dịch thời gian thực (`Live Trading`) và khớp lệnh nhanh.
+* **Luồng xử lý nghiêm ngặt:**
+  1. **Kiểm tra Hải quan (`Input Customs Check`):** Tra soát `p_i`, `p_chop_i` thuộc `[0.0, 1.0]` và `kelly_table` phải là ma trận 2D vuông hợp lệ. Ném ngoại lệ `ValueError` nếu phát hiện `NaN`, `Inf` hoặc sai định dạng.
+  2. **Định tuyến Chế độ:** Gọi hàm duy nhất `classify_trade_mode(p_i, p_chop_i, fade_enabled, fade_regime_gate_threshold)`.
+  3. **Xử lý Deadzone:** Nếu `mode == "none"`, trả về ngay lập tức `{"f_target": 0.0, "mode": "none"}` với thời gian $O(1)$.
+  4. **Tra cứu & Hoàn trả:** Nếu `mode` là `"follow"` hoặc `"fade"`, thực hiện ánh xạ chỉ số lưới bằng đúng logic của B-1-11, truy xuất $f^* = \max(0.0, \text{kelly\_table}[\text{idx\_p}, \text{idx\_chop}])$ và trả về `{"f_target": f_star, "mode": mode}`.
+
+### 4. Kiểm Định Chéo Zero-Leakage Với Purging & Embargo (`Task B-1-14 — PurgedKFold`)
+* **Vị trí tệp:** [src/aegis/meta_labeling/purged_kfold.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/meta_labeling/purged_kfold.py)
+* **Chức năng định chế:** Giải quyết triệt để bài toán rò rỉ nhãn gối đầu (`Overlapping Labels`) trong chuỗi thời gian tài chính theo định lý AFML Chapter 7.
+* **Hai cơ chế bọc thép Zero-Leakage:**
+  - **Cắt Lọc (`Purging` — cho `train_before`):** Với bất kỳ lệnh huấn luyện nào mở trước Test set ($j < \text{test\_idx}[0]$), hệ thống tra cứu thời điểm đóng lệnh $t_1$. Nếu $t_1 > \text{test\_start\_time}$, lệnh này đã vắt sang tập Test và chứa thông tin tương lai. Hệ thống **tịch thu và xóa bỏ (`Purged`)** lệnh này khỏi tập Train.
+  - **Cách Ly (`Embargoing` — cho `train_after`):** Do hiện tượng tự tương quan chuỗi (autocorrelation), các nến ngay sau khi kết thúc Test set vẫn chịu ảnh hưởng dư chấn từ các sự kiện trong Test. Hệ thống áp đặt khoảng cách ly `embargo_step = int(embargo_pct * n_samples)` (mặc định $1\%$). Lệnh mở sau Test set ($j > \text{test\_idx}[-1]$) chỉ được phép đưa vào tập Train nếu thời điểm mở lệnh $t_0 > \max(\text{Test } t_1) + \text{embargo\_step}$.
+* **Bẫy Kiểm Định Tuyệt Đối (`Canary Intersection Assertion`):**
+  Trước khi hoàn trả cặp `(train_idx, test_idx)`, hệ thống chạy lệnh kiểm tra ranh giới:
+  ```python
+  assert len(set(train_idx).intersection(set(test_idx))) == 0
+  ```
+  Nếu có bất kỳ một chỉ số nào xuất hiện ở cả 2 tập, hệ thống dừng khẩn cấp, ngăn chặn 100% rủi ro tạo ra các mô hình học máy bị rò rỉ dữ liệu ảo tưởng.
 
 ---
 
@@ -1070,6 +1122,15 @@ Hệ thống hiện đã sở hữu một bộ khung xương dữ liệu, thuậ
 ---
 
 ## PHỤ LỤC A: CƠ SỞ LÝ THUYẾT & CHUYÊN ĐỀ SÂU — ĐỊNH LÝ KELLY LÀ GÌ? LỊCH SỬ, BẢN CHẤT TRỰC QUAN & VAI TRÒ TRONG GIAO DỊCH ĐỊNH LƯỢNG
+
+### 7.6. Quy Ước Lọc Rò Rỉ & Định Cỡ Kelly Theo AFML (`Tasks B-1-11 -> B-1-14 Core Conventions`)
+Để bảo vệ độ tinh khiết thống kê trong toàn bộ quy trình Meta-Labeling và Sizing, hệ thống thiết lập 3 chuẩn mực định chế bắt buộc:
+1. **Phân biệt rạch ròi giữa Kelly Table và OOS Statistics (`Boundary Truncation Filtering`):**
+   Khi `run_trailing_exit_for_oos_event` cắt cụt lệnh tại biên fold (`boundary_truncated = True`), lệnh này bị buộc dừng với lợi suất xấp xỉ $0\%$. Tại `trade_records_to_kelly_table_inputs` (`Task B-1-11`), các bản ghi này bị **gạt bỏ hoàn toàn khỏi bảng Kelly** để không làm ô nhiễm và suy giảm trần Kelly $f^*$ (`Kelly Pollution`). Tuy nhiên, trong thống kê tổng thể (`OOS Statistics / Sharpe / PBO`), lệnh này vẫn được giữ lại đầy đủ để phản ánh chân thực hiệu suất danh mục khi thực thi ngắt quãng, chống thiên lệch loại trừ OOS (`OOS Exclusion Bias`).
+2. **Co Rút Bayes Gấp Khúc (`Threshold-Gated Bayesian Shrinkage`):**
+   Tại `build_empirical_kelly_table_v2` (`Task B-1-12`), hệ thống không co rút mù quáng mà thiết lập ngưỡng cổng $N < 5$: nếu ô lưới quá ít mẫu, công thức co rút Bayes $w = N/(N+C)$ bị từ chối và gán thẳng về `prior_f = 0.0`. Chỉ khi $N \ge 5$, phân vị bảo thủ $25\%$ (`lower_percentile=25.0`) mới được trích xuất và co rút Bayes với $C = 20.0$.
+3. **Định Lý Cách Ly Purging & Embargoing Trừu Tượng (`AFML Zero-Leakage Cross-Validation`):**
+   Tại `PurgedKFold` (`Task B-1-14`), hệ thống không sử dụng K-Fold tĩnh của `scikit-learn` mà tra soát trực tiếp mảng thời gian nhãn gối đầu `event_times` ($t_0 \to t_1$). Mọi mẫu huấn luyện thuộc `train_before` có $t_1 > \text{test\_start\_time}$ buộc phải bị `Purged`, và mọi mẫu `train_after` nằm trong vùng $\text{test\_max\_t1} + \text{embargo\_step}$ buộc phải bị `Embargoed`. Bẫy `assert len(set(train_idx).intersection(set(test_idx))) == 0` là tường lửa cuối cùng ngăn chặn rò rỉ dữ liệu trước khi huấn luyện mô hình.
 
 ### 1. Lịch Sử Ra Đời: Từ Phòng Thí Nghiệm Bell Labs Đến Sòng Bài Las Vegas & Phố Wall
 - **John L. Kelly Jr. (1956):** Tên "Kelly" bắt nguồn từ nhà khoa học thiên tài làm việc tại phòng thí nghiệm viễn thông Bell Labs (Mỹ). Ban đầu, công thức của ông (*"A New Interpretation of Information Rate"*) ra đời với mục đích tối ưu hóa tốc độ truyền tải thông tin qua đường dây viễn thông bị nhiễu.

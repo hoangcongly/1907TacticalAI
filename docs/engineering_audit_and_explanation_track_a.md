@@ -122,3 +122,12 @@ flowchart TD
     G --> H[Robust Sigma = 1.4826 * MAD]
     H --> I[Trả về Sigma_i]
 ```
+
+### 4. Hàm `detect_bad_tick_core` (Điều kiện phân rã)
+- **Vị trí Module:** `src/aegis/data/outlier_detection.py`
+- **Trách nhiệm:** Dựa vào `Robust Sigma` đã tính, phân loại một cú giật mạnh là Nhiễu (Bad Tick) hay là Dòng tiền thật (Tail Event).
+- **Cơ chế hoạt động:**
+  - **ĐK 1 (Lệch giá):** Giá giật quá $5\sigma$.
+  - **ĐK 2 (Khối lượng tĩnh):** Lượng volume tại tick đó không đột biến (nhỏ hơn 2 lần trung vị quá khứ). Nếu volume tăng vọt $> 2\times$ trung vị, hệ thống hiểu đây là dòng tiền quét lệnh (Sweeping Market Order), nên sẽ gán cờ `is_tail_event = True` và **KHÔNG** xóa tick này.
+  - **ĐK 3 (Vi Đảo Chiều - Micro Reversal):** Bắt buộc giá tick liền sau ($P_{i+1}$) phải giật lùi về (độ lệch $< 0.3 \times$ độ giật ban đầu). Nếu giá trụ vững ở mốc mới, đó là sự điều chỉnh vi mô hợp lệ chứ không phải nhiễu.
+- **Độ trễ 1-tick (1-Tick Latency):** Vì ĐK 3 bắt buộc phải dùng $P_{i+1}$, module này chủ động lùi vòng lặp kết thúc ở `n-2` để chờ thông tin từ tương lai gần nhất. Sự đánh đổi 1-tick latency ở mức vi cấu trúc là cần thiết để phân loại đúng đắn.

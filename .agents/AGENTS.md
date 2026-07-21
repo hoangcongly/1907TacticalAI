@@ -105,4 +105,6 @@ For **EVERY** task assigned, the following 3-Phase SOP must be strictly adhered 
 7. **Peer Review:** Critical or shared logic must be peer-reviewed before being considered closed.
 8. **Github Sync & Track B Handover:** After every 3 completed tasks, you must commit and push all changes to the origin repository. Alongside the push, output a summary specifically targeted at Track B members, highlighting any interface changes, shared enums, or contract updates they need to pay attention to in order to prevent integration failures.
 
+9. **Git Status Verification:** Before and after running `git add .`, you MUST ALWAYS run `git status` to verify exactly which files were added. Pay special attention to `.gitignore` rules that might accidentally exclude newly created files or folders (e.g. `data/`). Never assume `git add .` successfully picked up everything.
+
 **FINAL REQUIREMENT FOR EVERY TASK:** Always output exactly which files were modified, and the exact lines added/changed so the user can easily find and review them.

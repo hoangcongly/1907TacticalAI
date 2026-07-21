@@ -532,12 +532,12 @@ flowchart TD
     Guard -->|Invalid| Error["Raise ValueError (Prevent PnL Poisoning/Negative SL)"]
     Guard -->|Valid| RiskCalc["Calculate Total Risk Cushion: R = (m_sl * sigma) + c_trade_adj"]
     
-    RiskCalc --> SideCheck{"Check Trade Direction: side > 0 (Long vs Short)?"}
+    RiskCalc --> SideCheck{"Check Trade Direction"}
     
-    SideCheck -->|side > 0 (Long)| LongSL["SL_Long = entry_price * exp(-R)"]
-    SideCheck -->|side <= 0 (Short/Fade)| ShortSL["SL_Short = entry_price * exp(+R)"]
+    SideCheck -->|Long| LongSL["SL_Long = entry_price * exp(-R)"]
+    SideCheck -->|Short or Fade| ShortSL["SL_Short = entry_price * exp(+R)"]
     
-    LongSL --> CheckNeg{"Is SL_Long <= 0 (Risk >= 100%)?"}
+    LongSL --> CheckNeg{"Is SL_Long <= 0?"}
     CheckNeg -->|Yes| Error
     CheckNeg -->|No| VerifySym["Symmetric Verification: ln(Entry/SL_Long) == ln(SL_Short/Entry)"]
     ShortSL --> VerifySym

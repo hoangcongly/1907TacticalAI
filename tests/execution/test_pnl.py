@@ -1,13 +1,35 @@
 from aegis.execution.pnl import compute_realized_pnl
 
 def test_pnl_normal_win():
-    """[STREAMING_CHUNK: TEST_PNL_NORMAL] Lệnh thắng thông thường."""
+    """[STREAMING_CHUNK: TEST_PNL_NORMAL] Lệnh thắng thông thường (đã vá Exit Fee)."""
     res = compute_realized_pnl(100.0, 110.0, 1, 1000.0, 10.0, "TRAIL")
-    # Gross = 10% của 1000 = +100 USD. Fees = 2 * (1000 * 0.0005) = 1 USD. Net = +99 USD.
-    assert abs(res["net_pnl"] - 99.0) < 1e-6
-    # Realized return (Unleveraged) = 99 / 1000 = 0.099 (9.9%)
-    assert abs(res["realized_return"] - 0.099) < 1e-6
+    # Gross = 10% của 1000 = +100 USD. Exit Notional = 1100 USD.
+    # Fee Entry = 1000 * 0.0005 = 0.5 USD. Fee Exit = 1100 * 0.0005 = 0.55 USD -> Total Fee = 1.05 USD.
+    # Net = 100.0 - 1.05 = 98.95 USD.
+    assert abs(res["net_pnl"] - 98.95) < 1e-6
+    # Realized return (Unleveraged) = 98.95 / 1000 = 0.09895 (9.895%)
+    assert abs(res["realized_return"] - 0.09895) < 1e-6
     print("✅ [PNL ENGINE] Lệnh thắng thông thường PASSED!")
+
+
+def test_pnl_exit_fee_accounting_flaw_fixed():
+    """
+    [Vá BỌ SỐ 1: Exit Fee Accounting Flaw] Kiểm chứng phí thoát lệnh tính đúng theo Exit Notional:
+    - Khi thắng 50% (Gross = +5,000 USD trên 10,000 USD), Exit Notional = 15,000 USD -> Fee Exit = 7.5 USD.
+    - Khi thua 10% (Gross = -1,000 USD trên 10,000 USD), Exit Notional = 9,000 USD -> Fee Exit = 4.5 USD.
+    """
+    # 1. Thắng 50%
+    win_res = compute_realized_pnl(100.0, 150.0, 1, 10000.0, 5.0, "TRAIL", fee_entry_rate=0.0005, fee_exit_rate=0.0005)
+    # Fee Entry = 5.0, Fee Exit = 15000 * 0.0005 = 7.5 -> Total fee = 12.5
+    assert abs(win_res["fee_paid"] - 12.5) < 1e-6, f"Sai fee lệnh thắng to: {win_res['fee_paid']}"
+    assert abs(win_res["net_pnl"] - (5000.0 - 12.5)) < 1e-6
+
+    # 2. Thua 10%
+    loss_res = compute_realized_pnl(100.0, 90.0, 1, 10000.0, 5.0, "SL", fee_entry_rate=0.0005, fee_exit_rate=0.0005)
+    # Fee Entry = 5.0, Fee Exit = 9000 * 0.0005 = 4.5 -> Total fee = 9.5
+    assert abs(loss_res["fee_paid"] - 9.5) < 1e-6, f"Sai fee lệnh lỗ: {loss_res['fee_paid']}"
+    assert abs(loss_res["net_pnl"] - (-1000.0 - 9.5)) < 1e-6
+    print("✅ [Vá BỌ SỐ 1] Exit Fee Accounting Flaw PASSED!")
 
 def test_pnl_liquidation_branch():
     """

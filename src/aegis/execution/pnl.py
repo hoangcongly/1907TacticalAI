@@ -83,8 +83,13 @@ def compute_realized_pnl(
         # Nếu notional tính bằng Coin (Coin-M)
         gross_pnl = price_delta_pct * size_notional * exit_price 
         
-    # Tính chi phí (Fees)
-    fee_exit_cost = size_notional * fee_exit_rate if is_notional_in_usd else (size_notional * exit_price) * fee_exit_rate
+    # Tính chi phí thoát lệnh trên Exit Notional thực tế (Vá BỌ SỐ 1: Exit Fee Accounting Flaw)
+    if is_notional_in_usd:
+        exit_notional = max(0.0, size_notional + gross_pnl)
+        fee_exit_cost = exit_notional * fee_exit_rate
+    else:
+        # Nếu notional tính bằng Coin (Coin-M), giá trị USD tại thời điểm thoát là size_notional * exit_price
+        fee_exit_cost = (size_notional * exit_price) * fee_exit_rate
     total_fee_cost = fee_entry_cost + fee_exit_cost
     
     # Lợi nhuận ròng (Net PnL)

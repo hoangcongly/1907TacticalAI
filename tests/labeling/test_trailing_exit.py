@@ -408,3 +408,55 @@ def test_finalize_trade_record_output_passes_schema():
     df = pd.DataFrame([result])
     TradeRecordSchema.validate(df)
 
+
+def test_zero_atr_trailing_collapse_fixed():
+    """
+    [Vá BỌ SỐ 2: Zero-ATR Trailing Collapse] Kiểm chứng khi ATR = 0.0 (thanh khoản cạn kiệt Open=High=Low=Close),
+    hệ thống tự động kẹp safe_atr = min_tick_size, giữ cho trail_cushion > 0 và ngăn trail_stop = extreme_price.
+    """
+    # ATR toàn bằng 0, giá đi ngang hoặc nhích nhẹ 1 tick xuống
+    future_highs = np.array([100.0, 100.0, 100.0])
+    future_lows = np.array([100.0, 99.999, 100.0])
+    future_atr = np.array([0.0, 0.0, 0.0]) # Cạn kiệt thanh khoản
+    future_p_trend = np.array([0.8, 0.8, 0.8])
+
+    res = compute_regime_aware_trailing_exit_v3_liquidation_aware(
+        entry_price=100.0,
+        side=1,
+        trade_mode="follow",
+        future_highs=future_highs,
+        future_lows=future_lows,
+        future_atr=future_atr,
+        future_p_trend=future_p_trend,
+        sl_initial=95.0,
+        min_tick_size=1e-3, # Đặt min_tick_size = 0.001
+    )
+    # Vì safe_atr >= 0.001, trail_cushion > 0, trail_stop < 100.0 (không ôm sát khít 100.0) -> nến thứ 2 low 99.999 KHÔNG bị stop-out oan uổng
+    assert res is None or res["exit_idx"] != 1, "Lỗi: Trailing stop bị sập về giá cực đại do ATR = 0!"
+    print("✅ [Vá BỌ SỐ 2] Zero-ATR Trailing Collapse PASSED!")
+
+
+def test_finalize_trade_record_timestamp_plumbing():
+    """
+    [Vá BỌ SỐ 3: Temporal Blindness] Kiểm chứng entry_timestamp_ms và exit_timestamp_ms
+    được trích xuất chuẩn xác từ full_timestamps theo đúng entry_idx và exit_idx_absolute.
+    """
+    import pandas as pd
+    from aegis.core.schemas import TradeRecordSchema
+    closes = np.arange(100.0, 130.0)
+    timestamps = np.arange(1600000000000, 1600000000000 + 30 * 60000, 60000, dtype=int)
+    partial = {
+        "entry_idx": 5, "entry_price": 105.0, "p_i": 0.8, "p_chop_i": 0.3,
+        "mode": "follow", "side": 1, "sl_initial": 95.0,
+        "leverage_used": 5.0, "liquidation_price": 90.0,
+        "exit_idx_relative": 3, "exit_idx_absolute": 9,
+        "exit_reason": "TRAIL", "boundary_truncated": False,
+    }
+    result = finalize_trade_record(partial, closes, size_notional=1000.0, full_timestamps=timestamps)
+    assert result["entry_timestamp_ms"] == timestamps[5], f"Entry ts sai: {result['entry_timestamp_ms']}"
+    assert result["exit_timestamp_ms"] == timestamps[9], f"Exit ts sai: {result['exit_timestamp_ms']}"
+    
+    df = pd.DataFrame([result])
+    TradeRecordSchema.validate(df)
+    print("✅ [Vá BỌ SỐ 3] Temporal Blindness Timestamp Plumbing PASSED!")
+

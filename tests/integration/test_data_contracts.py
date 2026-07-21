@@ -130,6 +130,7 @@ def test_trade_record_schema_absolute_index_violation():
             "fold_id": [None],
             "symbol": ["BTCUSDT"],
             "entry_idx": [100],
+            "entry_timestamp_ms": [1600000000000],
             "entry_price": [50000.0],
             "p_i": [0.8],
             "p_chop_i": [0.2],
@@ -139,6 +140,7 @@ def test_trade_record_schema_absolute_index_violation():
             "size_notional": [1.0],
             "exit_idx_relative": [10],
             "exit_idx_absolute": [999],  # VIOLATION HERE: 100 + 1 + 10 != 999
+            "exit_timestamp_ms": [1600003600000],
             "exit_reason": ["TRAIL"],
             "fill_price_exit": [51000.0],
             "boundary_truncated": [False],
@@ -152,6 +154,42 @@ def test_trade_record_schema_absolute_index_violation():
 
     with pytest.raises(pa.errors.SchemaError):
         TradeRecordSchema.validate(df)
+
+
+def test_trade_record_schema_timestamp_logic_violation():
+    """[Vá BỌ SỐ 3] Kiểm chứng TradeRecordSchema chặn đứng bản ghi có exit_timestamp_ms < entry_timestamp_ms."""
+    df = pd.DataFrame(
+        {
+            "schema_version": ["1.0.0"],
+            "dataset_manifest_hash": ["dummy_hash"],
+            "fold_id": [None],
+            "symbol": ["BTCUSDT"],
+            "entry_idx": [100],
+            "entry_timestamp_ms": [1600003600000], # Vào lệnh sau
+            "entry_price": [50000.0],
+            "p_i": [0.8],
+            "p_chop_i": [0.2],
+            "mode": ["follow"],
+            "side": [1],
+            "sl_initial": [49000.0],
+            "size_notional": [1.0],
+            "exit_idx_relative": [10],
+            "exit_idx_absolute": [111],
+            "exit_timestamp_ms": [1600000000000], # Thoát lệnh trước -> VIOLATION
+            "exit_reason": ["TRAIL"],
+            "fill_price_exit": [51000.0],
+            "boundary_truncated": [False],
+            "fee_entry": [10.0],
+            "fee_exit": [10.0],
+            "funding_accrued": [0.0],
+            "gross_pnl": [1000.0],
+            "realized_return": [0.02],
+        }
+    )
+
+    with pytest.raises(pa.errors.SchemaError):
+        TradeRecordSchema.validate(df)
+
 
 
 def test_lineage_and_versioning_assertion():

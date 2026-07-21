@@ -19,6 +19,7 @@ class TradeRecord(TypedDict):
     fold_id: Optional[str]
     symbol: str
     entry_idx: int
+    entry_timestamp_ms: int
     entry_price: float
     p_i: float
     p_chop_i: float
@@ -28,6 +29,7 @@ class TradeRecord(TypedDict):
     size_notional: float
     exit_idx_relative: int
     exit_idx_absolute: int
+    exit_timestamp_ms: int
     exit_reason: Literal["SL", "TRAIL", "REGIME_FLIP", "TIME_STOP", "LIQUIDATION"]
     fill_price_exit: float
     boundary_truncated: bool
@@ -70,6 +72,13 @@ def check_absolute_index_logic(df: pd.DataFrame) -> pd.Series:
     - Chỉ số tuyệt đối exit_idx_absolute bắt buộc phải bằng entry_idx + 1 + exit_idx_relative.
     """
     return df["exit_idx_absolute"] == (df["entry_idx"] + 1 + df["exit_idx_relative"])
+
+def check_timestamp_logic(df: pd.DataFrame) -> pd.Series:
+    """
+    Kiểm tra logic thời gian (Vá BỌ SỐ 3):
+    - Thời gian thoát lệnh exit_timestamp_ms bắt buộc phải lớn hơn hoặc bằng thời gian vào lệnh entry_timestamp_ms.
+    """
+    return df["exit_timestamp_ms"] >= df["entry_timestamp_ms"]
 
 
 # ============================================================================
@@ -117,6 +126,7 @@ TradeRecordSchema = DataFrameSchema(
         "fold_id": Column(str, nullable=True), # ID của fold kiểm định CPCV (ví dụ: "fold_0", cho phép Null khi chạy live)
         "symbol": Column(str), # Ký hiệu mã giao dịch
         "entry_idx": Column(int, Check.ge(0)), # Chỉ số thứ tự tuyệt đối của nến tại thời điểm vào lệnh (>= 0)
+        "entry_timestamp_ms": Column(int, Check.ge(0)), # Thời gian đóng nến vào lệnh tính bằng mili giây epoch (>= 0)
         "entry_price": Column(float, Check.gt(0)), # Giá thực tế vào lệnh (> 0)
         "p_i": Column(float, Check.in_range(0.0, 1.0)), # Xác suất xu hướng tại thời điểm vào lệnh [0, 1]
         "p_chop_i": Column(float, Check.in_range(0.0, 1.0)), # Xác suất đi ngang tại thời điểm vào lệnh [0, 1]
@@ -126,6 +136,7 @@ TradeRecordSchema = DataFrameSchema(
         "size_notional": Column(float, Check.gt(0)), # Quy mô danh nghĩa của lệnh giao dịch (> 0)
         "exit_idx_relative": Column(int, Check.ge(0)), # Khoảng cách bar tương đối từ lúc vào lệnh đến lúc thoát lệnh (>= 0)
         "exit_idx_absolute": Column(int, Check.ge(0)), # Chỉ số bar tuyệt đối khi thoát lệnh (= entry_idx + 1 + exit_idx_relative)
+        "exit_timestamp_ms": Column(int, Check.ge(0)), # Thời gian đóng nến thoát lệnh tính bằng mili giây epoch (>= 0)
         "exit_reason": Column(str, Check.isin(["SL", "TRAIL", "REGIME_FLIP", "TIME_STOP", "LIQUIDATION"])), # Lý do thoát lệnh chuẩn hóa
         "fill_price_exit": Column(float, Check.gt(0)), # Giá khớp lệnh thoát lệnh thực tế tra cứu tại exit_idx_absolute (> 0)
         "boundary_truncated": Column(bool), # Cờ báo hiệu giao dịch bị cắt ngắn do hết dữ liệu hoặc chạm biên fold
@@ -136,7 +147,8 @@ TradeRecordSchema = DataFrameSchema(
         "realized_return": Column(float), # Lợi nhuận ròng thực tế (Realized Return) sau phí và funding
     },
     checks=[
-        Check(check_absolute_index_logic, name="check_absolute_index_logic") # Gắn kiểm tra hợp đồng logic exit_idx_absolute
+        Check(check_absolute_index_logic, name="check_absolute_index_logic"), # Gắn kiểm tra hợp đồng logic exit_idx_absolute
+        Check(check_timestamp_logic, name="check_timestamp_logic") # Gắn kiểm tra hợp đồng logic thời gian entry vs exit
     ],
     strict=True,
     name="TradeRecordSchema_v1.0.0"

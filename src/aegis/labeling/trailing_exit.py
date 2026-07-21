@@ -158,6 +158,7 @@ def compute_regime_aware_trailing_exit_v3_liquidation_aware(
     consecutive_bars_required: int = 2,
     t_max_live: int = 120,
     max_lookforward_override: Optional[int] = None,
+    min_tick_size: float = 1e-4,
 ) -> dict:
     """
     [v3 / v11.9] Nâng cấp từ v2: Tích hợp kiểm tra giá thanh lý (Liquidation Price).
@@ -177,6 +178,11 @@ def compute_regime_aware_trailing_exit_v3_liquidation_aware(
     lows = np.asarray(future_lows, dtype=float)
     atr = np.asarray(future_atr, dtype=float)
     p_trend = np.asarray(future_p_trend, dtype=float)
+
+    # [Vá BỌ SỐ 2: Zero-ATR Trailing Collapse]
+    # Khi thanh khoản cạn kiệt, ATR tiệm cận 0 -> cushion = 0 -> trailing ôm sát khít 100% gây stop-out oan uổng.
+    # Kẹp giá trị sàn cho ATR dựa trên min_tick_size.
+    safe_atr = np.maximum(atr, min_tick_size)
 
     n_bars = len(highs)
     if n_bars == 0:
@@ -248,7 +254,7 @@ def compute_regime_aware_trailing_exit_v3_liquidation_aware(
             if lows[k] <= sl_initial:
                 return {"exit_idx": k, "reason": "SL", "boundary_truncated": False}
             # 2. Tính Trailing Stop TỪ extreme_price của nến trước (Geometric Symmetry)
-            trail_cushion = m_trail_base * (1 + gamma * p_trend[k]) * atr[k] / extreme_price
+            trail_cushion = m_trail_base * (1 + gamma * p_trend[k]) * safe_atr[k] / extreme_price
             trail_stop = extreme_price * math.exp(-trail_cushion)
             # Kẹp (clamp): trail_stop KHÔNG được phép lỏng hơn sl_initial (Long: không thấp hơn SL)
             trail_stop = max(trail_stop, sl_initial)
@@ -285,7 +291,7 @@ def compute_regime_aware_trailing_exit_v3_liquidation_aware(
             if highs[k] >= sl_initial:
                 return {"exit_idx": k, "reason": "SL", "boundary_truncated": False}
             # 2. Tính Trailing Stop TỪ extreme_price của nến trước (Geometric Symmetry)
-            trail_cushion = m_trail_base * (1 + gamma * p_trend[k]) * atr[k] / extreme_price
+            trail_cushion = m_trail_base * (1 + gamma * p_trend[k]) * safe_atr[k] / extreme_price
             trail_stop = extreme_price * math.exp(trail_cushion)
             # Kẹp (clamp): trail_stop KHÔNG được phép lỏng hơn sl_initial (Short: không cao hơn SL)
             trail_stop = min(trail_stop, sl_initial)
@@ -443,6 +449,7 @@ def run_trailing_exit_for_oos_event(
     maintenance_margin_rate: float = 0.005,
     fee_rate: float = 0.0004,
     liquidation_fee_rate: float = 0.001,
+    full_timestamps: Optional[np.ndarray] = None,
     **trailing_exit_kwargs,
 ) -> dict | None:
     """
@@ -500,9 +507,13 @@ def run_trailing_exit_for_oos_event(
     exit_idx_absolute = resolve_absolute_exit_idx(entry_idx, rel_idx)
     reason = exit_result.get("reason", exit_result["exit_reason"])
 
+    entry_ts = int(full_timestamps[entry_idx]) if full_timestamps is not None and 0 <= entry_idx < len(full_timestamps) else 0
+    exit_ts = int(full_timestamps[exit_idx_absolute]) if full_timestamps is not None and 0 <= exit_idx_absolute < len(full_timestamps) else 0
+
     # 6. Trả về dict tuân thủ TRADE_RECORD_SCHEMA (bản ghi TẠM, chưa có realized_return)
     return {
         "entry_idx": entry_idx,
+        "entry_timestamp_ms": entry_ts,
         "entry_price": entry_price,
         "p_i": p_i,
         "p_chop_i": p_chop_i,
@@ -513,6 +524,7 @@ def run_trailing_exit_for_oos_event(
         "liquidation_price": resolved["liquidation_price"],
         "exit_idx_relative": rel_idx,
         "exit_idx_absolute": exit_idx_absolute,
+        "exit_timestamp_ms": exit_ts,
         "exit_reason": reason,
         "boundary_truncated": bool(exit_result["boundary_truncated"]),
     }
@@ -528,6 +540,7 @@ def finalize_trade_record(
     fee_entry_rate: float = 0.0004,
     fee_exit_rate: float = 0.0004,
     funding_accrued: float = 0.0,
+    full_timestamps: Optional[np.ndarray] = None,
 ) -> dict:
     """
     [TASK B-1-9] Bước hoàn thiện bản ghi cuối cùng: gắn realized_return vào bản ghi tạm từ B-1-8.
@@ -580,6 +593,9 @@ def finalize_trade_record(
     # 4. realized_return = pnl / max(size_notional, 1e-8)
     realized_return = pnl / max(float(size_notional), 1e-8)
 
+    entry_ts = int(partial_record.get("entry_timestamp_ms", full_timestamps[int(partial_record["entry_idx"])] if full_timestamps is not None and 0 <= int(partial_record["entry_idx"]) < len(full_timestamps) else 0))
+    exit_ts = int(partial_record.get("exit_timestamp_ms", full_timestamps[exit_idx_abs] if full_timestamps is not None and 0 <= exit_idx_abs < len(full_timestamps) else 0))
+
     # 5. Trả về dict đầy đủ tuân thủ TradeRecordSchema (Pandera)
     return {
         "schema_version": partial_record.get("schema_version", "1.0.0"),
@@ -587,6 +603,7 @@ def finalize_trade_record(
         "fold_id": partial_record.get("fold_id", None),
         "symbol": partial_record.get("symbol", "UNKNOWN"),
         "entry_idx": int(partial_record["entry_idx"]),
+        "entry_timestamp_ms": entry_ts,
         "entry_price": entry_price,
         "p_i": float(partial_record["p_i"]),
         "p_chop_i": float(partial_record["p_chop_i"]),
@@ -596,6 +613,7 @@ def finalize_trade_record(
         "size_notional": float(size_notional),
         "exit_idx_relative": int(partial_record.get("exit_idx_relative", partial_record.get("exit_idx"))),
         "exit_idx_absolute": exit_idx_abs,
+        "exit_timestamp_ms": exit_ts,
         "exit_reason": exit_reason,
         "fill_price_exit": exit_price_stub,
         "boundary_truncated": bool(partial_record["boundary_truncated"]),

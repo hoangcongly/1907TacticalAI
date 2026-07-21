@@ -262,6 +262,24 @@ def test_b_1_5_no_leakage_past_fold_boundary():
     )
     assert result_empty is None, f"Kỳ vọng None cho lệnh mảng rỗng, nhận {result_empty}"
 
+    # [STREAMING_CHUNK: TEST_TRAILING_ONE_BAR_BOUNDARY]
+    # Kiểm thử case: Nếu lệnh vào cận biên fold (chỉ còn đúng 1 bar tương lai, len=1)
+    result_one_bar = simulate_trailing_exit_within_fold_bounds(
+        entry_idx=fold_end_idx - 2, # Còn đúng 1 bar tương lai trong test_window
+        entry_price=100.0,
+        side=1,
+        trade_mode="follow",
+        test_window_end_idx=fold_end_idx,
+        full_highs=full_highs,
+        full_lows=full_lows,
+        full_atr=full_atr,
+        full_p_trend=full_p_trend,
+        sl_initial=90.0,
+        liquidation_price=80.0,
+        t_max_live=120,
+    )
+    assert result_one_bar is None, f"Kỳ vọng None khi chỉ còn 1 bar tương lai, nhận {result_one_bar}"
+
     from aegis.meta_labeling.sizing.liquidation_layer import compute_liquidation_loss
 
     # [QĐ #7] compute_liquidation_loss trả về -(margin) thuần.

@@ -12,6 +12,22 @@ from typing import Dict, Any, Optional
 from aegis.core.trial_classes import TrialClass
 
 
+def _json_default(obj: Any) -> Any:
+    """Helper chuyển đổi an toàn các đối tượng numpy/pandas sang primitive python cho json.dumps."""
+    import numpy as np
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, np.floating):
+        return float(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, np.bool_):
+        return bool(obj)
+    if hasattr(obj, "isoformat"):
+        return obj.isoformat()
+    return str(obj)
+
+
 class ExperimentTracker:
     """
     Singleton class để quản lý việc ghi nhận các lần chạy thử nghiệm (trials).
@@ -50,7 +66,7 @@ class ExperimentTracker:
         Dùng sort_keys=True để đảm bảo tính nhất quán của chuỗi băm.
         """
         # Loại bỏ các tham số không ảnh hưởng đến logic (nếu có, tuỳ dự án)
-        serialized = json.dumps(params, sort_keys=True)
+        serialized = json.dumps(params, sort_keys=True, default=_json_default)
         return hashlib.sha256(serialized.encode('utf-8')).hexdigest()
 
     def _get_git_commit(self) -> str:
@@ -92,6 +108,6 @@ class ExperimentTracker:
         
         with self._write_lock:
             with open(self.log_file, "a", encoding="utf-8") as f:
-                f.write(json.dumps(record, sort_keys=True) + "\n")
+                f.write(json.dumps(record, sort_keys=True, default=_json_default) + "\n")
                 
         return param_hash

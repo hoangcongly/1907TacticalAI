@@ -286,6 +286,16 @@ def resolve_max_safe_leverage(
             f"Lỗi hải quan v11.9: leverage_cap phải >= 1.0, nhận {leverage_cap}"
         )
 
+    if (
+        not isinstance(maintenance_margin_rate, (int, float))
+        or math.isnan(maintenance_margin_rate)
+        or math.isinf(maintenance_margin_rate)
+        or not (0.0 <= maintenance_margin_rate < 1.0)
+    ):
+        raise ValueError(
+            f"Lỗi hải quan v11.9: maintenance_margin_rate phải thuộc [0.0, 1.0), nhận {maintenance_margin_rate}"
+        )
+
     if side > 0:
         sl_distance_frac = (entry_price - sl_initial) / entry_price
     else:

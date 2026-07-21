@@ -27,7 +27,7 @@ def compute_realized_pnl(
     
     [QĐ #7] Xử lý phí THỐNG NHẤT cả 2 nhánh:
       Normal:  gross = Δprice × notional    → net = gross - fee_entry - fee_exit - funding
-      Liq:     gross = -(margin)            → net = gross - fee_entry - funding
+      Liq:     gross = -(margin)            → net = gross - fee_entry (chống đếm kép funding theo QĐ #7 & Issue #4)
     """
     # [ARMOR GUARD] Kiểm tra input
     if side not in (1, -1):
@@ -52,11 +52,13 @@ def compute_realized_pnl(
     # ====================================================================
     if exit_reason == "LIQUIDATION":
         # [STREAMING_CHUNK: PNL_LIQUIDATION_BRANCH]
-        # compute_liquidation_loss trả về -(margin) thuần (QĐ #7)
+        # compute_liquidation_loss trả về -(margin) thuần (QĐ #7).
+        # Lượng Initial Margin mất trắng này đã bao hàm toàn bộ tiền Funding bị bào mòn trước đó.
         gross_pnl = compute_liquidation_loss(size_notional, leverage)
         
-        # Phí xử lý THỐNG NHẤT giống nhánh Normal (QĐ #7)
-        net_pnl = gross_pnl - fee_entry_cost - funding_accrued_usd
+        # Nhánh Thanh lý chỉ khấu trừ phí mở lệnh, KHÔNG trừ funding_accrued_usd
+        # để chống lỗi Đếm Kép (Double-Count) Funding Fee (Issue #4 / QĐ #7).
+        net_pnl = gross_pnl - fee_entry_cost
         
         # Lợi suất (chưa đòn bẩy) dùng cho Kelly
         realized_return = net_pnl / size_notional

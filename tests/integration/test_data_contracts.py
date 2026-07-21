@@ -7,6 +7,7 @@ from aegis.core.schemas import (
     SignalBarSchema,
     TradeRecordSchema,
     TradeRecord,
+    compute_dataset_manifest_hash,
     assert_trade_records_match_bar_version,
     check_insufficient_history_nulls,
 )
@@ -231,4 +232,17 @@ def test_leverage_does_not_affect_pnl_for_non_liquidated_exits():
     assert res_lev_2["net_pnl"] == res_lev_10["net_pnl"], (
         "Lỗi kiến trúc: Đòn bẩy đã làm rò rỉ và thay đổi PnL của một lệnh thoát bình thường!"
     )
+
+
+def test_schemas_empty_dataframes_safe():
+    """Kiểm chứng hệ thống xử lý an toàn khi mảng nến hoặc bảng giao dịch rỗng (không crash ValueError / AssertionError)."""
+    df_bar = pd.DataFrame(columns=["timestamp_ms", "open", "high", "low", "close"])
+    h = compute_dataset_manifest_hash(df_bar, {})
+    assert isinstance(h, str) and len(h) == 64
+    
+    df_trade = pd.DataFrame(columns=["dataset_manifest_hash"])
+    # Không được ném ngoại lệ khi bảng trade rỗng (0 giao dịch trong fold)
+    assert_trade_records_match_bar_version(df_trade, h)
+    print("✅ [SCHEMAS] Empty DataFrames handling PASSED!")
+
 

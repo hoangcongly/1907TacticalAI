@@ -369,6 +369,7 @@ def simulate_trailing_exit_within_fold_bounds(
     if len(future_highs) == 0:
         return None
 
+    # [STREAMING_CHUNK: SIMULATE_TRAILING_EXIT_CALL]
     exit_result = compute_regime_aware_trailing_exit_v3_liquidation_aware(
         entry_price=entry_price,
         side=side,
@@ -383,6 +384,13 @@ def simulate_trailing_exit_within_fold_bounds(
         max_lookforward_override=max_lookforward,
         **trailing_exit_kwargs,
     )
+
+    # [ARMOR GUARD — BẢO VỆ CHỐNG LỖ HỔNG NẾN CẬN BIÊN]:
+    # Khi nến vào lệnh chỉ cách biên fold hoặc t_max_live đúng 1 bar (n_bars <= 1),
+    # compute_regime_aware_trailing_exit_v3_liquidation_aware trả về None.
+    # Phải kiểm tra và trả về None ngay lập tức để ngăn crash TypeError: 'NoneType' object is not subscriptable.
+    if exit_result is None:
+        return None
 
     exit_idx_relative = int(exit_result["exit_idx"])
     exit_idx_absolute = entry_idx + 1 + exit_idx_relative

@@ -152,16 +152,20 @@ def compute_dataset_manifest_hash(bar_df: pd.DataFrame, generation_params: Dict[
     Bao gồm shape của mảng nến, khoảng thời gian và các tham số sinh ra nó.
     Giúp đóng dấu 'Tem niêm phong' SHA-256 duy nhất cho từng tập dữ liệu.
     """
-    # Tạo một payload chứa các thông tin cốt lõi để tính mã Hash
+    if len(bar_df) == 0:
+        start_time = 0
+        end_time = 0
+    else:
+        start_time = int(bar_df["timestamp_ms"].min())
+        end_time = int(bar_df["timestamp_ms"].max())
+
     payload = {
         "params": generation_params,
         "n_rows": len(bar_df),
-        "start_time": int(bar_df["timestamp_ms"].min()),
-        "end_time": int(bar_df["timestamp_ms"].max())
+        "start_time": start_time,
+        "end_time": end_time
     }
-    # Chuyển payload sang chuỗi văn bản JSON đã được sắp xếp key chuẩn xác
     sorted_str = json.dumps(payload, sort_keys=True, default=str)
-    # Tính và trả về mã băm SHA-256 (64 ký tự hex)
     return hashlib.sha256(sorted_str.encode('utf-8')).hexdigest()
 
 def assert_trade_records_match_bar_version(trade_df: pd.DataFrame, expected_manifest_hash: str):
@@ -169,13 +173,12 @@ def assert_trade_records_match_bar_version(trade_df: pd.DataFrame, expected_mani
     Chặn đứng luồng chạy (Gatekeeper check) nếu bảng Trade Records không được sinh ra
     từ đúng phiên bản Bar Array hiện tại, bảo vệ hệ thống khỏi việc ngộ nhận kết quả backtest ảo.
     """
-    # Lấy danh sách các mã hash duy nhất từ cột dataset_manifest_hash của bảng giao dịch
+    if len(trade_df) == 0:
+        return
+
     unique_hashes = trade_df["dataset_manifest_hash"].unique()
-    # Kiểm tra xem có bị lẫn lộn nhiều phiên bản dataset khác nhau trong cùng một bảng không
     assert len(unique_hashes) == 1, "FATAL: Lẫn lộn nhiều phiên bản dataset trong cùng một Trade DataFrame."
-    # Lấy mã hash thực tế của bảng giao dịch
     actual_hash = unique_hashes[0]
-    # Kiểm tra mã hash thực tế có khớp tuyệt đối với mã hash kỳ vọng của mảng nến hiện tại không
     assert actual_hash == expected_manifest_hash, \
         f"FATAL: DATA LINEAGE MISMATCH!\nExpected Hash: {expected_manifest_hash}\nActual Hash: {actual_hash}\n" \
         f"Trade records đã hết hạn so với Bar Array hiện tại. Yêu cầu chạy lại toàn bộ pipeline."

@@ -76,3 +76,16 @@ def test_position_size_vol_ratio_black_swan():
     # Size = 100k * 2.0 * 0.5 * min(1.0, 0.2) = 20k (Bị chém mất 80% sức mua)
     assert abs(size_crash - 20_000.0) < 1.0
     print(f"✅ [VOL-RATIO] Bóp nghẹt chuẩn xác thứ nguyên. Size Bình thường: ${size_normal:,.0f} -> Size Flash Crash: ${size_crash:,.0f}")
+
+
+def test_position_size_inf_guards():
+    """Kiểm chứng hệ thống chặn đứng input ATR hoặc max_notional_cap bị Inf."""
+    import pytest
+    with pytest.raises(ValueError, match="ATR hiện tại rác"):
+        compute_position_size(f_star=1.0, current_equity=1000.0, atr_hist_mean_pct=0.02, atr_current_pct=float("inf"))
+    with pytest.raises(ValueError, match="ATR lịch sử rác"):
+        compute_position_size(f_star=1.0, current_equity=1000.0, atr_hist_mean_pct=float("inf"), atr_current_pct=0.02)
+    with pytest.raises(ValueError, match="max_notional_cap phải > 0 và hợp lệ"):
+        compute_position_size(f_star=1.0, current_equity=1000.0, max_notional_cap=float("inf"))
+    print("✅ [ARMOR GUARD] Position Sizer chặn đứng Inf cho ATR/Cap PASSED!")
+

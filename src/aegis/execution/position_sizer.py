@@ -51,10 +51,10 @@ def compute_position_size(
     # [TẦNG 3]: VOLATILITY TARGETING (BÓP NGHẸT THIÊN NGA ĐEN)
     vol_multiplier = 1.0
     if atr_hist_mean_pct is not None and atr_current_pct is not None:
-        if atr_current_pct <= 0 or math.isnan(atr_current_pct):
-            raise ValueError("ATR hiện tại rác (<=0 hoặc NaN), dừng cấp vốn!")
-        if atr_hist_mean_pct <= 0 or math.isnan(atr_hist_mean_pct):
-            raise ValueError("ATR lịch sử rác, không có cơ sở tham chiếu!")
+        if atr_current_pct <= 0 or math.isnan(atr_current_pct) or math.isinf(atr_current_pct):
+            raise ValueError("ATR hiện tại rác (<=0, NaN hoặc Inf), dừng cấp vốn!")
+        if atr_hist_mean_pct <= 0 or math.isnan(atr_hist_mean_pct) or math.isinf(atr_hist_mean_pct):
+            raise ValueError("ATR lịch sử rác (<=0, NaN hoặc Inf), không có cơ sở tham chiếu!")
             
         # Tính Tỷ lệ Bóp nghẹt (Volatility Scaling Ratio)
         vol_ratio = atr_hist_mean_pct / atr_current_pct
@@ -67,8 +67,8 @@ def compute_position_size(
 
     # Trần tuyệt đối (nếu có)
     if max_notional_cap is not None:
-        if math.isnan(max_notional_cap) or max_notional_cap <= 0:
-            raise ValueError(f"max_notional_cap phải > 0, nhận {max_notional_cap}")
+        if math.isnan(max_notional_cap) or math.isinf(max_notional_cap) or max_notional_cap <= 0:
+            raise ValueError(f"max_notional_cap phải > 0 và hợp lệ, nhận {max_notional_cap}")
         size_notional = min(size_notional, max_notional_cap)
 
     return float(size_notional)

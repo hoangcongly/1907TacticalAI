@@ -33,3 +33,24 @@ def test_pnl_leverage_does_not_affect_normal_exit():
         "Đòn bẩy đã rò rỉ vào PnL lệnh thoát bình thường!"
     )
     print("✅ [QĐ #7] Leverage không ảnh hưởng PnL Normal PASSED!")
+
+
+def test_pnl_liquidation_does_not_double_count_funding():
+    """
+    [Issue #4 / QĐ #7] Kiểm chứng nhánh Liquidation KHÔNG trừ thêm funding_accrued_usd
+    để chống lỗi Đếm Kép (Double-Count) tiền Funding Fee đã bị trừ vào Ký quỹ trước khi thanh lý.
+    """
+    # Lệnh có funding_accrued_usd = 15.0 USD
+    res_with_funding = compute_realized_pnl(
+        entry_price=100.0, exit_price=90.0, side=1, size_notional=1000.0, leverage=10.0,
+        exit_reason="LIQUIDATION", funding_accrued_usd=15.0
+    )
+    res_no_funding = compute_realized_pnl(
+        entry_price=100.0, exit_price=90.0, side=1, size_notional=1000.0, leverage=10.0,
+        exit_reason="LIQUIDATION", funding_accrued_usd=0.0
+    )
+    assert res_with_funding["net_pnl"] == res_no_funding["net_pnl"], (
+        f"Lỗi Đếm Kép! Funding fee đã bị trừ lần hai vào nhánh Liquidation: {res_with_funding['net_pnl']} vs {res_no_funding['net_pnl']}"
+    )
+    print("✅ [Issue #4 / QĐ #7] Chống Đếm Kép Funding Fee nhánh Liquidation PASSED!")
+

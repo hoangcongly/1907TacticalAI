@@ -59,3 +59,19 @@ def test_log_trial_jsonl_io():
         assert isinstance(record1["env_versions"], dict)
         assert record1["params"] == params
         assert record1["metrics"] == metrics
+
+
+def test_log_trial_numpy_types():
+    """Kiểm tra khả năng serialize an toàn các scalar/array từ numpy mà không ném lỗi TypeError."""
+    import numpy as np
+    with tempfile.TemporaryDirectory() as tmpdir:
+        ExperimentTracker._instance = None
+        tracker = ExperimentTracker(log_dir=tmpdir)
+        
+        params = {"n_buckets": np.int64(10), "alpha": np.float64(0.05), "arr": np.array([1, 2])}
+        metrics = {"dsr": np.float64(1.8), "is_sig": np.bool_(True)}
+        
+        hash_res = tracker.log_trial(TrialClass.STRATEGY_SELECTION, params, metrics)
+        assert isinstance(hash_res, str) and len(hash_res) == 64
+        print("✅ [ExperimentTracker] Numpy types serialization PASSED!")
+

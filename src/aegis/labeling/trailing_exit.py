@@ -397,11 +397,215 @@ def simulate_trailing_exit_within_fold_bounds(
 
     return {
         "entry_idx": entry_idx,
+        "exit_idx": exit_idx_relative,
         "exit_idx_relative": exit_idx_relative,
         "exit_idx_absolute": exit_idx_absolute,
+        "reason": exit_result["reason"],
         "exit_reason": exit_result["reason"],
         "boundary_truncated": bool(exit_result["boundary_truncated"]),
     }
+
+
+# ============================================================================
+# [TASK B-1-7] PURE FUNCTION — RESOLVE ABSOLUTE EXIT INDEX
+# ============================================================================
+def resolve_absolute_exit_idx(entry_idx: int, exit_idx_relative: int) -> int:
+    """
+    Chuyển offset TƯƠNG ĐỐI (k, trả về từ compute_regime_aware_trailing_exit_v3,
+    tính từ nến kế tiếp sau entry_idx) sang chỉ số TUYỆT ĐỐI trên toàn bộ mảng dữ
+    liệu gốc. Công thức: exit_idx_absolute = entry_idx + 1 + exit_idx_relative.
+    """
+    return entry_idx + 1 + exit_idx_relative
+
+
+# ============================================================================
+# [TASK B-1-8] GLUE B-1-5 -> B-1-6 -> B-1-7 — RUN TRAILING EXIT FOR OOS EVENT
+# ============================================================================
+def run_trailing_exit_for_oos_event(
+    entry_idx: int,
+    entry_price: float,
+    test_window_end_idx: int,
+    p_i: float,
+    p_chop_i: float,
+    side_primary: int,
+    m_sl: float,
+    sigma: float,
+    c_trade_adj: float,
+    fade_enabled: bool,
+    fade_regime_gate_threshold: float,
+    full_highs: np.ndarray,
+    full_lows: np.ndarray,
+    full_atr: np.ndarray,
+    full_p_trend: np.ndarray,
+    t_max_live_follow: int = 120,
+    t_max_live_fade: int = 40,
+    leverage_requested: float = 10.0,
+    maintenance_margin_rate: float = 0.005,
+    fee_rate: float = 0.0004,
+    liquidation_fee_rate: float = 0.001,
+    **trailing_exit_kwargs,
+) -> dict | None:
+    """
+    [TASK B-1-8] Hàm glue nối 3 khâu: mô phỏng Trailing-Exit trong biên fold (B-1-5),
+    resolve tham số thực thi (B-1-6), và chuyển đổi chỉ số tuyệt đối (B-1-7).
+    """
+    from aegis.meta_labeling.sizing.trade_mode import resolve_trade_execution_params
+
+    # 1. resolved = resolve_trade_execution_params(...)
+    resolved = resolve_trade_execution_params(
+        p_i=p_i,
+        p_chop_i=p_chop_i,
+        entry_price=entry_price,
+        side_primary=side_primary,
+        m_sl=m_sl,
+        sigma=sigma,
+        c_trade_adj=c_trade_adj,
+        fade_enabled=fade_enabled,
+        fade_regime_gate_threshold=fade_regime_gate_threshold,
+        t_max_live_follow=t_max_live_follow,
+        t_max_live_fade=t_max_live_fade,
+        leverage_requested=leverage_requested,
+        maintenance_margin_rate=maintenance_margin_rate,
+        fee_rate=fee_rate,
+        liquidation_fee_rate=liquidation_fee_rate,
+    )
+
+    # 2. if resolved is None: return None
+    if resolved is None:
+        return None
+
+    # 3. exit_result = simulate_trailing_exit_within_fold_bounds(...)
+    exit_result = simulate_trailing_exit_within_fold_bounds(
+        entry_idx=entry_idx,
+        entry_price=entry_price,
+        side=resolved["side"],
+        trade_mode=resolved["mode"],
+        test_window_end_idx=test_window_end_idx,
+        full_highs=full_highs,
+        full_lows=full_lows,
+        full_atr=full_atr,
+        full_p_trend=full_p_trend,
+        sl_initial=resolved["sl_initial"],
+        liquidation_price=resolved["liquidation_price"],
+        t_max_live=resolved["t_max_live"],
+        **trailing_exit_kwargs,
+    )
+
+    # 4. if exit_result is None: return None
+    if exit_result is None:
+        return None
+
+    # 5. exit_idx_absolute = resolve_absolute_exit_idx(entry_idx, exit_result["exit_idx"])
+    rel_idx = int(exit_result.get("exit_idx", exit_result["exit_idx_relative"]))
+    exit_idx_absolute = resolve_absolute_exit_idx(entry_idx, rel_idx)
+    reason = exit_result.get("reason", exit_result["exit_reason"])
+
+    # 6. Trả về dict tuân thủ TRADE_RECORD_SCHEMA (bản ghi TẠM, chưa có realized_return)
+    return {
+        "entry_idx": entry_idx,
+        "entry_price": entry_price,
+        "p_i": p_i,
+        "p_chop_i": p_chop_i,
+        "mode": resolved["mode"],
+        "side": resolved["side"],
+        "sl_initial": resolved["sl_initial"],
+        "leverage_used": resolved["leverage_used"],
+        "liquidation_price": resolved["liquidation_price"],
+        "exit_idx_relative": rel_idx,
+        "exit_idx_absolute": exit_idx_absolute,
+        "exit_reason": reason,
+        "boundary_truncated": bool(exit_result["boundary_truncated"]),
+    }
+
+
+# ============================================================================
+# [TASK B-1-9] FINALIZE TRADE RECORD (STUB REALIZED PNL)
+# ============================================================================
+def finalize_trade_record(
+    partial_record: dict,
+    full_closes: np.ndarray,  # STUB: giá đóng cửa thô. Sẽ thay bằng fill_price thật ở B-8-4.
+    size_notional: float,
+    fee_entry_rate: float = 0.0004,
+    fee_exit_rate: float = 0.0004,
+    funding_accrued: float = 0.0,
+) -> dict:
+    """
+    [TASK B-1-9] Bước hoàn thiện bản ghi cuối cùng: gắn realized_return vào bản ghi tạm từ B-1-8.
+
+    # TODO(B-8-4): Thay full_closes[exit_idx_absolute] bằng fill_price thật lấy từ
+    # Module G Execution Simulator (simulate_market_fill / simulate_limit_fill_with_queue,
+    # có tính latency + square-root market impact). Interface exit_idx_absolute PHẢI
+    # giữ nguyên -- Module G cũng tra cứu theo đúng chỉ số này, không đổi.
+    """
+    from aegis.execution.pnl import compute_realized_pnl
+
+    # 1. entry_price = partial_record["entry_price"]
+    entry_price = float(partial_record["entry_price"])
+
+    # 2. exit_price_stub = full_closes[partial_record["exit_idx_absolute"]]
+    # PHẢI dùng đúng "exit_idx_absolute", TUYỆT ĐỐI KHÔNG dùng "exit_idx_relative"
+    exit_idx_abs = int(partial_record["exit_idx_absolute"])
+    exit_price_stub = float(full_closes[exit_idx_abs])
+
+    side = int(partial_record["side"])
+    leverage = float(partial_record["leverage_used"])
+    exit_reason = str(partial_record["exit_reason"])
+
+    # 3. Tính PnL theo nhánh
+    if exit_reason == "LIQUIDATION":
+        pnl = -(float(size_notional) / leverage) - float(funding_accrued)
+        fee_entry = float(size_notional) * float(fee_entry_rate)
+        fee_exit = 0.0
+        gross_pnl = -(float(size_notional) / leverage)
+    else:
+        pnl_res = compute_realized_pnl(
+            entry_price=entry_price,
+            exit_price=exit_price_stub,
+            side=side,
+            size_notional=size_notional,
+            leverage=leverage,
+            exit_reason=exit_reason,
+            fee_entry_rate=fee_entry_rate,
+            fee_exit_rate=fee_exit_rate,
+            funding_accrued_usd=funding_accrued,
+            is_notional_in_usd=True,
+        )
+        pnl = float(pnl_res["net_pnl"])
+        fee_entry = float(size_notional) * float(fee_entry_rate)
+        fee_exit = float(pnl_res["fee_paid"]) - fee_entry
+        if fee_exit < 0:
+            fee_exit = 0.0
+        gross_pnl = float(pnl_res["gross_pnl"])
+
+    # 4. realized_return = pnl / max(size_notional, 1e-8)
+    realized_return = pnl / max(float(size_notional), 1e-8)
+
+    # 5. Trả về dict đầy đủ tuân thủ TradeRecordSchema (Pandera)
+    return {
+        "schema_version": partial_record.get("schema_version", "1.0.0"),
+        "dataset_manifest_hash": partial_record.get("dataset_manifest_hash", "0" * 64),
+        "fold_id": partial_record.get("fold_id", None),
+        "symbol": partial_record.get("symbol", "UNKNOWN"),
+        "entry_idx": int(partial_record["entry_idx"]),
+        "entry_price": entry_price,
+        "p_i": float(partial_record["p_i"]),
+        "p_chop_i": float(partial_record["p_chop_i"]),
+        "mode": partial_record["mode"],
+        "side": side,
+        "sl_initial": float(partial_record["sl_initial"]),
+        "size_notional": float(size_notional),
+        "exit_idx_relative": int(partial_record.get("exit_idx_relative", partial_record.get("exit_idx"))),
+        "exit_idx_absolute": exit_idx_abs,
+        "exit_reason": exit_reason,
+        "fill_price_exit": exit_price_stub,
+        "boundary_truncated": bool(partial_record["boundary_truncated"]),
+        "fee_entry": float(fee_entry),
+        "fee_exit": float(fee_exit),
+        "funding_accrued": float(funding_accrued),
+        "gross_pnl": float(gross_pnl),
+        "realized_return": float(realized_return),
+    }
+
 
 
 

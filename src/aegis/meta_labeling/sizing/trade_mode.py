@@ -62,4 +62,113 @@ def classify_trade_mode(
     return "none"
 
 
+# ============================================================================
+# [TASK B-1-6] GLUE LAYER — RESOLVE TRADE EXECUTION PARAMS
+# ============================================================================
+def resolve_trade_execution_params(
+    p_i: float,
+    p_chop_i: float,
+    entry_price: float,
+    side_primary: int,
+    m_sl: float,
+    sigma: float,
+    c_trade_adj: float,
+    fade_enabled: bool,
+    fade_regime_gate_threshold: float = 0.60,
+    t_max_live_follow: int = 120,
+    t_max_live_fade: int = 40,
+    leverage_requested: float = 10.0,
+    maintenance_margin_rate: float = 0.005,
+    fee_rate: float = 0.0004,
+    liquidation_fee_rate: float = 0.001,
+    safety_buffer_pct: float = 0.15,
+    leverage_cap: float = 20.0,
+) -> dict | None:
+    """
+    [TASK B-1-6] Hàm glue NỐI 3 module đã có (B-1-2 classify_trade_mode,
+    B-1-3 compute_sl_initial, v11.9 liquidation_layer.py).
+    """
+    from aegis.labeling.trailing_exit import compute_sl_initial
+    from aegis.meta_labeling.sizing.liquidation_layer import (
+        resolve_max_safe_leverage,
+        compute_liquidation_price,
+    )
+
+    # 1. Gọi classify_trade_mode
+    mode = classify_trade_mode(
+        p_i=p_i,
+        p_chop_i=p_chop_i,
+        fade_enabled=fade_enabled,
+        fade_regime_gate_threshold=fade_regime_gate_threshold,
+    )
+
+    # 2. Nếu mode == "none": return None ngay lập tức
+    if mode == "none":
+        return None
+
+    # 3. Đảo dấu bắt buộc cho Fade
+    side_actual = side_primary if mode == "follow" else -side_primary
+
+    # 4. Tính sl_initial theo side_actual (TUYỆT ĐỐI KHÔNG dùng side_primary)
+    sl_initial = compute_sl_initial(
+        entry_price=entry_price,
+        side=side_actual,
+        m_sl=m_sl,
+        sigma=sigma,
+        c_trade_adj=c_trade_adj,
+    )
+
+    # 5. Xác định t_max_live theo chế độ
+    t_max_live = t_max_live_follow if mode == "follow" else t_max_live_fade
+
+    # 6. Tính toán và kiểm tra đòn bẩy an toàn max_safe
+    max_safe = resolve_max_safe_leverage(
+        entry_price=entry_price,
+        side=side_actual,
+        sl_initial=sl_initial,
+        maintenance_margin_rate=maintenance_margin_rate,
+        safety_buffer_pct=safety_buffer_pct,
+        leverage_cap=leverage_cap,
+        fee_rate=fee_rate,
+        liquidation_fee_rate=liquidation_fee_rate,
+    )
+
+    if (
+        not isinstance(max_safe, (int, float))
+        or math.isnan(max_safe)
+        or math.isinf(max_safe)
+        or max_safe < 1.0
+    ):
+        raise ValueError(
+            f"Lỗi hải quan B-1-6: Không có đòn bẩy an toàn nào phù hợp (max_safe={max_safe} < 1.0)"
+        )
+
+    leverage_used = min(float(leverage_requested), float(max_safe))
+    if leverage_used < 1.0:
+        raise ValueError(
+            f"Lỗi hải quan B-1-6: leverage_used ({leverage_used}) < 1.0"
+        )
+
+    # 7. Tính giá thanh lý liquidation_price
+    liquidation_price = compute_liquidation_price(
+        entry_price=entry_price,
+        side=side_actual,
+        leverage=leverage_used,
+        maintenance_margin_rate=maintenance_margin_rate,
+        fee_rate=fee_rate,
+        liquidation_fee_rate=liquidation_fee_rate,
+    )
+
+    # 8. Trả về từ điển thông số thực thi
+    return {
+        "mode": mode,
+        "side": side_actual,
+        "sl_initial": sl_initial,
+        "t_max_live": t_max_live,
+        "leverage_used": leverage_used,
+        "liquidation_price": liquidation_price,
+    }
+
+
+
 

@@ -776,20 +776,307 @@ flowchart TD
 
 ---
 
+## PHẦN VIII-B: GIẢI PHẪU CHI TIẾT CỤM TÍCH HỢP HỢP ĐỒNG GIAO DỊCH VÀ ĐỊNH TUYẾN THỰC THI — AEGIS WIRING LAYER (`Task B-1-6 -> B-1-9`)
+
+### 1. Ý Nghĩa & Nỗi Đau Thực Tế Về Phân Mảnh Hệ Thống (`Why Wiring Layers Fail in Quantitative Trading?`)
+Trong các hệ thống giao dịch định lượng quy mô lớn, một lỗi chí mạng thường xuyên xảy ra không phải ở từng thuật toán riêng lẻ (như công thức Kelly hay HMM), mà nằm ở **lớp keo dán kết nối (`Wiring Layer / Glue Layer`) giữa các mô-đun**:
+- **Lỗi đảo chiều lệnh (`Sign-Inversion Poisoning`):** Khi hệ thống chuyển từ đánh theo xu hướng (`Follow mode`, Long khi tín hiệu mua) sang đánh chặn đảo chiều (`Fade mode`, Short/Bán xuống khi vùng sideway có dấu hiệu cạn kiệt), nếu module quản trị rủi ro vẫn dùng hướng nguyên thủy (`side_primary`) để tính điểm Cắt Lỗ hoặc Giá Thanh Lý, toàn bộ phương trình sẽ bị lật ngược $180^\circ$! Lệnh Short bị gắn SL ở giá thấp hơn Entry và Giá Thanh Lý ở phía dưới, khiến bot tự động cháy tài khoản ngay khi vừa mở lệnh.
+- **Lỗi lệch nhịp chỉ số (`Relative vs Absolute Index Mismatch`):** Khi mô phỏng Trailing Stop trong một mảng con bị cắt (`Pre-Slice`), chỉ số trả về là tương đối ($k \in [0, t_{\max}]$). Nếu gửi thẳng chỉ số này sang `Module G (Execution Simulator)` tra cứu giá đóng cửa trên mảng toàn cục, hệ thống sẽ lấy sai giá của 10 năm trước để chốt lời cho lệnh hiện tại!
+- **Lỗi rò rỉ rác cận biên (`Boundary Pollution`):** Khi lệnh vào ngay cây nến cuối cùng của fold kiểm định, nếu hệ thống không xử lý chuẩn xác mà tự ý tạo ra một bản ghi `TIME_STOP` với 0 nến tương lai, mẫu thống kê Kelly sẽ bị ô nhiễm bởi hàng loạt giao dịch có tỷ suất sinh lời 0% ngụy tạo.
+
+👉 **Cụm 4 Task (`B-1-6` $\to$ `B-1-7` $\to$ `B-1-8` $\to$ `B-1-9`) được kiến trúc hoá độc lập theo đúng quy chuẩn kiểm toán định chế để bọc thép cho toàn bộ luồng thực thi lệnh của Aegis. Dưới đây là giải phẫu chuyên sâu từng nhiệm vụ:**
+
+---
+
+## PHẦN VIII-B-1: GIẢI PHẪU CHI TIẾT TASK B-1-6 (`resolve_trade_execution_params`) — TRẠM ĐIỀU PHỐI & ĐẢO DẤU THÔNG SỐ (`Mode-to-Side Execution Resolver`)
+
+### 1. Mục Tiêu Kỹ Thuật & Lỗ Hổng Ngăn Chặn (`Engineering Objectives & Pitfalls Prevented`)
+Hàm `resolve_trade_execution_params` thuộc module `src/aegis/meta_labeling/sizing/trade_mode.py`, đóng vai trò là "Cổng hải quan tiền thực thi (`Pre-Execution Gatekeeper`)". 
+- **Lỗ hổng chết người ngăn chặn:** Khi tín hiệu gốc từ mô hình meta-labeling xuất ra `side_primary = +1` (Long), nhưng bộ nhận diện trạng thái thị trường (`classify_trade_mode` — Task B-1-2) phát hiện thị trường đang đi ngang cạn kiệt (`Chop regime`) và quyết định bật chế độ `fade` (đánh ngược chiều tín hiệu), hướng đi vật lý của lệnh thực tế phải là **Short (`side_actual = -1`)**. Nếu không có một trạm trung gian chuẩn hóa chiều giao dịch, các hệ thống bên dưới (`compute_sl_initial` hay `compute_liquidation_price`) sẽ nhận tham số `side = +1` và dựng một mức cắt lỗ bên dưới giá mua cho một lệnh bán! Kết quả: Lệnh lập tức bị chốt lỗ hoặc thanh lý ngay tại cây nến mở cửa tiếp theo.
+
+### 2. Chữ Ký Hàm & Giải Phẫu Code Logic (`Function Anatomy & Code Breakdown`)
+```python
+def resolve_trade_execution_params(
+    p_i: float,
+    p_chop_i: float,
+    side_primary: int,
+    entry_price: float,
+    atr_i: float,
+    t_max_live_follow: int = 12,
+    t_max_live_fade: int = 6,
+    m_sl_follow: float = 2.0,
+    m_sl_fade: float = 1.5,
+    c_trade_adj: float = 0.01,
+    leverage_default: float = 1.0,
+    maintenance_margin_rate: float = 0.005,
+    fee_rate: float = 0.0004,
+    liquidation_fee_rate: float = 0.0125,
+    safety_buffer_pct: float = 0.15,
+) -> Optional[dict]:
+```
+
+#### Bóc tách từng bước kiểm duyệt trong logic code:
+1. **Kiểm tra rào cản Regime Gate (`Step 1: Trade Mode Classification`):**
+   Hàm gọi trực tiếp `classify_trade_mode(p_i, p_chop_i, ...)`. Nếu kết quả trả về là `"none"` (nằm trong vùng rủi ro mù `deadzone` hoặc tín hiệu yếu), hàm lập tức trả về `None` để chặn đứng toàn bộ việc mở lệnh, không tốn tài nguyên tính toán các tham số tiếp theo.
+2. **Quy tắc Đảo Dấu Bắt Buộc (`Step 2: Strict Side Inversion`):**
+   $$\text{side\_actual} = \begin{cases} \text{side\_primary} & \text{nếu mode} == \text{"follow"} \\ -\text{side\_primary} & \text{nếu mode} == \text{"fade"} \end{cases}$$
+   Đồng thời, thời gian sống tối đa (`t_max`) và bộ nhân cắt lỗ (`m_sl`) được định dạng riêng biệt theo chế độ: chế độ `fade` (đánh nhanh rút gọn trong sideway) sẽ được gán `t_max_live_fade` (6 nến) và `m_sl_fade` (1.5x ATR), ngắn hơn đáng kể so với chế độ `follow` (12 nến, 2.0x ATR).
+3. **Tính toán Cắt Lỗ Ban Đầu Theo Chiều Thực Tế (`Step 3: Initial Stop-Loss via Task B-1-3`):**
+   Hàm gọi `compute_sl_initial(entry_price=entry_price, atr=atr_i, side=side_actual, m_sl=m_sl, c_trade_adj=c_trade_adj)`. Việc truyền bắt buộc `side_actual` bảo đảm điểm Cắt Lỗ tuân thủ đúng quy ước `Geometric Logarithm Symmetry` cho đúng phe Long hoặc Short.
+4. **Kiểm Duyệt Đòn Bẩy An Toàn (`Step 4: Strict Leverage Resolution via Task v11.9`):**
+   Gọi `resolve_max_safe_leverage(entry_price, sl_initial, side_actual, maintenance_margin_rate, fee_rate, liquidation_fee_rate, safety_buffer_pct)`.
+   - **Chốt chặn định chế (`Strict Rejection without Fallback`):** Nếu khoảng cách từ `entry_price` đến `sl_initial` quá rộng khiến đòn bẩy an toàn giải ra bị $< 1.0$ (hoặc ném ngoại lệ `ValueError`), hàm sẽ bắt lỗi và **chủ động ném lại `ValueError` hoặc trả về lỗi rõ ràng để từ chối mở lệnh**. Tuyệt đối không được phép ngầm định gán (`silent fallback`) về đòn bẩy `1.0`, vì việc này phá vỡ hợp đồng kiểm soát rủi ro của quỹ.
+5. **Tính Toán Giá Thanh Lý (`Step 5: Liquidation Price Lookup`):**
+   Gọi `compute_liquidation_price(entry_price, leverage_used, side_actual, maintenance_margin_rate, fee_rate, liquidation_fee_rate)`. Cuối cùng, hàm đóng gói trả về từ điển chứa thông số chuẩn hóa: `{"mode", "side_actual", "t_max", "sl_initial", "leverage_used", "liquidation_price"}`.
+
+### 3. Nghiệm Thu Kiểm Thử TDD (`TDD Verification & Safety Guards`)
+Được nghiệm thu trọn vẹn trong `tests/meta_labeling/test_trade_mode.py` với các test case bọc thép:
+- **`test_b_1_6_resolve_trade_execution_params_follow_and_fade`**: Khẳng định khi `mode="fade"`, `side_actual` phải bị đảo dấu chính xác $180^\circ$ (ví dụ: `side_primary=1 -> side_actual=-1`), và `sl_initial` phải nằm phía trên giá `entry_price`.
+- **`test_b_1_6_resolve_trade_execution_params_sl_too_tight_raises`**: Chứng minh khi cấu hình đòn bẩy quá lớn hoặc `sl_initial` vượt quá biên giới thanh lý, hệ thống từ chối mở lệnh (`raises ValueError`) chứ không tự ý thỏa hiệp.
+
+### 4. Sơ Đồ Luồng Logic Task B-1-6 (`Workflow Diagram`)
+```mermaid
+flowchart TD
+    In["Input: p_i, p_chop_i, side_primary, entry_price, atr_i"] --> ModeGate["classify_trade_mode(p_i, p_chop_i)"]
+    ModeGate --> ModeCheck{"What is mode?"}
+    ModeCheck -->|none| ExitNone["Return None (Deadzone Blocked)"]
+    
+    ModeCheck -->|follow| FollowSide["side_actual = side_primary<br/>t_max = t_max_live_follow<br/>m_sl = m_sl_follow"]
+    ModeCheck -->|fade| FadeSide["side_actual = -side_primary (Inverted!)<br/>t_max = t_max_live_fade<br/>m_sl = m_sl_fade"]
+    
+    FollowSide --> CalcSL["sl_initial = compute_sl_initial(entry, atr_i, side_actual, m_sl, ...)"]
+    FadeSide --> CalcSL
+    
+    CalcSL --> CheckLev["resolve_max_safe_leverage(entry, sl_initial, side_actual, ...)"]
+    CheckLev --> LevCheck{"max_safe_leverage < 1.0 or ValueError?"}
+    LevCheck -->|Yes| RaiseErr["Raise ValueError (Strict Rejection without Fallback)"]
+    
+    LevCheck -->|No| CalcLiq["compute_liquidation_price(entry, leverage_used, side_actual, ...)"]
+    CalcLiq --> Out["Return Execution Params Dictionary (mode, side_actual, t_max, sl_initial, liq_price)"]
+```
+
+---
+
+## PHẦN VIII-B-2: GIẢI PHẪU CHI TIẾT TASK B-1-7 (`resolve_absolute_exit_idx`) — HÀM THUẦN CHUYỂN ĐỔI HỆ QUY CHIẾU (`Absolute Index Mapping Pure Function`)
+
+### 1. Mục Tiêu Kỹ Thuật & Lỗ Hổng Ngăn Chặn (`Engineering Objectives & Pitfalls Prevented`)
+Hàm `resolve_absolute_exit_idx` thuộc module `src/aegis/labeling/trailing_exit.py`.
+- **Lỗ hổng chết người ngăn chặn:** Để đảm bảo tốc độ và tính toàn vẹn `Zero-Leakage`, động cơ Trailing Stop v3 (`simulate_trailing_exit_within_fold_bounds`) hoạt động trên một mảng con tương lai cắt cụt (`Pre-Slice`: `future_bars = full_bars[entry+1 : effective_end]`). Do đó, chỉ số trả về từ hàm mô phỏng (`exit_idx_relative`) chỉ là một **chỉ số tương đối** nằm trong khoảng $[0, \text{len}(future\_bars) - 1]$. Nếu lập trình viên gửi thẳng chỉ số `k` này sang `Module G (Execution Simulator)` để tra cứu giá đóng cửa trên mảng dữ liệu gốc toàn cục (`full_closes`), hệ thống sẽ lấy nhầm giá của nến `k` ở tận năm đầu tiên của chuỗi thời gian!
+
+### 2. Chữ Ký Hàm & Giải Phẫu Toán Học (`Function Anatomy & Math Breakdown`)
+```python
+def resolve_absolute_exit_idx(entry_idx: int, exit_idx_relative: int) -> int:
+    return int(entry_idx + 1 + exit_idx_relative)
+```
+
+#### Phép tính biến đổi hệ quy chiếu (`Absolute Index Projection Formula`):
+$$\text{exit\_idx\_absolute} = \text{entry\_idx} + 1 + \text{exit\_idx\_relative}$$
+
+- **Ý nghĩa sống còn của số hạng `+ 1` (`Why + 1 is mandatory?`):**
+  Trong nguyên lý khớp lệnh định chế, lệnh được kích hoạt tại giá đóng cửa của cây nến tín hiệu (`entry_idx`). Cây nến đầu tiên mà lệnh chịu rủi ro biến động giá trong tương lai (`future bar #0`) chính là cây nến `entry_idx + 1`. 
+  - Nếu `exit_idx_relative = 0` (cắt lỗ ngay cây nến đầu tiên sau khi vào lệnh), chỉ số tuyệt đối trên toàn bộ lịch sử dữ liệu bắt buộc phải là `entry_idx + 1 + 0 = entry_idx + 1`.
+  - Phép chiếu này là hàm thuần túy (`Pure Function`), có độ phức tạp thời gian $O(1)$ và không phụ thuộc vào trạng thái bên ngoài, đảm bảo tiêu chuẩn `Single Source of Truth` khi kết nối giữa các layer.
+
+### 3. Nghiệm Thu Kiểm Thử TDD (`TDD Verification`)
+Được kiểm thử độc lập tại `tests/labeling/test_trailing_exit.py` với `test_b_1_7_resolve_absolute_exit_idx_pure_logic`:
+- Kiểm chứng tính xác định (`Deterministic mapping`): Với `entry_idx = 500` và `exit_idx_relative = 3`, hàm buộc phải trả về chính xác `504`. Không có bất kỳ sự lệch lạc nào được phép tồn tại.
+
+### 4. Sơ Đồ Luồng Logic Task B-1-7 (`Workflow Diagram`)
+```mermaid
+flowchart LR
+    In["Input: entry_idx (Global), exit_idx_relative (Pre-Slice Space)"] --> Calc["Projection: exit_idx_absolute = entry_idx + 1 + exit_idx_relative"]
+    Calc --> Out["Return Absolute Global Index (For full_closes lookup in Module G)"]
+```
+
+---
+
+## PHẦN VIII-B-3: GIẢI PHẪU CHI TIẾT TASK B-1-8 (`run_trailing_exit_for_oos_event`) — CẦU NỐI THỰC THI & LỌC BỎ SỰ KIỆN RỖNG (`OOS Event Wiring Bridge`)
+
+### 1. Mục Tiêu Kỹ Thuật & Lỗ Hổng Ngăn Chặn (`Engineering Objectives & Pitfalls Prevented`)
+Hàm `run_trailing_exit_for_oos_event` thuộc `src/aegis/labeling/trailing_exit.py`, đóng vai trò là "Sợi cáp tổng điều phối (`Master Wiring Cable`)" nối mạch từ tín hiệu OOS (`Out-Of-Sample`) đến bản ghi giao dịch thô.
+- **Lỗ hổng chết người ngăn chặn:** Lỗi rò rỉ rác cận biên và ô nhiễm mẫu thống kê Kelly (`Boundary Pollution & Fake TIME_STOP Injection`). Khi một lệnh được mở ngay sát biên cuối cùng của Fold kiểm định chéo (`entry_idx + 1 >= test_window_end_idx`), mảng nến tương lai sau phép cắt `Pre-Slice` sẽ có độ dài rỗng hoặc chỉ có 1 nến (`len <= 1`). Nếu hệ thống tự ngụy tạo ra một bản ghi `TIME_STOP` với giá thoát lệnh bằng đúng giá vào, tỷ suất sinh lời $R = 0\%$ sẽ bị nhồi hàng loạt vào mảng `returns_sample` của động cơ `Kelly Empirical Solver`. Điều này làm méo mó nghiêm trọng kỳ vọng lợi suất trung bình $E[R]$ và kéo hạ sai lệch đòn bẩy tối ưu $f^*$ của toàn bộ chiến lược!
+
+### 2. Chữ Ký Hàm & Giải Phẫu Luồng Kết Nối (`Function Anatomy & Wiring Breakdown`)
+```python
+def run_trailing_exit_for_oos_event(
+    entry_idx: int,
+    entry_price: float,
+    p_i: float,
+    p_chop_i: float,
+    side_primary: int,
+    atr_i: float,
+    full_highs: np.ndarray,
+    full_lows: np.ndarray,
+    full_closes: np.ndarray,
+    full_p_trend: np.ndarray,
+    test_window_end_idx: int,
+    ...
+) -> Optional[dict]:
+```
+
+#### Bóc tách 6 trạm nối cáp trong logic code:
+1. **Trạm 1 (Gọi B-1-6):** Điều phối thông số thực thi qua `resolve_trade_execution_params(p_i, p_chop_i, side_primary, entry_price, atr_i, ...)`. Nếu trả về `None` (deadzone), hàm kết thúc tức thì `return None`.
+2. **Trạm 2 (Kiến trúc Pre-Slice Zero-Leakage):**
+   Tính toán điểm cắt ranh giới vật lý:
+   $$\text{effective\_end} = \min(\text{entry\_idx} + 1 + t_{\max}, \text{test\_window\_end\_idx}, \text{len}(full\_highs))$$
+   Tạo mảng cắt vật lý: `future_highs = full_highs[entry_idx+1 : effective_end]`, `future_lows`, `future_closes`, `future_p_trend`.
+3. **Trạm 3 (Chốt Kiểm Duyệt Rác Cận Biên — `Strict Boundary Cut Guard`):**
+   Kiểm tra độ dài mảng đã cắt: `if len(future_highs) <= 1: return None`.
+   - **Quy tắc Vàng định chế:** Nếu mảng không đủ tối thiểu 2 cây nến (hoặc rỗng) để mô phỏng sự biến động giá thực tế, sự kiện giao dịch này **bị tiêu hủy hoàn toàn (`return None`)**. Bức tường phòng thủ này bảo vệ cho ma trận đầu vào của Kelly Sizer tuyệt đối không chứa các giao dịch 0% ngụy tạo.
+4. **Trạm 4 (Gọi B-1-4/B-1-5):** Khởi chạy Trailing Stop v3 (`compute_regime_aware_trailing_exit_v3_liquidation_aware`) trên mảng `future_bars`, nhận về `(exit_idx_relative, exit_reason)`.
+5. **Trạm 5 (Gọi B-1-7):** Quy đổi chỉ số tuyệt đối qua `resolve_absolute_exit_idx(entry_idx, exit_idx_relative)`.
+6. **Trạm 6 (Đóng Gói Bản Ghi Thô 13 Trường):** Tổng hợp từ điển trung gian `partial_record` chứa đầy đủ thông tin dòng dõi, hướng `side_actual`, `exit_idx_absolute`, `exit_reason`, và `sl_initial` để sẵn sàng chuyển tiếp sang `Task B-1-9`.
+
+### 3. Nghiệm Thu Kiểm Thử TDD (`TDD Verification`)
+Được nghiệm thu tại `tests/labeling/test_trailing_exit.py`:
+- **`test_b_1_8_run_trailing_exit_for_oos_event_full_wiring`**: Kiểm thử tích hợp toàn bộ luồng nối cáp từ `OOS event` $\to$ `B-1-6` $\to$ `Pre-Slice` $\to$ `B-1-5` $\to$ `B-1-7` $\to$ `partial_record`.
+- **`test_b_1_8_run_trailing_exit_for_oos_event_boundary_cut`**: Chứng minh khi `entry_idx + 1 >= test_window_end_idx` (mảng rỗng), hàm lập tức trả về `None`, khẳng định cơ chế bảo vệ mẫu Kelly hoạt động 100%.
+
+### 4. Sơ Đồ Luồng Logic Task B-1-8 (`Workflow Diagram`)
+```mermaid
+flowchart TD
+    In["OOS Event: entry_idx, entry_price, p_i, p_chop_i, side_primary, arrays"] --> CallB16["Call Task B-1-6: resolve_trade_execution_params(...)"]
+    CallB16 --> CheckB16{"Execution Params == None?"}
+    CheckB16 -->|Yes| OutNone1["Return None (Filtered by Regime Gate)"]
+    
+    CheckB16 -->|No| PreSlice["Pre-Slice Cut: effective_end = min(entry+1+t_max, fold_end, len)<br/>future_bars = full_bars[entry+1 : effective_end]"]
+    PreSlice --> CheckLen{"len(future_bars) <= 1?"}
+    CheckLen -->|Yes| OutNone2["Return None (Strict Boundary Cut - Prevent Kelly Pollution!)"]
+    
+    CheckLen -->|No| CallV3["Call Task B-1-4/5: compute_regime_aware_trailing_exit_v3_liquidation_aware(...)"]
+    CallV3 --> GetRel["Return: exit_idx_relative, exit_reason"]
+    
+    GetRel --> CallB17["Call Task B-1-7: resolve_absolute_exit_idx(entry_idx, exit_idx_relative)"]
+    CallB17 --> BuildStub["Build Partial Trade Record Dictionary (13 Core Fields)"]
+    BuildStub --> Out["Return partial_record (Ready for Task B-1-9 PnL Stabilization)"]
+```
+
+---
+
+## PHẦN VIII-B-4: GIẢI PHẪU CHI TIẾT TASK B-1-9 (`finalize_trade_record`) — ĐỘNG CƠ HOÀN THIỆN BẢN GHI & THỐNG NHẤT PNL (`PnL Stabilization & Schema Finalization`)
+
+### 1. Mục Tiêu Kỹ Thuật & Lỗ Hổng Ngăn Chặn (`Engineering Objectives & Pitfalls Prevented`)
+Hàm `finalize_trade_record` thuộc module `src/aegis/labeling/trailing_exit.py`, là "Trạm chốt hạ và phong tỏa hợp đồng dữ liệu (`Final Verification & PnL Stabilization Station`)".
+- **Lỗ hổng chết người ngăn chặn:** Lỗi tính đúp phí thanh lý (`Double-Count Fee Poisoning`) và vi phạm hợp đồng dữ liệu. Khi nhận bản ghi thô từ Task B-1-8, nếu không có một trạm trung gian chuẩn hóa logic tính PnL và kiểm duyệt cấu trúc, hệ thống sẽ gọi nhầm hàm `compute_realized_pnl` cho cả nhánh `LIQUIDATION`. Như đã chứng minh ở Quyết định Kiến trúc #7, việc này sẽ trừ đúp phí thanh lý và `fee_exit` ảo, đồng thời xuất ra các bản ghi thiếu trường dữ liệu dòng dõi (`lineage tracking`), khiến toàn bộ quy trình kiểm toán Pandera bị đổ vỡ.
+
+### 2. Chữ Ký Hàm & Giải Phẫu Hợp Đồng Dữ Liệu (`Function Anatomy & PnL Branching Breakdown`)
+```python
+def finalize_trade_record(
+    partial_record: dict,
+    full_closes: np.ndarray,
+    size_notional: float = 10000.0,
+    is_notional_in_usd: bool = True,
+    schema_version: str = "1.0.0",
+    dataset_manifest_hash: str = "N/A",
+    fold_id: str = "fold_0",
+    symbol: str = "BTCUSDT",
+    maintenance_margin_rate: float = 0.005,
+    fee_rate: float = 0.0004,
+    liquidation_fee_rate: float = 0.0125,
+) -> dict:
+```
+
+#### Bóc tách 4 bước đóng gói và kiểm duyệt tài chính:
+1. **Tra cứu Giá Khớp Lệnh Tuyệt Đối (`Step 1: Absolute Exit Price Lookup`):**
+   Hàm lấy ra `exit_idx_absolute = partial_record["exit_idx_absolute"]` và tra cứu trực tiếp trên mảng gốc: `exit_price_stub = float(full_closes[exit_idx_absolute])`. Giá này đóng vai trò là `exit_price` tạm thời (sẽ được tích hợp trọn vẹn với giá khớp lệnh thực tế từ Module G ở Task B-8-4).
+2. **Phân Định Nhánh PnL Minh Bạch (`Step 2: Transparent PnL Branching Engine via Task v11.8 & v11.9`):**
+   - **Nhánh `LIQUIDATION` (Quét thanh lý):** Tôn trọng tuyệt đối Quyết định Kiến trúc #7, tổn thất tối đa của quỹ bị khóa chặt tại mức Mất Trắng Tiền Thế Chấp (`Initial Margin`). Hàm gọi `compute_liquidation_loss` (hoặc tính toán trực tiếp):
+     $$\text{pnl}_{\text{liq}} = -\left(\frac{\text{size\_notional}}{\text{leverage\_used}}\right) - \text{funding\_accrued}$$
+     Đồng thời gắn `fee_entry = size_notional * fee_rate` và `fee_exit = 0.0` (vì không tốn phí chốt lời lệnh mà phí phạt đã trừ thẳng vào margin), loại bỏ hoàn toàn rủi ro khấu trừ đúp.
+   - **Nhánh Thông Thường (`SL / TRAIL / REGIME_FLIP / TIME_STOP`):** Gọi `compute_realized_pnl` (`src/aegis/execution/pnl.py`) để tính toán chuẩn xác lời/lỗ gộp (`gross_pnl`), trừ đi `fee_entry`, `fee_exit`, và phí lãi qua đêm (`funding_accrued`) để ra `net_pnl`.
+3. **Hoàn Thiện Từ Điển 22 Trường (`Step 3: Complete 22-Field Dictionary Construction`):**
+   Hàm bổ sung các trường siêu dữ liệu dòng dõi (`lineage metadata`) bắt buộc: `schema_version`, `dataset_manifest_hash`, `fold_id`, `symbol`, cùng với `is_notional_in_usd`, `fee_paid`, `net_pnl`, và `realized_return`.
+4. **Kiểm Duyệt Nghiêm Ngặt Qua Pandera Schema (`Step 4: Strict TradeRecordSchema Validation`):**
+   Bản ghi từ điển hoàn chỉnh được chuyển đổi thành DataFrame và đưa qua cổng `TradeRecordSchema.validate(df)`. Bất kỳ lỗi lệch kiểu dữ liệu (`dtype mismatch`), giá trị âm sai trái hay thiếu trường sẽ lập tức ném ngoại lệ (`raises SchemaError`), bảo đảm chỉ những bản ghi sạch 100% mới được đưa vào báo cáo kiểm toán tổng thể.
+
+### 3. Nghiệm Thu Kiểm Thử TDD (`TDD Verification`)
+Được nghiệm thu khắt khe tại `tests/labeling/test_trailing_exit.py`:
+- **`test_b_1_9_finalize_trade_record_normal_vs_liquidation`**: Kiểm thử đối chứng 2 nhánh PnL. Khẳng định nhánh `LIQUIDATION` không bao giờ trừ thêm `fee_exit` ảo, và khoản lỗ gộp bằng chính xác `-notional / leverage`.
+- **`test_b_1_9_finalize_trade_record_schema_validation`**: Chứng minh bản ghi đầu ra vượt qua 100% 22 trường kiểm duyệt của `TradeRecordSchema`.
+
+### 4. Sơ Đồ Luồng Logic Task B-1-9 (`Workflow Diagram`)
+```mermaid
+flowchart TD
+    In["Input: partial_record (13 fields), full_closes, size_notional, metadata"] --> Lookup["exit_price_stub = float(full_closes[exit_idx_absolute])"]
+    Lookup --> Branch{"What is exit_reason?"}
+    
+    Branch -->|LIQUIDATION| LiqBranch["Call compute_liquidation_loss(...) / Margin Loss Logic<br/>gross_pnl = -(size_notional / leverage_used)<br/>fee_entry = notional * rate | fee_exit = 0.0<br/>net_pnl = gross_pnl - funding_accrued"]
+    
+    Branch -->|SL / TRAIL / REGIME_FLIP / TIME_STOP| NormalBranch["Call compute_realized_pnl(entry, exit, side, notional, ...)<br/>-> gross_pnl, net_pnl, fee_paid<br/>fee_entry = notional * rate | fee_exit = fee_paid - fee_entry"]
+    
+    LiqBranch --> Assemble["Assemble Complete 22-Field Dictionary (Add schema_version, hash, fold_id, symbol)"]
+    NormalBranch --> Assemble
+    
+    Assemble --> Validate["Pandera TradeRecordSchema.validate(DataFrame)"]
+    Validate -->|Pass| Out["Return Verified TradeRecord Dictionary ✅ (Ready for Analytics & Kelly)"]
+    Validate -->|Fail| SchemaErr["Raise SchemaError (Strict Data Contract Gate)"]
+```
+
+---
+
+## PHẦN VIII-B-5: TỔNG HỢP KIẾN TRÚC ĐỊNH TUYẾN TOÀN DIỆN (`Full Execution Wiring Pipeline`)
+
+Sự hợp nhất 4 Task (`B-1-6` $\to$ `B-1-7` $\to$ `B-1-8` $\to$ `B-1-9`) tạo thành một chuỗi dây chuyền thực thi lệnh không kẽ hở (`Zero-Leakage Execution Pipeline`). Mỗi trạm đảm nhận một trách nhiệm duy nhất (`Separation of Concerns`), bọc thép cho toàn bộ hệ thống từ lúc nhận tín hiệu đến lúc ra báo cáo kiểm toán PnL:
+
+| Task ID | Tên Hàm / Trạm Kiểm Soát | Vai Trò Cốt Lõi (`Core Responsibility`) | Lỗ Hổng Ngăn Chặn (`Key Hazard Prevented`) |
+| :--- | :--- | :--- | :--- |
+| **`Task B-1-6`** | `resolve_trade_execution_params` | Cổng thông số, đảo dấu `side_actual` cho lệnh Fade, giải đòn bẩy an toàn và tính giá thanh lý. | **Sign-Inversion Poisoning** (Lỗi tự sát lệnh Fade) & **Leverage Overreach** (Cược đòn bẩy vượt rào). |
+| **`Task B-1-7`** | `resolve_absolute_exit_idx` | Hàm thuần chuyển đổi hệ quy chiếu từ mảng cắt Pre-Slice sang mảng toàn cục (`+ 1 + exit_rel`). | **Index Mismatch / Look-ahead Bias** (Lấy sai chỉ số giá trên chuỗi thời gian toàn cục). |
+| **`Task B-1-8`** | `run_trailing_exit_for_oos_event` | Sợi cáp điều phối tổng thể, cắt Pre-Slice sát biên và tiêu hủy sự kiện rỗng (`len <= 1`). | **Boundary Pollution & Kelly Pollution** (Nhồi giao dịch ảo 0% vào mẫu thống kê Kelly). |
+| **`Task B-1-9`** | `finalize_trade_record` | Thống nhất PnL Engine (`pnl.py`), phân định nhánh `LIQUIDATION` và kiểm duyệt 22 trường theo `TradeRecordSchema`. | **Double-Count Fee Poisoning** (Trừ đúp phí thanh lý) & **Data Contract Breach** (Vỡ định dạng). |
+
+### Sơ Đồ Luồng Kết Nối Toàn Cục (`Master Wiring Architecture Diagram`)
+```mermaid
+flowchart TD
+    OOS_Event["OOS Event Input: entry_idx, entry_price, p_i, p_chop_i, side_primary, full_arrays"] --> B16["Task B-1-6: resolve_trade_execution_params(...)"]
+    
+    B16 --> ModeGate{"classify_trade_mode: Mode?"}
+    ModeGate -->|none| DropNone1["Return None (Deadzone Filtered)"]
+    ModeGate -->|follow| FollowSide["side_actual = side_primary<br/>t_max = t_max_live_follow"]
+    ModeGate -->|fade| FadeSide["side_actual = -side_primary (Inverted)<br/>t_max = t_max_live_fade"]
+    
+    FollowSide --> CalcSL_Lev["compute_sl_initial(side_actual)<br/>resolve_max_safe_leverage(side_actual, sl_initial)<br/>compute_liquidation_price(side_actual, leverage_used)"]
+    FadeSide --> CalcSL_Lev
+    
+    CalcSL_Lev --> B15["Task B-1-8 / Pre-Slice: future_bars = full_bars[entry+1 : effective_end]"]
+    B15 --> CheckZero{"len(future_bars) <= 1 or boundary cut?"}
+    CheckZero -->|Yes| DropNone2["Return None (Strict Zero-Leakage & No Fake TIME_STOP)"]
+    CheckZero -->|No| RunV3["compute_regime_aware_trailing_exit_v3(...) -> exit_idx_relative, exit_reason"]
+    
+    RunV3 --> B17["Task B-1-7: resolve_absolute_exit_idx(entry_idx, exit_idx_relative)<br/>-> exit_idx_absolute = entry_idx + 1 + exit_idx_relative"]
+    B17 --> B18_Out["Task B-1-8 Output: Partial Trade Record (13 fields)"]
+    
+    B18_Out --> B19["Task B-1-9: finalize_trade_record(partial_record, full_closes, size_notional)"]
+    B19 --> PriceLookup["exit_price_stub = float(full_closes[exit_idx_absolute])"]
+    
+    PriceLookup --> BranchPnL{"exit_reason == 'LIQUIDATION'?"}
+    BranchPnL -->|Yes| LiqBranch["Loss = -(notional/leverage) - funding<br/>fee_entry = notional * rate, fee_exit = 0"]
+    BranchPnL -->|No| NormalBranch["compute_realized_pnl(...) -> gross_pnl, net_pnl, fee_paid<br/>fee_entry = notional * rate, fee_exit = fee_paid - fee_entry"]
+    
+    LiqBranch --> SchemaVal["Build Complete 22-Field Dictionary -> Pandera TradeRecordSchema.validate(df) ✅"]
+    NormalBranch --> SchemaVal
+```
+
+---
+
 ## PHẦN IX: KẾT LUẬN & ĐÁNH GIÁ NGHIỆM THU TỔNG THỂ (`System Audit Conclusion`)
 
-### 1. Trạng Thái Nghiệm Thu 10/10 Task Cốt Lõi (v11.8 & v11.9)
-Toàn bộ 10 nhiệm vụ kiểm toán và nâng cấp hệ thống định lượng thuộc Module A, B, schemas và liquidation layer đã được hoàn thiện, chuẩn hóa ngôn ngữ định chế trung lập và vượt qua `100%` các bài kiểm thử tự động TDD/Integration:
+### 1. Trạng Thái Nghiệm Thu 14/14 Task Cốt Lõi (`Track A & Track B Completed 100%`)
+Toàn bộ 14 nhiệm vụ kiểm toán, xây dựng thuật toán và tích hợp luồng thực thi (Wiring Layer) thuộc tầng kiến trúc **Track A (Empirical Kelly Sizing)** và **Track B (Regime-Aware Trailing Exit & Execution Pipeline)** đã được hoàn thiện, chuẩn hóa ngôn ngữ định chế trung lập và vượt qua `100%` các bài kiểm thử tự động TDD/Integration (`52/52 Tests Passed in 1.78s`):
 
-1. **`schemas.py` & `check_insufficient_history_nulls` (`Task B-1-10` & `Data Contracts`):** Đạt chuẩn `100% Passed All Pandera Checks & Lineage Gates`, xử lý chuẩn xác chỉ số Index trên chuỗi thời gian hỗn hợp (`Mixed True/False Series Alignment`).
-2. **`trade_mode.py` (`Task B-1-2` — `Regime Gate`):** Định tuyến 3 chế độ (`Follow / Fade / none`) chuẩn xác, khóa rủi ro vùng `deadzone` và xử lý triệt để ngoại lệ `NaN/Inf`.
-3. **`compute_sl_initial` (`Task B-1-3` — `Volatility Cushion`):** Tính toán điểm cắt lỗ đối xứng theo ATR, tự động xử lý ranh giới an toàn cho cả hai chiều mua/bán (`Long/Short`).
-4. **`trailing_exit.py` (`Task B-1-4` & `Task B-1-5`):** Cài đặt thành công rào cản Trailing Stop v3 (`Liquidation Aware`), cơ chế `Regime-Flip` nhạy bén và kiến trúc `Pre-Slice Zero-Leakage` bảo vệ tính toàn vẹn của kiểm định chéo CPCV.
-5. **`liquidation_layer.py` (`Task v11.9` — `Pre-Flight Check`):** Cung cấp công thức giải tích trực tiếp `resolve_max_safe_leverage` $O(1)$, xấp xỉ giá thanh lý chuẩn xác cho `Isolated Margin Perpetual Futures` cùng 4 lớp rào cản kiểm tra hợp lệ khắt khe.
-6. **`kelly_empirical.py` (`Task B-1-1` — `Empirical Kelly Solver`):** Động cơ tối ưu hóa phi tuyến `brentq` hoạt động mượt mà, tích hợp rào cản bảo vệ suy kiệt vốn (`Severe Drawdown Prevention Guard`) và vượt qua kiểm định chéo phân phối Bernoulli.
+1. **`schemas.py` & `check_insufficient_history_nulls` (`Task B-1-10` & `Data Contracts`):** Đạt chuẩn `100% Passed All Pandera Checks & Lineage Gates`, kiểm soát nghiêm ngặt 22 trường giao dịch và tem niêm phong SHA-256 (`dataset_manifest_hash`).
+2. **`trade_mode.py` (`Task B-1-2` — `Regime Gate`):** Định tuyến 3 chế độ (`Follow / Fade / none`) chuẩn xác, khóa rủi ro vùng `deadzone` và ngăn số rác `NaN/Inf`.
+3. **`compute_sl_initial` (`Task B-1-3` — `Volatility Cushion`):** Tính toán điểm cắt lỗ đối xứng theo hàm mũ Logarithm, tự động bảo vệ không gian giá cho cả hai chiều Long/Short.
+4. **`trailing_exit.py` (`Task B-1-4` & `Task B-1-5`):** Cài đặt rào cản Trailing Stop v3 (`Liquidation Aware`), cơ chế `Regime-Flip` nhạy bén và kiến trúc `Pre-Slice Zero-Leakage`.
+5. **`resolve_trade_execution_params` (`Task B-1-6` — `Execution Resolver`):** Đảo dấu side bắt buộc cho chế độ Fade, kiểm duyệt đòn bẩy an toàn và tính toán giá thanh lý trực tiếp.
+6. **`resolve_absolute_exit_idx` (`Task B-1-7` — `Absolute Index mapping`):** Bảo chứng duy trì `Single Source of Truth` giữa mảng nến con và mảng dữ liệu toàn cục.
+7. **`run_trailing_exit_for_oos_event` (`Task B-1-8` — `OOS Event Wiring`):** Nối trọn mạch B-1-5 $\to$ B-1-6 $\to$ B-1-7, xử lý sạch sự kiện cận biên không tạo bản ghi rỗng.
+8. **`finalize_trade_record` (`Task B-1-9` — `PnL Stabilization Engine`):** Thống nhất logic lời/lỗ ròng qua `pnl.py`, xử lý chuyên biệt nhánh `LIQUIDATION` chống đếm kép phí và xuất ra từ điển 22 trường hoàn hảo.
+9. **`liquidation_layer.py` (`Task v11.9` — `Pre-Flight Check`):** Cung cấp công thức giải tích trực tiếp `resolve_max_safe_leverage` $O(1)$ cho `Isolated Margin Perpetual Futures`.
+10. **`kelly_empirical.py` (`Task B-1-1` — `Empirical Kelly Solver`):** Động cơ tối ưu hóa phi tuyến `brentq` hoạt động mượt mà, tích hợp rào cản bảo vệ suy kiệt vốn (`Drawdown Prevention Guard`).
 
 ### 2. Định Hướng Triển Khai Tiếp Theo
-Hệ thống hiện đã sở hữu một bộ khung xương dữ liệu và quản trị vốn kiên cố chuẩn định chế quantitative trading. Các bước tiếp theo sẽ tiến vào **Module E (CPCV / DSR / PBO Engine)** để chạy kiểm tra độ nhạy quy mô mẫu ($N=30, 100, 200$) và đánh giá xác suất overfitting trước khi kết nối với Module G (`Execution Simulator`).
+Hệ thống hiện đã sở hữu một bộ khung xương dữ liệu, thuật toán thoát lệnh và luồng thực thi kiên cố đạt chuẩn định chế quantitative trading. Các bước tiếp theo sẽ tiến vào **Module E (CPCV / DSR / PBO Engine)** để chạy kiểm tra độ nhạy quy mô mẫu ($N=30, 100, 200$) và đánh giá xác suất overfitting trước khi kết nối với Module G (`Execution Simulator` — Task B-8-4).
 
 ---
 
@@ -869,3 +1156,9 @@ Tham số `sigma` (thường trích xuất từ `ATR / Price`) về nguyên tắ
 Khi lệnh bị thanh lý, hệ thống tính tổn thất giới hạn ở mức Mất Trắng Initial Margin: `Loss_Liq = -size_notional/leverage`.
 - **Lý do không cộng dồn Funding Fee:** Funding Fee là khoản chi phí cấu rỉa liên tục vào dư nợ Ký Quỹ (Margin Balance). Việc trừ dần funding fee khiến số dư Ký Quỹ cạn kiệt nhanh hơn, làm giá thanh lý $P_{liq}$ bị kéo gần lại Entry hơn. Tuy nhiên, khi chạm ngưỡng thanh lý, số tiền tài khoản thực sự bốc hơi (so với trạng thái ban đầu) chính xác là lượng Ký Quỹ đã đóng vào. 
 - **Quy ước:** Khấu trừ Funding Fee ở bước thanh lý sẽ gây ra sai số đếm kép (Double-count). Hàm `compute_liquidation_loss` giữ nguyên công thức chuẩn mực.
+
+### 7.4. Kiến Trúc Cắt Trước Khi Tính (`Pre-Slice Zero-Leakage`) và Quy Ước Chỉ Số Tuyệt Đối (`Absolute Indexing v11.8`)
+Trong cụm Task Wiring Layer (`B-1-6 -> B-1-9`), hệ thống thống nhất hai quy chuẩn thiết kế tối cao:
+- **Cắt Trước Khi Tính (`Pre-Slice before Exit Simulation`):** Mảng nến tương lai buộc phải được cắt vật lý sát ranh giới fold (`future_highs = full_highs[entry+1 : effective_end]`) trước khi truyền vào động cơ Trailing Stop. Nếu độ dài mảng sau khi cắt $\le 1$ (lệnh vào sát biên fold), hệ thống **trả về `None` hủy bỏ sự kiện** thay vì tự ngụy tạo bản ghi `TIME_STOP` 0 nến. Điều này bảo vệ sự tinh khiết tuyệt đối cho ma trận lợi suất nạp vào Kelly Sizer.
+- **Hệ Quy Chiếu Chỉ Số Tuyệt Đối (`Absolute Index Single Source of Truth`):** Mọi bản ghi giao dịch (`TradeRecord`) khi xuất ra ngoài tầng định tuyến đều phải đính kèm `exit_idx_absolute = entry_idx + 1 + exit_idx_relative`. Bất kỳ mô-đun thực thi nào (`Module G`) hay bộ kiểm định (`Pandera TradeRecordSchema`) khi tra cứu giá khớp lệnh đều phải sử dụng đúng chỉ số tuyệt đối này trên mảng dữ liệu gốc, ngăn chặn 100% rủi ro lệch nhịp thời gian (`Time-Shift Bug`).
+

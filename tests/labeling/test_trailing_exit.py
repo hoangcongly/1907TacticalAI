@@ -294,3 +294,117 @@ def test_b_1_5_no_leakage_past_fold_boundary():
     print(
         "✅ [TASK B-1-5] test_b_1_5_no_leakage_past_fold_boundary & Liquidation PnL PASSED!"
     )
+
+
+# ============================================================================
+# [TASK B-1-7 -> B-1-9] UNIT & INTEGRATION TESTS
+# ============================================================================
+from aegis.labeling.trailing_exit import (
+    resolve_absolute_exit_idx,
+    run_trailing_exit_for_oos_event,
+    finalize_trade_record,
+)
+
+
+def test_resolve_absolute_exit_idx():
+    assert resolve_absolute_exit_idx(entry_idx=100, exit_idx_relative=5) == 106
+    assert resolve_absolute_exit_idx(entry_idx=0, exit_idx_relative=0) == 1
+    assert resolve_absolute_exit_idx(entry_idx=999, exit_idx_relative=0) == 1000
+    assert resolve_absolute_exit_idx(entry_idx=50, exit_idx_relative=119) == 170
+
+
+def test_run_trailing_exit_for_oos_event_full_pipeline():
+    n = 20
+    highs = np.full(n, 100.5)
+    lows = np.full(n, 99.5)
+    atr = np.full(n, 1.0)
+    p_trend = np.full(n, 0.5)
+    # Case 1: SL hit bình thường (Follow)
+    highs2 = highs.copy(); lows2 = lows.copy()
+    lows2[5] = 80.0  # giá giảm mạnh tại bar 5
+    result = run_trailing_exit_for_oos_event(
+        entry_idx=0, entry_price=100.0, test_window_end_idx=n,
+        p_i=0.8, p_chop_i=0.3, side_primary=1,
+        m_sl=2.0, sigma=0.01, c_trade_adj=0.001,
+        fade_enabled=True, fade_regime_gate_threshold=0.6,
+        full_highs=highs2, full_lows=lows2, full_atr=atr, full_p_trend=p_trend
+    )
+    assert result is not None
+    assert result["exit_reason"] in ("SL", "TRAIL", "TIME_STOP", "LIQUIDATION", "REGIME_FLIP")
+    assert result["exit_idx_absolute"] == result["entry_idx"] + 1 + result["exit_idx_relative"]
+    assert set(["entry_idx","entry_price","p_i","p_chop_i","mode","side","sl_initial",
+                "leverage_used","liquidation_price","exit_idx_relative",
+                "exit_idx_absolute","exit_reason","boundary_truncated"]) <= set(result.keys())
+
+    # Case 2: mode == "none" (deadzone) -> None
+    result_none = run_trailing_exit_for_oos_event(
+        entry_idx=0, entry_price=100.0, test_window_end_idx=n,
+        p_i=0.3, p_chop_i=0.5, side_primary=1,
+        m_sl=2.0, sigma=0.01, c_trade_adj=0.001,
+        fade_enabled=True, fade_regime_gate_threshold=0.6,
+        full_highs=highs, full_lows=lows, full_atr=atr, full_p_trend=p_trend
+    )
+    assert result_none is None
+
+    # Case 3: entry tại nến cuối cùng của fold -> future array rỗng -> None
+    result_boundary = run_trailing_exit_for_oos_event(
+        entry_idx=n - 1, entry_price=100.0, test_window_end_idx=n,
+        p_i=0.8, p_chop_i=0.3, side_primary=1,
+        m_sl=2.0, sigma=0.01, c_trade_adj=0.001,
+        fade_enabled=True, fade_regime_gate_threshold=0.6,
+        full_highs=highs, full_lows=lows, full_atr=atr, full_p_trend=p_trend
+    )
+    assert result_boundary is None, "Zero-length slice PHẢI trả None, không phải TIME_STOP giả"
+
+
+def test_finalize_trade_record_reads_price_at_absolute_index():
+    closes = np.arange(100.0, 130.0)  # closes[i] = 100+i, dễ kiểm tra bằng mắt
+    partial = {
+        "entry_idx": 5, "entry_price": 105.0, "p_i": 0.8, "p_chop_i": 0.3,
+        "mode": "follow", "side": 1, "sl_initial": 95.0,
+        "leverage_used": 5.0, "liquidation_price": 90.0,
+        "exit_idx_relative": 3, "exit_idx_absolute": 9,  # entry_idx+1+relative = 5+1+3=9
+        "exit_reason": "TRAIL", "boundary_truncated": False,
+    }
+    result = finalize_trade_record(partial, closes, size_notional=1000.0)
+    expected_exit_price = closes[9]  # PHẢI đọc tại index 9 (absolute), KHÔNG phải index 3
+    # Xác nhận gián tiếp qua việc realized_return khớp công thức dùng đúng closes[9]
+    from aegis.execution.pnl import compute_realized_pnl
+    expected_pnl = compute_realized_pnl(
+        entry_price=105.0,
+        exit_price=expected_exit_price,
+        side=1, size_notional=1000.0, leverage=5.0, exit_reason="TRAIL",
+        fee_entry_rate=0.0004, fee_exit_rate=0.0004
+    )["net_pnl"]
+    assert abs(result["realized_return"] - expected_pnl / 1000.0) < 1e-9
+
+
+def test_finalize_trade_record_liquidation_branch_uses_margin_formula():
+    closes = np.arange(100.0, 130.0)
+    partial = {
+        "entry_idx": 5, "entry_price": 105.0, "p_i": 0.1, "p_chop_i": 0.8,
+        "mode": "fade", "side": -1, "sl_initial": 115.0,
+        "leverage_used": 5.0, "liquidation_price": 110.0,
+        "exit_idx_relative": 1, "exit_idx_absolute": 7,
+        "exit_reason": "LIQUIDATION", "boundary_truncated": False,
+    }
+    result = finalize_trade_record(partial, closes, size_notional=1000.0)
+    expected_return = -(1000.0 / 5.0) / 1000.0  # = -0.20, KHÔNG dùng compute_realized_pnl thường
+    assert abs(result["realized_return"] - expected_return) < 1e-9
+
+
+def test_finalize_trade_record_output_passes_schema():
+    import pandas as pd
+    from aegis.core.schemas import TradeRecordSchema
+    closes = np.arange(100.0, 130.0)
+    partial = {
+        "entry_idx": 5, "entry_price": 105.0, "p_i": 0.8, "p_chop_i": 0.3,
+        "mode": "follow", "side": 1, "sl_initial": 95.0,
+        "leverage_used": 5.0, "liquidation_price": 90.0,
+        "exit_idx_relative": 3, "exit_idx_absolute": 9,
+        "exit_reason": "TRAIL", "boundary_truncated": False,
+    }
+    result = finalize_trade_record(partial, closes, size_notional=1000.0)
+    df = pd.DataFrame([result])
+    TradeRecordSchema.validate(df)
+

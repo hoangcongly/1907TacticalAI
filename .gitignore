@@ -10,7 +10,7 @@ ai_env/
 .pytest_cache/
 
 # Artifacts & Heavy Data (NEVER commit)
-data/
+/data/
 models/weights/
 models/rust_artifacts/
 backtest/results/

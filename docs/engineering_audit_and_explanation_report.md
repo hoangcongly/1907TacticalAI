@@ -847,3 +847,25 @@ Trong các tổ chức định chế quant trading như Renaissance Technologies
 - `src/aegis/execution/pnl.py` $\implies$ `tests/execution/test_pnl.py`
 - `src/aegis/execution/position_sizer.py` $\implies$ `tests/execution/test_position_sizer.py`
 - `src/aegis/labeling/trailing_exit.py` $\implies$ `tests/labeling/test_trailing_exit.py`
+
+---
+
+## 7. Cẩm Nang Chẩn Đoán Cốt Lõi (Core Design Conventions & Decisions)
+
+Phần này ghi chép lại các quyết định thiết kế có chủ đích (Intentional Design) đã được phê duyệt, giải thích lý do tại sao các lựa chọn toán học thoạt nhìn có vẻ "sai lệch" lại thực chất là bảo chứng an toàn cho toàn bộ hệ thống.
+
+### 7.1. Định Lý "Effective Unleveraged Payoff" Trong Kelly (Vá Issue #2)
+Công thức Kelly thực nghiệm `solve_empirical_kelly_fraction` vốn thiết kế để nhận đầu vào là lợi suất chưa đòn bẩy. Tuy nhiên, khi một lệnh bị thanh lý (Liquidation), giá trị nạp vào Kelly lại là `-1/leverage` (ví dụ: -5% với đòn bẩy 20x). Thoạt nhìn, đây là việc trộn lẫn PnL đã giới hạn bởi đòn bẩy vào chung mảng với Lợi suất Cơ sở.
+- **Sự thật toán học:** Hàm mục tiêu của Kelly là tối đa hóa $E[\log(1 + f \cdot R)]$. Nếu lệnh bị thanh lý, tài khoản mất đúng khoản Margin đã ký quỹ. Tỷ lệ sụt giảm Equity thực tế là $-\frac{f}{\text{leverage}}$. Nếu nạp $R_{liq} = -\frac{1}{\text{leverage}}$ vào hàm Kelly, kết quả sẽ tính đúng $E[\log(1 - \frac{f}{\text{leverage}})]$.
+- **Quy ước:** Tham số `returns_sample` thực chất đại diện cho **"Lợi suất Cơ sở Hiệu dụng" (Effective Unleveraged Payoff)**. Giá trị $-1/\text{leverage}$ phản ánh chính xác cú sốc tài sản lên Equity do cơ chế thanh lý của sàn can thiệp cắt lỗ cưỡng chế, đảm bảo tính đúng đắn 100% của Kelly Fraction được sinh ra.
+
+### 7.2. Hình Học Hóa Mức Cắt Lỗ Bằng `math.exp(Linear_Sigma)` (Vá Issue #3)
+Tham số `sigma` (thường trích xuất từ `ATR / Price`) về nguyên tắc là một tỷ lệ phần trăm tuyến tính (Linear %).
+- **Vấn đề tuyến tính:** Nếu áp dụng công thức cắt lỗ tuyến tính $(1 - \text{cushion})$, với các cú sốc thiên nga đen khiến biến động tăng phi mã (cushion > 100%), điểm Cắt Lỗ (Stop-Loss) sẽ rơi vào vùng số ÂM (Vô lý về mặt không gian giá).
+- **Giải pháp `math.exp()`:** Hệ thống Aegis chủ ý sử dụng phép biến đổi $e^{-\text{cushion}}$ và $e^{+\text{cushion}}$ bất chấp việc đầu vào là Linear Sigma. Dựa trên chuỗi Taylor $e^{-x} \approx 1 - x$ (với $x$ nhỏ), nó xấp xỉ hoàn hảo cho các biến động thông thường, nhưng tạo ra đường cong tiệm cận $0$ cho các biến động khổng lồ, đảm bảo an toàn tuyệt đối cho không gian giá.
+- **Quy ước:** Thiết kế này được gọi là **Quy ước Geometric Symmetry**. Hệ thống thống nhất xử lý biến động rủi ro giá thông qua hàm mũ Logarithm, kể cả khi tham số gốc là Linear %.
+
+### 7.3. Từ Chối Double-Count Funding Fee Khi Thanh Lý (Vá Issue #4)
+Khi lệnh bị thanh lý, hệ thống tính tổn thất giới hạn ở mức Mất Trắng Initial Margin: `Loss_Liq = -size_notional/leverage`.
+- **Lý do không cộng dồn Funding Fee:** Funding Fee là khoản chi phí cấu rỉa liên tục vào dư nợ Ký Quỹ (Margin Balance). Việc trừ dần funding fee khiến số dư Ký Quỹ cạn kiệt nhanh hơn, làm giá thanh lý $P_{liq}$ bị kéo gần lại Entry hơn. Tuy nhiên, khi chạm ngưỡng thanh lý, số tiền tài khoản thực sự bốc hơi (so với trạng thái ban đầu) chính xác là lượng Ký Quỹ đã đóng vào. 
+- **Quy ước:** Khấu trừ Funding Fee ở bước thanh lý sẽ gây ra sai số đếm kép (Double-count). Hàm `compute_liquidation_loss` giữ nguyên công thức chuẩn mực.

@@ -50,7 +50,11 @@ def solve_empirical_kelly_fraction(
     Tham số:
     - f_max: Giới hạn tìm kiếm cho brentq. Dynamic Cap sẽ tự động co lại
       khi mẫu chứa lệnh lỗ nặng (f_max_safe = min(f_max, 0.999/|r_min|)).
-    - returns_sample: BẮT BUỘC phải là Lợi suất Cơ sở Chưa đòn bẩy (Unleveraged Return).
+    - returns_sample: Lợi suất Cơ sở Hiệu dụng (Effective Unleveraged Payoff).
+      LƯU Ý: Với lệnh bị thanh lý (Liquidation), giá trị này BẮT BUỘC phải là
+      -1/leverage. Đây KHÔNG phải là lỗi rò rỉ dữ liệu, mà là hệ quả toán học
+      phản ánh chính xác 100% cú sốc tài sản lên Equity khi mất trắng Margin
+      (Loss = -f/leverage).
     """
     # [ARMOR GUARD] Lọc NaN/Inf TRƯỚC khi chạy Canary Assertion
     returns_sample = returns_sample[np.isfinite(returns_sample)]
@@ -59,9 +63,12 @@ def solve_empirical_kelly_fraction(
         return 0.0
 
     # [ARMOR GUARD] Canary Assertion — chạy SAU khi đã lọc NaN/Inf
+    # LƯU Ý: Lệnh thanh lý sẽ có payoff = -1.0/leverage, do đó >= -1.0 là an toàn tuyệt đối.
     assert np.all(returns_sample >= -1.0), (
         "Canary Error: Phát hiện return < -100% sau khi đã lọc NaN/Inf. "
-        "PnL thanh lý đã làm rò rỉ dữ liệu hoặc sai số học!"
+        "Với thị trường Spot/Perp, lợi suất cơ sở hiệu dụng (Effective Unleveraged Payoff) "
+        "kể cả khi thanh lý cũng chỉ giới hạn ở mức -1/leverage (>= -100%). "
+        "Lỗi này chỉ xảy ra do sai số học hoặc truyền nhầm dữ liệu ĐÃ nhân đòn bẩy!"
     )
 
     # [DYNAMIC LEVERAGE CAP] Giới hạn đòn bẩy động dựa trên lệnh lỗ nặng nhất.

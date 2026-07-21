@@ -81,6 +81,16 @@ def compute_liquidation_price(
             f"Lỗi hải quan v11.9: fee_rate phải nằm trong đoạn [0.0, 0.05), nhận {fee_rate}"
         )
 
+    if (
+        not isinstance(liquidation_fee_rate, (int, float))
+        or math.isnan(liquidation_fee_rate)
+        or math.isinf(liquidation_fee_rate)
+        or not (0.0 <= liquidation_fee_rate < 0.1)
+    ):
+        raise ValueError(
+            f"Lỗi hải quan v11.9: liquidation_fee_rate phải nằm trong đoạn [0.0, 0.1), nhận {liquidation_fee_rate}"
+        )
+
     # Khoảng cho phép lỗ trước khi sàn thanh lý (trừ hao mọi loại phí)
     margin_loss_allowance = (1.0 / leverage) - maintenance_margin_rate - fee_rate - liquidation_fee_rate
 
@@ -131,6 +141,16 @@ def validate_leverage_against_sl(
     ):
         raise ValueError(
             f"Lỗi hải quan v11.9: sl_initial phải là số dương > 0, nhận {sl_initial}"
+        )
+
+    if (
+        not isinstance(liquidation_fee_rate, (int, float))
+        or math.isnan(liquidation_fee_rate)
+        or math.isinf(liquidation_fee_rate)
+        or not (0.0 <= liquidation_fee_rate < 0.1)
+    ):
+        raise ValueError(
+            f"Lỗi hải quan v11.9: liquidation_fee_rate phải nằm trong đoạn [0.0, 0.1), nhận {liquidation_fee_rate}"
         )
 
     liq_price = compute_liquidation_price(
@@ -248,6 +268,16 @@ def resolve_max_safe_leverage(
         )
 
     if (
+        not isinstance(liquidation_fee_rate, (int, float))
+        or math.isnan(liquidation_fee_rate)
+        or math.isinf(liquidation_fee_rate)
+        or not (0.0 <= liquidation_fee_rate < 0.1)
+    ):
+        raise ValueError(
+            f"Lỗi hải quan v11.9: liquidation_fee_rate phải nằm trong đoạn [0.0, 0.1), nhận {liquidation_fee_rate}"
+        )
+
+    if (
         not isinstance(leverage_cap, (int, float))
         or math.isnan(leverage_cap)
         or leverage_cap < 1.0
@@ -281,6 +311,12 @@ def compute_liquidation_loss(
     
     Phí vào lệnh (fee_entry) được xử lý THỐNG NHẤT tại tầng pnl.py
     (giống nhánh Normal), KHÔNG trừ ở đây để tránh double-count.
+    
+    [VÁ LỖ HỔNG #4]: KHÔNG KHẤU TRỪ FUNDING FEE TẠI ĐÂY.
+    Funding Fee bòn rút dần Ký Quỹ, làm Giá Thanh Lý (P_liq) xê dịch lại gần Entry.
+    Khi chạm P_liq, lượng Ký Quỹ còn lại = 0. Tổng thiệt hại thực sự so với
+    trước khi mở lệnh CHÍNH XÁC bằng lượng Initial Margin đã cấp.
+    Nếu trừ thêm Funding Fee ở bước này sẽ tạo ra lỗi Double-Count (Đếm Kép).
     """
     if not isinstance(size_notional, (int, float)) or size_notional <= 0:
         raise ValueError(f"size_notional phải > 0, nhận {size_notional}")

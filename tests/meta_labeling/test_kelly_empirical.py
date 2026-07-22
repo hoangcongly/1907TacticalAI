@@ -150,6 +150,7 @@ def test_b_1_11_trade_records_to_kelly_table_inputs():
         {"p_i": 0.05, "p_chop_i": 0.95, "realized_return": 0.04, "boundary_truncated": False}, # bin (0, 9)
         {"p_i": 1.00, "p_chop_i": 1.00, "realized_return": -0.02, "boundary_truncated": False}, # bin (9, 9) khi num_bins=10
         {"p_i": 0.55, "p_chop_i": 0.25, "realized_return": 0.10, "boundary_truncated": True},  # Bỏ qua vì boundary_truncated
+        {"p_i": 0.55, "p_chop_i": 0.25, "realized_return": 0.10, "boundary_truncated": np.bool_(True)},  # Bỏ qua vì np.bool_(True)
         {"p_i": 0.55, "p_chop_i": 0.25, "realized_return": None},                                # Bỏ qua vì thiếu realized_return
         {"p_i": -0.1, "p_chop_i": 1.2, "realized_return": 0.01, "boundary_truncated": False},   # Clamped về (0, 9)
     ]

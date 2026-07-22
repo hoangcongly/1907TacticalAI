@@ -229,7 +229,7 @@ def trade_records_to_kelly_table_inputs(
         if not isinstance(r, dict):
             continue
         # Bỏ qua nếu là bản ghi bị cắt cụt sát biên fold (bảo vệ khỏi Kelly Pollution)
-        if r.get("boundary_truncated", False) is True:
+        if bool(r.get("boundary_truncated", False)):
             continue
 
         ret = r.get("realized_return")

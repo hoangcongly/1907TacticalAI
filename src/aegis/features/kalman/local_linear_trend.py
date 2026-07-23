@@ -41,7 +41,7 @@ class LocalLinearTrendKalman:
         """
         # --- Khởi tạo ---
         if not self.is_initialized and not np.isnan(z):
-            self.x = np.array([[z], [0.0]])
+            self.x = np.array([[z], [0.0]])  # type: ignore
             self.P = np.eye(2) * 1.0
             self.is_initialized = True
             return float(self.x[0, 0]), float(self.x[1, 0])
@@ -57,8 +57,8 @@ class LocalLinearTrendKalman:
         # --- GAP-HANDLING ---
         if np.isnan(z):
             # Không có quan sát -> trạng thái predict trở thành trạng thái hiện tại (chỉ trôi theo trend)
-            self.x = x_pred
-            self.P = P_pred
+            self.x = x_pred  # type: ignore
+            self.P = P_pred  # type: ignore
             return float(self.x[0, 0]), float(self.x[1, 0])
 
         # --- UPDATE ---

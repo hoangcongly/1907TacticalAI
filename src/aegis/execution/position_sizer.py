@@ -8,6 +8,7 @@ KHÔNG PHẢI vốn gốc cố định — để phát huy lợi thế compoundi
 """
 
 import math
+from typing import Optional
 
 from aegis.meta_labeling.sizing.kelly_empirical import DEFAULT_LAMBDA_KELLY
 
@@ -87,13 +88,13 @@ def compute_position_size(
     f_star: float,
     current_equity: float | AccountStateTracker,
     lambda_kelly: float = DEFAULT_LAMBDA_KELLY,
-    max_notional_cap: float = None,
-    atr_hist_mean_pct: float = None,
-    atr_current_pct: float = None,
-    lot_step_size: float = None,
+    max_notional_cap: Optional[float] = None,
+    atr_hist_mean_pct: Optional[float] = None,
+    atr_current_pct: Optional[float] = None,
+    lot_step_size: Optional[float] = None,
     min_vol_multiplier: float = 0.2,
     max_vol_multiplier: float = 2.5,
-    max_safe_leverage: float = None,
+    max_safe_leverage: Optional[float] = None,
 ) -> float:
     """
     [PHÁT HIỆN O + KHẮC PHỤC LỖ HỔNG 7 & BẪY 1] Biến f* thành size_notional cho lệnh thật.

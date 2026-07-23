@@ -2,6 +2,7 @@
 
 import math
 import numpy as np
+from scipy.optimize import minimize_scalar, brentq  # type: ignore
 from scipy.optimize import brentq
 from typing import NamedTuple, Dict, Tuple, Any, Union, List, Literal
 

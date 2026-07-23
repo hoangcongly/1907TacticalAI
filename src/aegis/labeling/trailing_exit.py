@@ -190,7 +190,7 @@ def compute_regime_aware_trailing_exit_v3_liquidation_aware(
     min_tick_size: float = 1e-4,
     min_ticks_cushion: int = 10,
     min_atr_pct: float = 0.001,
-) -> dict:
+) -> Optional[dict]:
     """
     [v3 / v11.9] Nâng cấp từ v2: Tích hợp kiểm tra giá thanh lý (Liquidation Price).
     Nếu nến xuyên phá qua cả Liquidation Price trước khi hoặc cùng lúc với SL/Trail, ưu tiên chốt LIQUIDATION hoặc SL.
@@ -383,7 +383,7 @@ def simulate_trailing_exit_within_fold_bounds(
     liquidation_price: Optional[float] = None,
     t_max_live: int = 120,
     **trailing_exit_kwargs,
-) -> dict:
+) -> Optional[dict]:
     """
     [TASK B-1-5] SỬA LỖI: quay lại đúng nguyên tắc gốc — CẮT mảng future_* theo
     biên fold TRƯỚC KHI gọi hàm trailing-exit, để hàm tính toán không bao giờ có
@@ -618,7 +618,9 @@ def finalize_trade_record(
 
     side = int(partial_record["side"])
     leverage = float(partial_record["leverage_used"])
-    exit_reason = str(partial_record["exit_reason"])
+    from typing import cast, Literal
+    exit_reason = cast(Literal['SL', 'TRAIL', 'REGIME_FLIP', 'TIME_STOP', 'LIQUIDATION', 'BOUNDARY_TRUNCATED'], str(partial_record["exit_reason"]))
+
 
     # 3. Tính PnL theo nhánh
     if exit_reason == "LIQUIDATION":
@@ -667,7 +669,7 @@ def finalize_trade_record(
         "side": side,
         "sl_initial": float(partial_record["sl_initial"]),
         "size_notional": float(size_notional),
-        "exit_idx_relative": int(partial_record.get("exit_idx_relative", partial_record.get("exit_idx"))),
+        "exit_idx_relative": int(partial_record.get("exit_idx_relative", partial_record.get("exit_idx", 0))),
         "exit_idx_absolute": exit_idx_abs,
         "exit_timestamp_ms": exit_ts,
         "exit_reason": exit_reason,

@@ -1,7 +1,7 @@
 """TRADE_RECORD_SCHEMA chuẩn hóa (v11.8): phân định rõ exit_idx_relative vs exit_idx_absolute."""
 import hashlib # Thư viện dùng để tạo mã băm SHA-256 -> đóng dấu 'tem niêm phong số' cho mảng nến, ngăn chặn việc mang kq trade của bộ data này áp vào bộ data khác
 import json # Thư viện chuyển từ điển dict tham số thành chuỗi văn bản -> để băm cấu hình tham số cùng với dữ liệu nến thành một mã duy nhất
-import pandas as pd # Thư viện xử lý dữ liệu dạng bảng (như bảng tính excel)
+import pandas as pd  # type: ignore # Thư viện xử lý dữ liệu dạng bảng (như bảng tính excel)
 import pandera.pandas as pa # Thư viện kiểm tra dữ liệu dạng bảng (như bảng tính excel, sử dụng namespace pandas chuẩn mới tránh cảnh báo tương lai)
 from pandera.pandas import Column, Check, DataFrameSchema # Thư viện định nghĩa cấu trúc dữ liệu dạng bảng và các điều kiện ràng buộc
 from typing import Dict, Any, TypedDict, Literal, Optional

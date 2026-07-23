@@ -58,11 +58,11 @@ def compute_pbo_cscv(
 
     # Bước 1: Chia T quan sát thành S = n_splits khối liên tục (contiguous sub-blocks)
     indices = np.array_split(np.arange(T), n_splits)
-    block_returns = []
+    block_returns_list = []
     for idx_block in indices:
         # Tính tổng lợi suất (hoặc hiệu suất tổng hợp) của từng cấu hình trên khối
-        block_returns.append(np.sum(performance_matrix[idx_block, :], axis=0))
-    block_returns = np.array(block_returns)  # shape (S, N)
+        block_returns_list.append(np.sum(performance_matrix[idx_block, :], axis=0))
+    block_returns = np.array(block_returns_list)  # shape (S, N)
 
     # Bước 2: Tạo tất cả các tổ hợp chọn S/2 khối làm tập Train (In-Sample)
     half_s = n_splits // 2

@@ -35,6 +35,8 @@ class ExperimentTracker:
     """
     _instance = None
     _lock = threading.Lock()
+    _initialized: bool = False
+    log_dir: Optional[str] = None
 
     def __new__(cls, log_dir: str = "logs/experiments"):
         with cls._lock:
@@ -96,7 +98,7 @@ class ExperimentTracker:
         nhằm tuân thủ tuyệt đối kỷ luật quản lý hằng số theo Request 9.
         """
         try:
-            import yaml
+            import yaml  # type: ignore
             # Tìm đường dẫn từ gốc dự án
             project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
             reg_path = os.path.join(project_root, "config", "aegis_canonical_parameters.yaml")

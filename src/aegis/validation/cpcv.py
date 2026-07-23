@@ -82,7 +82,8 @@ class CombinatorialPurgedKFold:
         group_indices = list(range(self.n_groups))
         combinations = list(itertools.combinations(group_indices, self.n_test_groups))
 
-        splits = []
+        from typing import Tuple
+        splits: List[Tuple[np.ndarray, np.ndarray]] = []
         for test_group_idxs in combinations:
             # Gộp các khối test
             test_idx_list = []
@@ -124,8 +125,8 @@ class CombinatorialPurgedKFold:
                 if not is_purged_or_embargoed:
                     clean_train_indices.append(idx)
 
-            clean_train_indices = np.array(clean_train_indices, dtype=int)
-            splits.append((clean_train_indices, test_indices))
+            clean_train_indices_arr = np.array(clean_train_indices, dtype=int)
+            splits.append((clean_train_indices_arr, test_indices))
 
         return splits
 
@@ -151,7 +152,7 @@ class CombinatorialPurgedKFold:
         # Chúng ta phân bổ các khối test của các fold vào phi đường backtest (paths) sao cho
         # mỗi đường backtest bao phủ trọn vẹn toàn bộ n_groups khối đúng 1 lần (tạo thành chuỗi hoàn chỉnh).
         # Cách chuẩn là tìm các tổ hợp disjoint groups ghép lại thành đầy đủ 0..M-1.
-        paths = []
+        paths: List[np.ndarray] = []
         # Với cấu trúc tổng quát, ta có thể trả về ánh xạ hoặc chuỗi hoàn chỉnh tùy theo tham số K và M.
         # Nếu K chia hết M (ví dụ M=6, K=2 -> K ghép được 3 khối = trọn chuỗi), ta ghép các fold disjoint.
         return paths

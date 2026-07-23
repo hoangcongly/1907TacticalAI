@@ -36,7 +36,7 @@ flowchart TD
             TDict --> TSchema["Pandera: TradeRecordSchema & Lineage Check"]
         end
 
-        subgraph Pillar2["Trụ Cột 2: Regime Gate & Trade Mode (trade_mode.py / Task B-1-2)"]
+        subgraph Pillar2["Trụ Cột 2: Regime Gate & Trade Mode (trade_mode.py - Task B-1-2)"]
             Prob["p_i (Trend) & p_chop_i (Chop)"] --> Classifier["classify_trade_mode(p_i, p_chop_i)"]
             Classifier -->|p_i >= 0.5| ModeFollow["Mode: follow (Trend Following)"]
             Classifier -->|p_i < 0.2 & p_chop > 0.6| ModeFade["Mode: fade (Mean Reversion)"]
@@ -60,7 +60,6 @@ flowchart TD
     end
 ```
 
-
 > [!WARNING]
 > **Khắc Phục Sự Mâu Thuẫn Trạng Thái Báo Cáo (`Correcting Module J Operational Depiction - Request 11`):**  
 > Cần làm rõ rằng trong sơ đồ Master Architecture Pipeline ở trên, **Module J (`Circuit Breaker & Exception Handler`)** được vẽ bao bọc bên ngoài để thể hiện **thiết kế kiến trúc mục tiêu tổng thể (`Architectural Blueprint`)**. Tuy nhiên, khi đối chiếu với **Sơ Đồ Trạng Thái Thực Tế (`Status Map`)** bên dưới, Module J hiện tại vẫn đang ở giai đoạn **LỘ TRÌNH THIẾT KẾ (`[PLANNED / ROADMAP - NOT YET OPERATIONAL]`)** chứ chưa phải một module chạy thực tế trong production (trong `src/aegis/risk/`). Hiện tại, 3 trụ cột (Data Gatekeeper, Regime Gate, 3-Layer Bayesian Kelly & Vol-Targeting Sizing) đã hoàn thiện 100% kiểm định TDD, trong khi lớp cầu dao tự động toàn cục Module J sẽ được phát triển và bọc ngoài trong các phase tiếp theo theo đúng lộ trình (`Giai Đoạn 5: Production Hardening`).
@@ -69,7 +68,6 @@ flowchart TD
 > **Trạng Thái Hoàn Thành & Phạm Vi Kiến Trúc (`Architectural Scope & Reality Check`):** Cấu trúc 3 trụ cột (`Data Gatekeeper` $\to$ `Regime Gate` $\to$ `3-Layer Bayesian Kelly & Vol-Targeting Sizing`) tạo ra nền tảng phòng thủ kiên cố cho hệ thống hiện tại. Các trụ cột xử lý dữ liệu tick (Module A), bộ lọc Kalman/HMM (Module B), phát hiện sự kiện CUSUM (Module C), chọn đặc trưng (Module D), kiểm định chéo CPCV/PBO (Module F), khớp lệnh thực tế (Module G) và cơ chế tự ngắt mạch toàn cục Circuit Breaker (Module J full service) là phần việc lớn nằm trong lộ trình các task tiếp theo cần kiên trì hoàn thiện.
 
 ### Sơ Đồ Trạng Thái Kiến Trúc Toàn Hệ Thống (v11.8 Status Map)
-
 
 ```mermaid
 flowchart TD
@@ -242,10 +240,10 @@ def compute_dataset_manifest_hash(bar_df, generation_params) -> str:
 1. **Khâu 1 — Kiểm tra tĩnh từng bản ghi đơn lẻ trên RAM (`Single Trade Record Validations`):**  
    Khi chạy mô phỏng giao dịch (tại Module G Execution Simulator hoặc Module B Meta-Labeling), mỗi khi có tín hiệu mua/bán, code Python sẽ tạo ra từng bản ghi giao dịch đơn lẻ (`Single Trade Record`) dưới dạng từ điển (`dict`).  
    - Nếu sử dụng `dict` thông thường (`{'entry_idx': 100, ...}`), lập trình viên có thể gõ nhầm tên key (`realized_retun` thay vì `realized_return`) hoặc truyền sai kiểu dữ liệu. Lỗi này sẽ tiềm ẩn bên trong và chỉ phát sinh lỗi sau thời gian dài mô phỏng.  
-   - 👉 **Task B-1-10 (`class TradeRecord(TypedDict)`) đóng vai trò khuôn chuẩn tĩnh cho từng bản ghi**: Nó buộc IDE và công cụ phân tích kiểu `mypy` tự động kiểm tra, gợi ý và nhắc nhở toàn bộ 24 trường chuẩn của bản ghi giao dịch (đồng bộ 100% với `TradeRecordSchema`), giúp phát hiện sớm lỗi gõ nhầm trường dữ liệu ngay trong quá trình soạn thảo mã nguồn.
+   - 👉 **Task B-1-10 (`class TradeRecord(TypedDict)`) đóng vai trò khuôn chuẩn tĩnh cho từng bản ghi**: Nó buộc IDE và công cụ phân tích kiểu `mypy` tự động kiểm tra, gợi ý và nhắc nhở toàn bộ 22 trường chuẩn của bản ghi giao dịch (đồng bộ 100% với `TradeRecordSchema`), giúp phát hiện sớm lỗi gõ nhầm trường dữ liệu ngay trong quá trình soạn thảo mã nguồn.
 
 2. **Khâu 2 — Kiểm định batch lô lớn trên DataFrame (`Dynamic DataFrame Verification`):**  
-   Sau khi các `TradeRecord` đơn lẻ được gom lại thành bảng lớn (`pandas.DataFrame`), hệ thống bật máy quét siêu tốc **`TradeRecordSchema` (Pandera)** để kiểm tra động toàn bộ mảng bằng C/Cython, đảm bảo tính hợp lệ tuyệt đối của logic toán học (`check_absolute_index_logic`, `check_timestamp_logic`) và dòng chảy kế thừa `dataset_manifest_hash`.
+   Sau khi các `TradeRecord` đơn lẻ được gom lại thành bảng lớn (`pandas.DataFrame`), hệ thống bật máy quét siêu tốc **`TradeRecordSchema` (Pandera)** để kiểm tra động toàn bộ mảng bằng C/Cython, đảm bảo tính hợp lệ tuyệt đối của logic toán học (`check_absolute_index_logic`) và dòng chảy kế thừa `dataset_manifest_hash`.
 
 ```mermaid
 flowchart TD
@@ -338,10 +336,10 @@ $$f_{\text{bayesian}} = \frac{N}{N + C} \cdot f_{\text{conservative}} + \frac{C}
 - **$C = 20.0$ (`confidence_constant_C`)**: Hằng số tin cậy định chế. Khi $N = 20$, trọng số dữ liệu thực tế mới đạt $50\%$ ($w = \frac{20}{20+20} = 0.5$). Nếu $N < 5$, hệ thống lập tức từ chối dữ liệu thực nghiệm và ép dùng hoàn toàn $f_{\text{prior}} = 0.1$ để tối đa hóa an toàn.
 
 #### B. Tầng 1 — Mượt Mà Hóa Xác Suất Chuyển Pha (`HMM Probability-Weighted Blending`)
-Tuyệt đối không sử dụng câu lệnh `if/else` cứng nhắc để chọn duy nhất một regime (vì thị trường tại vùng chuyển giao thường lưỡng lự gây ra hiện tượng lật nhãn `Whipsaw`). Tại mỗi cây nến, bộ lọc HMM trả về phân phối xác suất liên tục trên 2 trạng thái chốt cấu trúc biến động của Module B $\mathbf{p} = (p_{\text{trending}}, p_{\text{choppy}})$ với $\sum p_k = 1.0$ (chú ý: HMM cấu trúc 2 trạng thái phân loại độ ổn định xu hướng/biến động `N=2`, không phân loại chiều Buy/Sell).
+Tuyệt đối không sử dụng câu lệnh `if/else` cứng nhắc để chọn duy nhất một regime (vì thị trường tại vùng chuyển giao thường lưỡng lự gây ra hiện tượng lật nhãn `Whipsaw`). Tại mỗi cây nến, bộ lọc HMM trả về phân phối xác suất liên tục trên 3 trạng thái $\mathbf{p} = (p_{\text{bull}}, p_{\text{bear}}, p_{\text{chop}})$ với $\sum p_k = 1.0$.
 
 Tỷ lệ Kelly tổng hợp ($f_{\text{blend}}$) được tính toán bằng trung bình cộng có trọng số theo đúng xác suất HMM:
-$$f_{\text{blend}} = \sum_{k \in \{\text{trending, choppy}\}} p_k \cdot f_{\text{bayesian}}^{(k)}$$
+$$f_{\text{blend}} = \sum_{k \in \{\text{bull, bear, chop}\}} p_k \cdot f_{\text{bayesian}}^{(k)}$$
 Code bóc tách thực tế từ `src/aegis/meta_labeling/sizing/kelly_empirical.py`:
 ```python
 for regime_name, prob in regime_probs.items():
@@ -363,10 +361,10 @@ for regime_name, prob in regime_probs.items():
 
 ### 4. Tầng 3: Nhắm Mục Tiêu Biến Động & Quy Đổi Lệnh Thật (`Volatility Targeting via compute_position_size`)
 
-Sau khi có $f_{\text{blend}}$ từ tầng Bayesian Kelly, con số này vẫn là một tỷ lệ trừu tượng trên không gian rủi ro lịch sử. Để quy đổi thành quy mô vốn thực tế ($USD$) đưa lệnh ra sàn, hệ thống gọi hàm `compute_position_size` tại module [src/aegis/execution/position_sizer.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/execution/position_sizer.py) (`Module G — compute_position_size`).
+Sau khi có $f_{\text{blend}}$ từ tầng Bayesian Kelly, con số này vẫn là một tỷ lệ trừu tượng trên không gian rủi ro lịch sử. Để quy đổi thành quy mô vốn thực tế ($USD$) đưa lệnh ra sàn, hệ thống gọi hàm `compute_position_size` tại module [src/aegis/execution/position_sizer.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/execution/position_sizer.py) (`Task B-1-11 / Module G`).
 
 #### A. Phương Trình Quy Đổi Lõi (`Physical Notional Equation`)
-$$\text{size notional} = f_{\text{blend}} \cdot \lambda_{\text{kelly}} \cdot \text{current equity} \cdot \min\left(1.0, \frac{ATR_{\text{hist}}}{ATR_t}\right)$$
+$$\text{size\_notional} = f_{\text{blend}} \cdot \lambda_{\text{kelly}} \cdot \text{current\_equity} \cdot \min\left(1.0, \frac{ATR_{\text{hist}}}{ATR_t}\right)$$
 
 1. **Chiết Khấu Rủi Ro Mô Hình Half-Kelly ($\lambda_{\text{kelly}} = 0.5$)**:  
    Theo định lý quản trị rủi ro định chế, việc áp dụng Full Kelly ($\lambda = 1.0$) mang lại sụt giảm tài khoản cực kỳ khủng khiếp (`Drawdown Variance`). Khi đặt $\lambda = 0.5$ (`Half-Kelly`), phương sai sụt giảm tài khoản bị cắt giảm $75\%$, trong khi tốc độ tăng trưởng kép kỳ vọng chỉ giảm nhẹ $25\%$. Đây là "tỷ lệ vàng" được kiểm chứng TDD qua bài kiểm tra `test_fractional_kelly_lambda_discount`.
@@ -383,64 +381,9 @@ $$\text{size notional} = f_{\text{blend}} \cdot \lambda_{\text{kelly}} \cdot \te
 
 ### 5. Nghiệm Thu TDD Toàn Khối 3 Tầng Sizing (`Verifiable TDD Suite`)
 Toàn bộ kiến trúc phòng thủ kép 3 tầng được kiểm định tự động qua các bài test nghiêm ngặt:
-- **`test_regime_probability_blend_and_bayesian` (`test_kelly_empirical.py`)**: Kiểm chứng khả năng phối trộn $60\%$ Trending ($N=100$ lệnh đủ mẫu) và $40\%$ Choppy ($N=0$ lệnh, bị ép về prior $0.1x$), xác nhận $f_{\text{blend}}$ ra đời mượt mà và chuẩn xác theo đúng HMM `N=2` của Module B.
+- **`test_regime_probability_blend_and_bayesian` (`test_kelly_empirical.py`)**: Kiểm chứng khả năng phối trộn $60\%$ Bull ($N=100$ lệnh đủ mẫu) và $40\%$ Bear ($N=0$ lệnh, bị ép về prior $0.1x$), xác nhận $f_{\text{blend}}$ ra đời mượt mà và chuẩn xác.
 - **`test_position_size_vol_ratio_black_swan` (`test_position_sizer.py`)**: Kiểm chứng khi $ATR_{\text{current}} = 4.0$ so với $ATR_{\text{hist}} = 1.0$, `size_notional` bị bóp nghẹt chính xác xuống $25\%$ giá trị thông thường.
 - **`test_position_size_armor_guards` & `test_position_size_inf_guards` (`test_position_sizer.py`)**: Đảm bảo mọi input rác `NaN`, `Inf`, số âm cho $f^*$, $equity$, hay $ATR$ đều bị chốt chặn ném ngoại lệ `ValueError` tức thời trước khi chạm vào sàn giao dịch.
-
----
-
-## PHẦN III-B: HỆ THỐNG ĐỊNH CỠ KELLY THỰC NGHIỆM 2D & KIỂM ĐỊNH CHÉO PURGED KFOLD (`TASK B-1-11 ĐẾN B-1-14`)
-
-Nhằm hiện thực hóa triết lý định lượng của Marcos Lopez de Prado (Advances in Financial Machine Learning - AFML), tầng **Meta-Labeling & Kelly Sizing Engine** được triển khai hoàn chỉnh qua 4 mô-đun lõi tuân thủ tuyệt đối nguyên tắc **Zero-Leakage** (Không rò rỉ tương lai), **Bayesian Shrinkage** (Co rút Bayes theo quy mô mẫu) và **Pure Functions** (Hàm thuần túy, không biến đổi cấu trúc dữ liệu đầu vào).
-
-### 1. Ánh Xạ Bản Ghi Giao Dịch Vào Lưới Kelly (`Task B-1-11 — trade_records_to_kelly_table_inputs`)
-* **Vị trí tệp:** [src/aegis/meta_labeling/sizing/kelly_empirical.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/meta_labeling/sizing/kelly_empirical.py)
-* **Chức năng định chế:** Chuyển đổi danh sách bản ghi `TradeRecord` (chứa `realized_return`, `p_i`, `p_chop_i`) thành từ điển tọa độ lưới 2D `Dict[Tuple[int, int], np.ndarray]`.
-* **Cơ chế lọc bọc thép:**
-  - Lọc bỏ ngay lập tức các bản ghi thiếu `realized_return` hoặc có giá trị `NaN`/`Inf`.
-  - **Chống ô nhiễm Kelly (`Anti-Kelly Pollution Guard v11.9`):** gạt bỏ mọi bản ghi có cờ `boundary_truncated = True`. Đây là các lệnh bị cắt cụt do hết giờ (`Pre-Slice Boundary`) mang lợi suất xấp xỉ $0\%$; nếu giữ lại sẽ làm loãng kỳ vọng lợi nhuận $E[R]$ của ô lưới, khiến công thức Kelly suy giảm sai lệch.
-* **Quy ước kẹp biên an toàn (`Strict Clamping & Floor Logic`):**
-  $$\text{clamp}(x) = \min(\max(float(x), 0.0), 1.0)$$
-  $$\text{idx\_p} = \min\left(\lfloor \text{clamp}(p_i) \times \text{num\_bins} \rfloor, \, \text{num\_bins} - 1\right)$$
-  $$\text{idx\_chop} = \min\left(\lfloor \text{clamp}(p\_chop_i) \times \text{num\_bins} \rfloor, \, \text{num\_bins} - 1\right)$$
-  Quy ước `min(..., num_bins - 1)` đảm bảo khi xác suất đạt mức trần $1.0$, chỉ số không bị tràn ra ngoài (`IndexOutOfBounds`) mà rơi gọn vào bin cuối cùng `(num_bins - 1)`.
-
-### 2. Xây Dựng Bảng Kelly 2D Có Trừng Phạt Bayes (`Task B-1-12 — build_empirical_kelly_table_v2`)
-* **Vị trí tệp:** [src/aegis/meta_labeling/sizing/kelly_empirical.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/meta_labeling/sizing/kelly_empirical.py)
-* **Chức năng định chế:** Xây dựng ma trận 2D `numpy.ndarray` kích thước `(num_bins, num_bins)` chứa tỷ lệ đòn bẩy tối ưu $f^*$ cho từng cặp trạng thái thị trường.
-* **Cơ chế phòng thủ quy mô mẫu kép (`Sample-Size Double Defense`):**
-  - **Nhánh Thiếu Mẫu (`len(returns) < 5`):** Nếu một ô lưới không đủ $5$ lệnh lịch sử, hệ thống từ chối dò nghiệm phi tuyến (vì rủi ro quá khớp thống kê cực cao) và gán thẳng về giá trị tiên nghiệm `prior_f` (mặc định $0.0$).
-  - **Nhánh Trừng Phạt Bayes (`len(returns) >= 5`):**
-    1. Dùng kỹ thuật Resampling Bootstrap (500 lần lặp) qua `solve_empirical_kelly_fraction_with_confidence` để trích xuất phân vị bảo thủ $25\%$ (`lower_percentile=25.0`), ký hiệu là $f_{\text{cons}}$.
-    2. Áp dụng công thức co rút Bayes (`Bayesian Shrinkage`) với hằng số niềm tin $C = 20.0$:
-       $$w = \frac{N}{N + C}$$
-       $$f_{\text{bayesian}} = w \cdot f_{\text{cons}} + (1 - w) \cdot \text{prior\_f}$$
-       Khi số mẫu $N$ nhỏ (nhưng $\ge 5$), trọng số $w$ thấp khiến $f^*$ bị kéo mạnh về `prior_f` an toàn. Khi $N \to \infty$, $w \to 1.0$ và hệ thống tin tưởng hoàn toàn vào Kelly thực nghiệm.
-
-### 3. Engine Tra Cứu Suy Luận Thống Nhất $O(1)$ (`Task B-1-13 — compute_bi_directional_kelly_v14_unified`)
-* **Vị trí tệp:** [src/aegis/meta_labeling/sizing/kelly_empirical.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/meta_labeling/sizing/kelly_empirical.py)
-* **Chức năng định chế:** Hàm suy luận (`Inference Engine`) duy nhất phục vụ môi trường giao dịch thời gian thực (`Live Trading`) và khớp lệnh nhanh.
-* **Luồng xử lý nghiêm ngặt:**
-  1. **Kiểm tra Hải quan (`Input Customs Check`):** Tra soát `p_i`, `p_chop_i` thuộc `[0.0, 1.0]` và `kelly_table` phải là ma trận 2D vuông hợp lệ. Ném ngoại lệ `ValueError` nếu phát hiện `NaN`, `Inf` hoặc sai định dạng.
-  2. **Định tuyến Chế độ:** Gọi hàm duy nhất `classify_trade_mode(p_i, p_chop_i, fade_enabled, fade_regime_gate_threshold)`.
-  3. **Xử lý Deadzone:** Nếu `mode == "none"`, trả về ngay lập tức `{"f_target": 0.0, "mode": "none"}` với thời gian $O(1)$.
-  4. **Tra cứu & Hoàn trả:** Nếu `mode` là `"follow"` hoặc `"fade"`, thực hiện ánh xạ chỉ số lưới bằng đúng logic của B-1-11, truy xuất $f^* = \max(0.0, \text{kelly\_table}[\text{idx\_p}, \text{idx\_chop}])$ và trả về `{"f_target": f_star, "mode": mode}`.
-
-### 4. Kiểm Định Chéo Zero-Leakage Với Purging & Embargo (`Task B-1-14 — PurgedKFold`)
-* **Vị trí tệp:** [src/aegis/meta_labeling/purged_kfold.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/meta_labeling/purged_kfold.py)
-* **Chức năng định chế:** Giải quyết triệt để bài toán rò rỉ nhãn gối đầu (`Overlapping Labels`) trong chuỗi thời gian tài chính theo định lý AFML Chapter 7.
-* **Hai cơ chế bọc thép Zero-Leakage & Thứ tự ưu tiên ghi đè (`Override Priority`):**
-  - **Cắt Lọc (`Purging` — cho `train_before`):** Với bất kỳ lệnh huấn luyện nào mở trước Test set ($j < \text{test\_idx}[0]$), hệ thống tra cứu thời điểm đóng lệnh $t_1$. Nếu $t_1 > \text{test\_start\_time}$, lệnh này đã vắt sang tập Test và chứa thông tin tương lai. Hệ thống **tịch thu và xóa bỏ (`Purged`)** lệnh này khỏi tập Train.
-  - **Cách Ly (`Embargoing` — cho `train_after`):** Do hiện tượng tự tương quan chuỗi (autocorrelation), các nến ngay sau khi kết thúc Test set vẫn chịu ảnh hưởng dư chấn từ các sự kiện trong Test. Lệnh mở sau Test set ($j > \text{test\_idx}[-1]$) chỉ được phép đưa vào tập Train nếu thời điểm mở lệnh $t_0 > \max(\text{Test } t_1) + \text{embargo\_step}$.
-  - **Thứ tự ưu tiên ghi đè (`Override Priority` — chống biến dạng theo kích thước mẫu $N$):** Nếu sử dụng `embargo_pct` (ví dụ $1\%$), khi tập dữ liệu rất lớn ($N = 500,000$ nến), số nến cách ly sẽ vọt lên 5,000 nến một cách vô lý; trong khi với mẫu nhỏ ($N = 1,000$), $1\%$ chỉ là 10 nến. Để khắc phục bẫy rò rỉ này, phương thức `split()` áp dụng thứ tự ưu tiên tuyệt đối:
-    1. `embargo_bars` (nếu khác `None`, mặc định canonical `24` nến = `24` giờ) $\to$ **Ưu tiên cao nhất**, giữ khoảng cách ly cố định không biến đổi theo $N$.
-    2. `autocorrelation_lag_threshold` (nếu $> 0$ và `embargo_bars is None`) $\to$ Sử dụng độ trễ tự tương quan thực nghiệm.
-    3. `embargo_pct` $\to$ Chỉ sử dụng như phương án cuối cùng khi cả 2 tham số trên không kích hoạt (`None`/`0`).
-* **Bẫy Kiểm Định Tuyệt Đối Bất Biến Không-Thời Gian (`Strict Temporal Canary Invariant Assertion`):**
-  Trước khi hoàn trả cặp `(train_idx, test_idx)`, thay vì chỉ kiểm tra không trùng lặp chỉ số integer (`len(set(train_idx).intersection(set(test_idx))) == 0`), hệ thống chạy kiểm định bất biến ranh giới thời gian thực tế:
-  - Với mọi lệnh $i \in \text{train\_before}$, bắt buộc $t_{1,i} \le t_{0,\text{test}}$.
-  - Với mọi lệnh $j \in \text{train\_after}$, bắt buộc $t_{0,j} \ge t_{1,\text{test}} + \text{embargo\_step}$.
-  Khẳng định 100% không có bất kỳ rò rỉ thông tin tương lai hay dư chấn tự tương quan nào vượt qua được chốt kiểm dịch.
 
 ---
 
@@ -479,7 +422,7 @@ if fade_enabled and p_i < 0.2 and p_chop_i > fade_regime_gate_threshold:
   - `p_i < 0.2`: Bắt buộc xác suất xu hướng phải **cực kỳ yếu ($< 20\%$)**, chứng tỏ động lượng đã tắt hẳn.
   - `p_chop_i > fade_regime_gate_threshold (0.60)`: **Đây là Khóa Cổng An Toàn (`Regime Gate`)!** Ngay cả khi xu hướng yếu ($p_i < 0.2$), hệ thống **tuyệt đối không cho phép đánh đảo chiều** nếu xác suất thị trường đi ngang (`p_chop_i`) chưa đủ cao ($> 60\%$). Nếu `p_chop_i <= 60%`, thị trường đang ở trạng thái nhiễu loạn khó đoán, đánh Fade rất dễ bị bẫy nổ sóng ngầm!
 
-#### C. Nhánh 3 — Vùng Đứng Ngoài Bảo Toàn Tính Mạng (`Deadzone $	o$ None`)
+#### C. Nhánh 3 — Vùng Đứng Ngoài Bảo Toàn Tính Mạng (`Deadzone -> None`)
 ```python
 return "none"
 ```
@@ -687,27 +630,27 @@ Gọi $S = \frac{|\text{Entry} - \text{SL}|}{\text{Entry}}$ là tỷ lệ % cắ
 Với lệnh Long (`side = 1`), giá thanh lý là:
 
 $$
-P_{\text{liq}} = \text{Entry} \times \left(1 - \frac{1}{L} + M + \text{fee rate} + \text{liquidation fee rate}\right)
+P_{\text{liq}} = \text{Entry} \times \left(1 - \frac{1}{L} + M + \text{fee-rate} + \text{liquidation-fee-rate}\right)
 $$
 
 Trong đó $L$ là đòn bẩy, $M$ là `maintenance_margin_rate`. Khi đó khoảng cách đến điểm thanh lý là:
 
 $$
-\text{Entry} - P_{\text{liq}} = \text{Entry} \times \left(\frac{1}{L} - M - \text{fee rate} - \text{liquidation fee rate}\right)
+\text{Entry} - P_{\text{liq}} = \text{Entry} \times \left(\frac{1}{L} - M - \text{fee-rate} - \text{liquidation-fee-rate}\right)
 $$
 
 Thay vào bất phương trình an toàn:
 
 $$
-S \times \text{Entry} \le \text{Entry} \times \left(\frac{1}{L} - M - \text{fee rate} - \text{liquidation fee rate}\right) \times (1 - B)
+S \times \text{Entry} \le \text{Entry} \times \left(\frac{1}{L} - M - \text{fee-rate} - \text{liquidation-fee-rate}\right) \times (1 - B)
 $$
 
 $$
-\frac{S}{1 - B} \le \frac{1}{L} - M - \text{fee rate} - \text{liquidation fee rate} \implies \frac{1}{L} \ge \frac{S}{1 - B} + M + \text{fee rate} + \text{liquidation fee rate}
+\frac{S}{1 - B} \le \frac{1}{L} - M - \text{fee-rate} - \text{liquidation-fee-rate} \implies \frac{1}{L} \ge \frac{S}{1 - B} + M + \text{fee-rate} + \text{liquidation-fee-rate}
 $$
 
 $$
-L_{\max} = \frac{1}{\frac{S}{1 - B} + M + \text{fee rate} + \text{liquidation fee rate}}
+L_{\max} = \frac{1}{\frac{S}{1 - B} + M + \text{fee-rate} + \text{liquidation-fee-rate}}
 $$
 
 👉 Đây chính là công thức giải tích được cài đặt trong hàm `resolve_max_safe_leverage`, với độ chính xác tuyệt đối và thời gian thực thi $O(1)$.
@@ -717,19 +660,19 @@ $$
 Với lệnh Short, giá thanh lý nằm **phía trên** giá vào lệnh:
 
 $$
-P_{\text{liq short}} = \text{Entry} \times \left(1 + \frac{1}{L} - M - \text{fee rate} - \text{liquidation fee rate}\right)
+P_{\text{liq-short}} = \text{Entry} \times \left(1 + \frac{1}{L} - M - \text{fee-rate} - \text{liquidation-fee-rate}\right)
 $$
 
 Khoảng cách đến điểm thanh lý là:
 
 $$
-P_{\text{liq short}} - \text{Entry} = \text{Entry} \times \left(\frac{1}{L} - M - \text{fee rate} - \text{liquidation fee rate}\right)
+P_{\text{liq-short}} - \text{Entry} = \text{Entry} \times \left(\frac{1}{L} - M - \text{fee-rate} - \text{liquidation-fee-rate}\right)
 $$
 
-Vì cấu trúc toán học của khoảng cách đến điểm thanh lý của phe Short tương đương với phe Long (cùng biểu thức $\frac{1}{L} - M - \text{fee rate} - \text{liquidation fee rate}$), bất phương trình an toàn và công thức $L_{\max}$ cuối cùng **đồng nhất cho cả 2 chiều**:
+Vì cấu trúc toán học của khoảng cách đến điểm thanh lý của phe Short tương đương với phe Long (cùng biểu thức $\frac{1}{L} - M - \text{fee-rate} - \text{liquidation-fee-rate}$), bất phương trình an toàn và công thức $L_{\max}$ cuối cùng **đồng nhất cho cả 2 chiều**:
 
 $$
-L_{\max}^{\text{Short}} = \frac{1}{\frac{S}{1 - B} + M + \text{fee rate} + \text{liquidation fee rate}} = L_{\max}^{\text{Long}}
+L_{\max}^{\text{Short}} = \frac{1}{\frac{S}{1 - B} + M + \text{fee-rate} + \text{liquidation-fee-rate}} = L_{\max}^{\text{Long}}
 $$
 
 > [!NOTE]
@@ -781,26 +724,26 @@ $$
 
 ---
 
-### 2. Giải Phẫu Nhánh Phí Thanh Lý `LIQUIDATION PnL` (Module G — `pnl.py`)
+### 2. Giải Phẫu Nhánh Phí Thanh Lý `LIQUIDATION PnL` (Module G - `pnl.py`)
 > [!NOTE]
 > **Tái Cấu Trúc Kiến Trúc (Architectural Refactoring):** Hàm `compute_realized_pnl` đã được dời về đúng vị trí chuẩn mực tại `src/aegis/execution/pnl.py` (tầng Execution/Module G) để tuân thủ tuyệt đối nguyên tắc **Separation of Concerns**. Hàm này nay trở thành Động Cơ PnL Thống Nhất (`Unified PnL Engine`).
 
 Khi một lệnh bị sàn phái sinh quét thanh lý (`LIQUIDATION`), cơ chế tính toán tổn thất hoàn toàn khác so với chốt lời/cắt lỗ thông thường:
-- **Sai lầm ngây thơ:** Dùng công thức PnL thường $\text{Loss} = \text{size notional} \times (1 + \text{fee})$. Việc trừ thẳng `size_notional` sẽ báo cáo quỹ bị lỗ gấp `10 lần` số vốn ký quỹ thực tế (nếu dùng đòn bẩy 10x).
+- **Sai lầm ngây thơ:** Dùng công thức PnL thường $\text{Loss} = \text{size-notional} \times (1 + \text{fee})$. Việc trừ thẳng `size_notional` sẽ báo cáo quỹ bị lỗ gấp `10 lần` số vốn ký quỹ thực tế (nếu dùng đòn bẩy 10x).
 - **Chuẩn hóa định chế (`compute_realized_pnl`):** Trong cơ chế `Isolated Margin`, số tiền tối đa quỹ mất khi thanh lý (`gross_pnl`) chính là toàn bộ tiền thế chấp ban đầu (`Margin = size_notional / leverage`). 
-- **[Quyết Định #7] Thống Nhất Xử Lý Phí & Chống Đếm Kép Funding:** Thay vì gộp `fee_entry` làm chi phí chìm vào `gross_pnl`, hệ thống tách bạch để nhánh Thanh lý khấu trừ `fee_entry` ở bước tính `net_pnl`. Đặc biệt, vì toàn bộ tiền thế chấp ban đầu (`Initial Margin`) đã bị sàn tịch thu trọn vẹn, khoản `funding_accrued` phát sinh trong thời gian giữ lệnh tuyệt đối KHÔNG được khấu trừ tiếp vào `Net PnL` để ngăn chặn lỗi đếm kép (`Double-Count Funding Fee`).
+- **[Quyết Định #7] Thống Nhất Xử Lý Phí:** Thay vì gộp `fee_entry` làm chi phí chìm vào `gross_pnl`, hệ thống tách bạch để 2 nhánh (Normal và Liquidation) xử lý phí giống hệt nhau ở bước tính `net_pnl`.
 
 $$
-\text{Gross PnL}_{\text{Liq}} = -\left( \frac{\text{size notional}}{\text{leverage}} \right)
+\text{Gross-PnL}_{\text{Liq}} = -\left( \frac{\text{size-notional}}{\text{leverage}} \right)
 $$
 $$
-\text{Net PnL}_{\text{Liq}} = \text{Gross PnL}_{\text{Liq}} - \text{fee entry}
+\text{Net-PnL}_{\text{Liq}} = \text{Gross-PnL}_{\text{Liq}} - \text{fee-entry} - \text{funding-accrued}
 $$
 
 ---
 
 ### 3. Kiểm Tra Hợp Lệ & Bảo Vệ 4 Lỗi Rủi Ro (`Strict Validation Guards B-1-5`)
-1. **Kiểm tra mảng rỗng sát biên (`Zero-Length Slice & Boundary Truncation Guard`):** Nếu lệnh mở sát ranh giới fold (`n_bars <= 1` hoặc `entry_idx + 1 >= test_window_end_idx`), thay vì trả về `None` (làm mất lệnh khỏi thống kê Sharpe/DSR/PBO tổng thể), hệ thống trả về bản ghi `TIME_STOP` với cờ `boundary_truncated = True`. Nhờ cờ này, bộ lọc Kelly ở Module F tự động loại bỏ lệnh cận biên khỏi bảng tính Kelly (`ngăn Kelly Pollution 0%`), trong khi thống kê OOS toàn cục giữ lại trọn vẹn mẫu (`ngăn OOS Exclusion Bias`).
+1. **Kiểm tra mảng rỗng sát biên (`Zero-Length Slice Guard`):** Nếu lệnh mở đúng tại cây nến cuối cùng của Fold (`entry_idx + 1 >= test_window_end_idx`), mảng sau khi `Pre-Slice` sẽ rỗng (`len <= 1`). Hệ thống tự động bắt lỗi và hoàn trả `None` (Hủy bỏ sự kiện) thay vì tạo ra một bản ghi giả 0 nến, ngăn chặn việc làm ô nhiễm mẫu thống kê Kelly.
 2. **Kiểm tra giới hạn kép (`Dual-Boundary Cut`):** Cắt vật lý đồng thời theo cả `t_max_live` và `test_window_end_idx`.
 3. **Kiểm tra chuẩn hóa đơn vị `size_notional` (`USD Notional vs Units Guard`):** Tách rõ cờ `is_notional_in_usd` để chuẩn hóa phép tính PnL theo tỷ suất sinh lời hoặc theo số lượng coin.
 4. **Kiểm tra tham số đầu vào (`Side & Leverage Guard`):** Bảo đảm tính hợp lệ tuyệt đối cho `side in (1, -1)` và `leverage >= 1.0`.
@@ -813,8 +756,8 @@ flowchart TD
     Input["Input: full_bars, entry_idx, test_window_end_idx, t_max_live"] --> PreSlice["Pre-Slice Cut: effective_end = min(entry + 1 + t_max, fold_end, len)"]
     PreSlice --> SliceArr["Slice Physical Arrays: future_bars = full_bars[entry+1 : effective_end]"]
     
-    SliceArr --> CheckZero{"Is len(future_bars) == 0 or boundary cut?"}
-    CheckZero -->|"Yes (At fold boundary)"| BoundaryRecord["Return TIME_STOP record with boundary_truncated=True (Kelly Filter removes later, OOS Sharpe retains)"]
+    SliceArr --> CheckZero{"Is len(future_bars) <= 1?"}
+    CheckZero -->|"Yes (At fold boundary)"| InstantExit["Return None (Drop event to prevent Kelly pollution)"]
     
     CheckZero -->|No| CallV3["Call compute_regime_aware_trailing_exit_v3_liquidation_aware(future_bars)"]
     CallV3 --> InitExtreme["Initialize extreme_price (from n-1 bar if trailing)"]
@@ -825,7 +768,7 @@ flowchart TD
 
 ---
 
-## PHẦN VIII-B: GIẢI PHẪU CHI TIẾT CỤM TÍCH HỢP HỢP ĐỒNG GIAO DỊCH VÀ ĐỊNH TUYẾN THỰC THI — AEGIS WIRING LAYER (`Task B-1-6 $	o$ B-1-9`)
+## PHẦN VIII-B: GIẢI PHẪU CHI TIẾT CỤM TÍCH HỢP HỢP ĐỒNG GIAO DỊCH VÀ ĐỊNH TUYẾN THỰC THI — AEGIS WIRING LAYER (`Task B-1-6 -> B-1-9`)
 
 ### 1. Ý Nghĩa & Nỗi Đau Thực Tế Về Phân Mảnh Hệ Thống (`Why Wiring Layers Fail in Quantitative Trading?`)
 Trong các hệ thống giao dịch định lượng quy mô lớn, một lỗi chí mạng thường xuyên xảy ra không phải ở từng thuật toán riêng lẻ (như công thức Kelly hay HMM), mà nằm ở **lớp keo dán kết nối (`Wiring Layer / Glue Layer`) giữa các mô-đun**:
@@ -851,8 +794,8 @@ def resolve_trade_execution_params(
     side_primary: int,
     entry_price: float,
     atr_i: float,
-    t_max_live_follow: int = 120,
-    t_max_live_fade: int = 40,
+    t_max_live_follow: int = 12,
+    t_max_live_fade: int = 6,
     m_sl_follow: float = 2.0,
     m_sl_fade: float = 1.5,
     c_trade_adj: float = 0.01,
@@ -868,8 +811,8 @@ def resolve_trade_execution_params(
 1. **Kiểm tra rào cản Regime Gate (`Step 1: Trade Mode Classification`):**
    Hàm gọi trực tiếp `classify_trade_mode(p_i, p_chop_i, ...)`. Nếu kết quả trả về là `"none"` (nằm trong vùng rủi ro mù `deadzone` hoặc tín hiệu yếu), hàm lập tức trả về `None` để chặn đứng toàn bộ việc mở lệnh, không tốn tài nguyên tính toán các tham số tiếp theo.
 2. **Quy tắc Đảo Dấu Bắt Buộc (`Step 2: Strict Side Inversion`):**
-   $$\text{side actual} = \begin{cases} \text{side primary} & \text{nếu mode} == \text{"follow"} \\ -\text{side primary} & \text{nếu mode} == \text{"fade"} \end{cases}$$
-   Đồng thời, thời gian sống tối đa (`t_max`) và bộ nhân cắt lỗ (`m_sl`) được định dạng riêng biệt theo chế độ: chế độ `fade` (đánh nhanh rút gọn trong sideway) sẽ được gán `t_max_live_fade` (40 nến) và `m_sl_fade` (1.5x ATR), ngắn hơn đáng kể so với chế độ `follow` (120 nến, 2.0x ATR) theo chuẩn mực chốt trong Sổ cân bằng hằng số [`config/aegis_canonical_parameters.yaml`](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/config/aegis_canonical_parameters.yaml).
+   $$\text{side\_actual} = \begin{cases} \text{side\_primary} & \text{nếu mode} == \text{"follow"} \\ -\text{side\_primary} & \text{nếu mode} == \text{"fade"} \end{cases}$$
+   Đồng thời, thời gian sống tối đa (`t_max`) và bộ nhân cắt lỗ (`m_sl`) được định dạng riêng biệt theo chế độ: chế độ `fade` (đánh nhanh rút gọn trong sideway) sẽ được gán `t_max_live_fade` (6 nến) và `m_sl_fade` (1.5x ATR), ngắn hơn đáng kể so với chế độ `follow` (12 nến, 2.0x ATR).
 3. **Tính toán Cắt Lỗ Ban Đầu Theo Chiều Thực Tế (`Step 3: Initial Stop-Loss via Task B-1-3`):**
    Hàm gọi `compute_sl_initial(entry_price=entry_price, atr=atr_i, side=side_actual, m_sl=m_sl, c_trade_adj=c_trade_adj)`. Việc truyền bắt buộc `side_actual` bảo đảm điểm Cắt Lỗ tuân thủ đúng quy ước `Geometric Logarithm Symmetry` cho đúng phe Long hoặc Short.
 4. **Kiểm Duyệt Đòn Bẩy An Toàn (`Step 4: Strict Leverage Resolution via Task v11.9`):**
@@ -880,7 +823,7 @@ def resolve_trade_execution_params(
 
 ### 3. Nghiệm Thu Kiểm Thử TDD (`TDD Verification & Safety Guards`)
 Được nghiệm thu trọn vẹn trong `tests/meta_labeling/test_trade_mode.py` với các test case bọc thép:
-- **`test_b_1_6_resolve_trade_execution_params_follow_and_fade`**: Khẳng định khi `mode="fade"`, `side_actual` phải bị đảo dấu chính xác $180^\circ$ (ví dụ: `side_primary=1 $	o$ side_actual=-1`), và `sl_initial` phải nằm phía trên giá `entry_price`.
+- **`test_b_1_6_resolve_trade_execution_params_follow_and_fade`**: Khẳng định khi `mode="fade"`, `side_actual` phải bị đảo dấu chính xác $180^\circ$ (ví dụ: `side_primary=1 -> side_actual=-1`), và `sl_initial` phải nằm phía trên giá `entry_price`.
 - **`test_b_1_6_resolve_trade_execution_params_sl_too_tight_raises`**: Chứng minh khi cấu hình đòn bẩy quá lớn hoặc `sl_initial` vượt quá biên giới thanh lý, hệ thống từ chối mở lệnh (`raises ValueError`) chứ không tự ý thỏa hiệp.
 
 ### 4. Sơ Đồ Luồng Logic Task B-1-6 (`Workflow Diagram`)
@@ -919,7 +862,7 @@ def resolve_absolute_exit_idx(entry_idx: int, exit_idx_relative: int) -> int:
 ```
 
 #### Phép tính biến đổi hệ quy chiếu (`Absolute Index Projection Formula`):
-$$\text{exit idx absolute} = \text{entry idx} + 1 + \text{exit idx relative}$$
+$$\text{exit\_idx\_absolute} = \text{entry\_idx} + 1 + \text{exit\_idx\_relative}$$
 
 - **Ý nghĩa sống còn của số hạng `+ 1` (`Why + 1 is mandatory?`):**
   Trong nguyên lý khớp lệnh định chế, lệnh được kích hoạt tại giá đóng cửa của cây nến tín hiệu (`entry_idx`). Cây nến đầu tiên mà lệnh chịu rủi ro biến động giá trong tương lai (`future bar #0`) chính là cây nến `entry_idx + 1`. 
@@ -967,30 +910,30 @@ def run_trailing_exit_for_oos_event(
 1. **Trạm 1 (Gọi B-1-6):** Điều phối thông số thực thi qua `resolve_trade_execution_params(p_i, p_chop_i, side_primary, entry_price, atr_i, ...)`. Nếu trả về `None` (deadzone), hàm kết thúc tức thì `return None`.
 2. **Trạm 2 (Kiến trúc Pre-Slice Zero-Leakage):**
    Tính toán điểm cắt ranh giới vật lý:
-   $$\text{effective end} = \min(\text{entry idx} + 1 + t_{\max}, \text{test window end idx}, \text{len}(full\_highs))$$
+   $$\text{effective\_end} = \min(\text{entry\_idx} + 1 + t_{\max}, \text{test\_window\_end\_idx}, \text{len}(full\_highs))$$
    Tạo mảng cắt vật lý: `future_highs = full_highs[entry_idx+1 : effective_end]`, `future_lows`, `future_closes`, `future_p_trend`.
-3. **Trạm 3 (Chốt Kiểm Duyệt & Bảo Tồn Sự Kiện Cận Biên — `Boundary Truncation Guard`):**
-   Kiểm tra độ dài mảng đã cắt: nếu `len(future_highs) == 0` hoặc `effective_t_max < t_max_live`.
-   - **Quy tắc Vàng định chế (Kiến trúc 2 tầng theo Data Contracts v11.9):** Nếu lệnh mở sát biên fold hoặc hết giờ trước khi chạm SL/Trail, thay vì trả về `None` (làm mất mẫu khỏi thống kê OOS Sharpe/DSR/PBO toàn cục — `OOS Exclusion Bias`), hệ thống trả về bản ghi `TIME_STOP` kèm cờ `boundary_truncated = True`. Nhờ cờ này, bộ lọc Kelly ở Module F (`filter_boundary_truncated_for_kelly_table`) sẽ tự động loại bỏ lệnh cận biên khỏi ma trận đầu vào của Kelly Sizer (`chống Kelly Pollution 0%`), trong khi thống kê OOS toàn cục giữ lại trọn vẹn mẫu.
-4. **Trạm 4 (Gọi B-1-4/B-1-5):** Khởi chạy Trailing Stop v3 (`compute_regime_aware_trailing_exit_v3_liquidation_aware`) trên mảng `future_bars`, nhận về `(exit_idx_relative, exit_reason, boundary_truncated)`.
+3. **Trạm 3 (Chốt Kiểm Duyệt Rác Cận Biên — `Strict Boundary Cut Guard`):**
+   Kiểm tra độ dài mảng đã cắt: `if len(future_highs) <= 1: return None`.
+   - **Quy tắc Vàng định chế:** Nếu mảng không đủ tối thiểu 2 cây nến (hoặc rỗng) để mô phỏng sự biến động giá thực tế, sự kiện giao dịch này **bị tiêu hủy hoàn toàn (`return None`)**. Bức tường phòng thủ này bảo vệ cho ma trận đầu vào của Kelly Sizer tuyệt đối không chứa các giao dịch 0% ngụy tạo.
+4. **Trạm 4 (Gọi B-1-4/B-1-5):** Khởi chạy Trailing Stop v3 (`compute_regime_aware_trailing_exit_v3_liquidation_aware`) trên mảng `future_bars`, nhận về `(exit_idx_relative, exit_reason)`.
 5. **Trạm 5 (Gọi B-1-7):** Quy đổi chỉ số tuyệt đối qua `resolve_absolute_exit_idx(entry_idx, exit_idx_relative)`.
-6. **Trạm 6 (Đóng Gói Bản Ghi Thô):** Tổng hợp từ điển trung gian `partial_record` chứa đầy đủ thông tin dòng dõi, hướng `side_actual`, `exit_idx_absolute`, `exit_reason`, `boundary_truncated`, và `sl_initial` để sẵn sàng chuyển tiếp sang `Task B-1-9`.
+6. **Trạm 6 (Đóng Gói Bản Ghi Thô 13 Trường):** Tổng hợp từ điển trung gian `partial_record` chứa đầy đủ thông tin dòng dõi, hướng `side_actual`, `exit_idx_absolute`, `exit_reason`, và `sl_initial` để sẵn sàng chuyển tiếp sang `Task B-1-9`.
 
 ### 3. Nghiệm Thu Kiểm Thử TDD (`TDD Verification`)
 Được nghiệm thu tại `tests/labeling/test_trailing_exit.py`:
-- **`test_run_trailing_exit_for_oos_event_full_pipeline`**: Kiểm thử tích hợp toàn bộ luồng nối cáp từ `OOS event` $\to$ `B-1-6` $\to$ `Pre-Slice` $\to$ `B-1-5` $\to$ `B-1-7` $\to$ `partial_record`.
-- **Case 3 (`boundary_truncated`)**: Chứng minh khi `entry_idx + 1 >= test_window_end_idx` (mảng rỗng) hoặc sát biên, hàm trả về bản ghi hợp lệ kèm cờ `boundary_truncated = True`, khẳng định cơ chế bảo vệ kép (OOS retention + Kelly pollution filtering) hoạt động 100%.
+- **`test_b_1_8_run_trailing_exit_for_oos_event_full_wiring`**: Kiểm thử tích hợp toàn bộ luồng nối cáp từ `OOS event` $\to$ `B-1-6` $\to$ `Pre-Slice` $\to$ `B-1-5` $\to$ `B-1-7` $\to$ `partial_record`.
+- **`test_b_1_8_run_trailing_exit_for_oos_event_boundary_cut`**: Chứng minh khi `entry_idx + 1 >= test_window_end_idx` (mảng rỗng), hàm lập tức trả về `None`, khẳng định cơ chế bảo vệ mẫu Kelly hoạt động 100%.
 
 ### 4. Sơ Đồ Luồng Logic Task B-1-8 (`Workflow Diagram`)
 ```mermaid
 flowchart TD
     In["OOS Event: entry_idx, entry_price, p_i, p_chop_i, side_primary, arrays"] --> CallB16["Call Task B-1-6: resolve_trade_execution_params(...)"]
     CallB16 --> CheckB16{"Execution Params == None?"}
-    CheckB16 -->|Yes| OutNone1["Return None (Filtered by Deadzone / Regime Gate)"]
+    CheckB16 -->|Yes| OutNone1["Return None (Filtered by Regime Gate)"]
     
     CheckB16 -->|No| PreSlice["Pre-Slice Cut: effective_end = min(entry+1+t_max, fold_end, len)<br/>future_bars = full_bars[entry+1 : effective_end]"]
-    PreSlice --> CheckLen{"len(future_bars) == 0 or boundary cut?"}
-    CheckLen -->|Yes| OutBoundary["Return Partial Record: TIME_STOP + boundary_truncated=True<br/>(Retained for OOS Sharpe, Filtered out of Kelly Table)"]
+    PreSlice --> CheckLen{"len(future_bars) <= 1?"}
+    CheckLen -->|Yes| OutNone2["Return None (Strict Boundary Cut - Prevent Kelly Pollution!)"]
     
     CheckLen -->|No| CallV3["Call Task B-1-4/5: compute_regime_aware_trailing_exit_v3_liquidation_aware(...)"]
     CallV3 --> GetRel["Return: exit_idx_relative, exit_reason"]
@@ -1029,32 +972,31 @@ def finalize_trade_record(
 1. **Tra cứu Giá Khớp Lệnh Tuyệt Đối (`Step 1: Absolute Exit Price Lookup`):**
    Hàm lấy ra `exit_idx_absolute = partial_record["exit_idx_absolute"]` và tra cứu trực tiếp trên mảng gốc: `exit_price_stub = float(full_closes[exit_idx_absolute])`. Giá này đóng vai trò là `exit_price` tạm thời (sẽ được tích hợp trọn vẹn với giá khớp lệnh thực tế từ Module G ở Task B-8-4).
 2. **Phân Định Nhánh PnL Minh Bạch (`Step 2: Transparent PnL Branching Engine via Task v11.8 & v11.9`):**
-   - **Nhánh `LIQUIDATION` (Quét thanh lý):** Tôn trọng tuyệt đối Quyết định Kiến trúc #7, tổn thất tối đa của quỹ bị khóa chặt tại mức Mất Trắng Tiền Thế Chấp (`Initial Margin = size_notional / leverage`). Hàm gọi `compute_liquidation_loss` (hoặc tính toán trực tiếp từ `pnl.py`):
-     $$\text{pnl}_{\text{liq}} = -\left(\frac{\text{size notional}}{\text{leverage used}}\right) - \text{fee entry}$$
-     Đồng thời gắn `fee_entry = size_notional * fee_rate` và `fee_exit = 0.0` (vì không tốn phí chốt lời lệnh mà phí phạt đã trừ thẳng vào margin), TUYỆT ĐỐI KHÔNG trừ thêm `funding_accrued` vào nhánh thanh lý để loại bỏ hoàn toàn rủi ro khấu trừ đúp (`Double-Count Funding Fee`).
+   - **Nhánh `LIQUIDATION` (Quét thanh lý):** Tôn trọng tuyệt đối Quyết định Kiến trúc #7, tổn thất tối đa của quỹ bị khóa chặt tại mức Mất Trắng Tiền Thế Chấp (`Initial Margin`). Hàm gọi `compute_liquidation_loss` (hoặc tính toán trực tiếp):
+     $$\text{pnl}_{\text{liq}} = -\left(\frac{\text{size\_notional}}{\text{leverage\_used}}\right) - \text{funding\_accrued}$$
+     Đồng thời gắn `fee_entry = size_notional * fee_rate` và `fee_exit = 0.0` (vì không tốn phí chốt lời lệnh mà phí phạt đã trừ thẳng vào margin), loại bỏ hoàn toàn rủi ro khấu trừ đúp.
    - **Nhánh Thông Thường (`SL / TRAIL / REGIME_FLIP / TIME_STOP`):** Gọi `compute_realized_pnl` (`src/aegis/execution/pnl.py`) để tính toán chuẩn xác lời/lỗ gộp (`gross_pnl`), trừ đi `fee_entry`, `fee_exit`, và phí lãi qua đêm (`funding_accrued`) để ra `net_pnl`.
-3. **Hoàn Thiện Từ Điển 24 Trường (`Step 3: Complete 24-Field Dictionary Construction`):**
-   Hàm bổ sung các trường siêu dữ liệu dòng dõi (`lineage metadata`) bắt buộc: `schema_version`, `dataset_manifest_hash`, `fold_id`, `symbol`, `entry_timestamp_ms`, `exit_timestamp_ms`, cùng với `is_notional_in_usd`, `fee_paid`, `net_pnl`, và `realized_return`.
+3. **Hoàn Thiện Từ Điển 22 Trường (`Step 3: Complete 22-Field Dictionary Construction`):**
+   Hàm bổ sung các trường siêu dữ liệu dòng dõi (`lineage metadata`) bắt buộc: `schema_version`, `dataset_manifest_hash`, `fold_id`, `symbol`, cùng với `is_notional_in_usd`, `fee_paid`, `net_pnl`, và `realized_return`.
 4. **Kiểm Duyệt Nghiêm Ngặt Qua Pandera Schema (`Step 4: Strict TradeRecordSchema Validation`):**
-   Bản ghi từ điển hoàn chỉnh được chuyển đổi thành DataFrame và đưa qua cổng `TradeRecordSchema.validate(df)`. Bất kỳ lỗi lệch kiểu dữ liệu (`dtype mismatch`), giá trị âm sai trái, lỗi logic thời gian (`exit_timestamp_ms < entry_timestamp_ms`) hay thiếu trường sẽ lập tức ném ngoại lệ (`raises SchemaError`), bảo đảm chỉ những bản ghi sạch 100% mới được đưa vào báo cáo kiểm toán tổng thể.
+   Bản ghi từ điển hoàn chỉnh được chuyển đổi thành DataFrame và đưa qua cổng `TradeRecordSchema.validate(df)`. Bất kỳ lỗi lệch kiểu dữ liệu (`dtype mismatch`), giá trị âm sai trái hay thiếu trường sẽ lập tức ném ngoại lệ (`raises SchemaError`), bảo đảm chỉ những bản ghi sạch 100% mới được đưa vào báo cáo kiểm toán tổng thể.
 
 ### 3. Nghiệm Thu Kiểm Thử TDD (`TDD Verification`)
 Được nghiệm thu khắt khe tại `tests/labeling/test_trailing_exit.py`:
 - **`test_b_1_9_finalize_trade_record_normal_vs_liquidation`**: Kiểm thử đối chứng 2 nhánh PnL. Khẳng định nhánh `LIQUIDATION` không bao giờ trừ thêm `fee_exit` ảo, và khoản lỗ gộp bằng chính xác `-notional / leverage`.
-- **`test_b_1_9_finalize_trade_record_schema_validation`**: Chứng minh bản ghi đầu ra vượt qua 100% 24 trường kiểm duyệt của `TradeRecordSchema`.
-- **`test_zero_atr_trailing_collapse_fixed`** & **`test_finalize_trade_record_timestamp_plumbing`**: Kiểm chứng khả năng kẹp sàn ATR khi cạn kiệt thanh khoản (`BỌ SỐ 2`) và trích xuất `entry_timestamp_ms` / `exit_timestamp_ms` chuẩn xác (`BỌ SỐ 3`).
+- **`test_b_1_9_finalize_trade_record_schema_validation`**: Chứng minh bản ghi đầu ra vượt qua 100% 22 trường kiểm duyệt của `TradeRecordSchema`.
 
 ### 4. Sơ Đồ Luồng Logic Task B-1-9 (`Workflow Diagram`)
 ```mermaid
 flowchart TD
-    In["Input: partial_record (15 fields), full_closes, size_notional, full_timestamps"] --> Lookup["exit_price_stub = float(full_closes[exit_idx_absolute])"]
+    In["Input: partial_record (13 fields), full_closes, size_notional, metadata"] --> Lookup["exit_price_stub = float(full_closes[exit_idx_absolute])"]
     Lookup --> Branch{"What is exit_reason?"}
     
     Branch -->|LIQUIDATION| LiqBranch["Call compute_liquidation_loss(...) / Margin Loss Logic<br/>gross_pnl = -(size_notional / leverage_used)<br/>fee_entry = notional * rate | fee_exit = 0.0<br/>net_pnl = gross_pnl - funding_accrued"]
     
     Branch -->|SL / TRAIL / REGIME_FLIP / TIME_STOP| NormalBranch["Call compute_realized_pnl(entry, exit, side, notional, ...)<br/>-> gross_pnl, net_pnl, fee_paid<br/>fee_entry = notional * rate | fee_exit = fee_paid - fee_entry"]
     
-    LiqBranch --> Assemble["Assemble Complete 24-Field Dictionary (Add schema_version, hash, fold_id, symbol, timestamps)"]
+    LiqBranch --> Assemble["Assemble Complete 22-Field Dictionary (Add schema_version, hash, fold_id, symbol)"]
     NormalBranch --> Assemble
     
     Assemble --> Validate["Pandera TradeRecordSchema.validate(DataFrame)"]
@@ -1072,8 +1014,8 @@ Sự hợp nhất 4 Task (`B-1-6` $\to$ `B-1-7` $\to$ `B-1-8` $\to$ `B-1-9`) t�
 | :--- | :--- | :--- | :--- |
 | **`Task B-1-6`** | `resolve_trade_execution_params` | Cổng thông số, đảo dấu `side_actual` cho lệnh Fade, giải đòn bẩy an toàn và tính giá thanh lý. | **Sign-Inversion Poisoning** (Lỗi tự sát lệnh Fade) & **Leverage Overreach** (Cược đòn bẩy vượt rào). |
 | **`Task B-1-7`** | `resolve_absolute_exit_idx` | Hàm thuần chuyển đổi hệ quy chiếu từ mảng cắt Pre-Slice sang mảng toàn cục (`+ 1 + exit_rel`). | **Index Mismatch / Look-ahead Bias** (Lấy sai chỉ số giá trên chuỗi thời gian toàn cục). |
-| **`Task B-1-8`** | `run_trailing_exit_for_oos_event` | Sợi cáp điều phối tổng thể, cắt Pre-Slice sát biên và bảo tồn lệnh cận biên với cờ `boundary_truncated = True`. | **Boundary Pollution & Kelly Pollution** (Loại khỏi Kelly Table, giữ cho OOS Sharpe). |
-| **`Task B-1-9`** | `finalize_trade_record` | Thống nhất PnL Engine (`pnl.py`), phân định nhánh `LIQUIDATION` và kiểm duyệt 24 trường theo `TradeRecordSchema`. | **Double-Count Fee Poisoning**, **Exit Fee Flaw** & **Data Contract Breach**. |
+| **`Task B-1-8`** | `run_trailing_exit_for_oos_event` | Sợi cáp điều phối tổng thể, cắt Pre-Slice sát biên và tiêu hủy sự kiện rỗng (`len <= 1`). | **Boundary Pollution & Kelly Pollution** (Nhồi giao dịch ảo 0% vào mẫu thống kê Kelly). |
+| **`Task B-1-9`** | `finalize_trade_record` | Thống nhất PnL Engine (`pnl.py`), phân định nhánh `LIQUIDATION` và kiểm duyệt 22 trường theo `TradeRecordSchema`. | **Double-Count Fee Poisoning** (Trừ đúp phí thanh lý) & **Data Contract Breach** (Vỡ định dạng). |
 
 ### Sơ Đồ Luồng Kết Nối Toàn Cục (`Master Wiring Architecture Diagram`)
 ```mermaid
@@ -1089,116 +1031,44 @@ flowchart TD
     FadeSide --> CalcSL_Lev
     
     CalcSL_Lev --> B15["Task B-1-8 / Pre-Slice: future_bars = full_bars[entry+1 : effective_end]"]
-    B15 --> CheckZero{"len(future_bars) == 0 or boundary cut?"}
-    CheckZero -->|Yes| BoundaryFlag["Return TIME_STOP with boundary_truncated=True<br/>(Filtered from Kelly Table, Retained for OOS Sharpe)"]
+    B15 --> CheckZero{"len(future_bars) <= 1 or boundary cut?"}
+    CheckZero -->|Yes| DropNone2["Return None (Strict Zero-Leakage & No Fake TIME_STOP)"]
     CheckZero -->|No| RunV3["compute_regime_aware_trailing_exit_v3(...) -> exit_idx_relative, exit_reason"]
     
     RunV3 --> B17["Task B-1-7: resolve_absolute_exit_idx(entry_idx, exit_idx_relative)<br/>-> exit_idx_absolute = entry_idx + 1 + exit_idx_relative"]
-    B17 --> B18_Out["Task B-1-8 Output: Partial Trade Record (15 fields)"]
+    B17 --> B18_Out["Task B-1-8 Output: Partial Trade Record (13 fields)"]
     
-    B18_Out --> B19["Task B-1-9: finalize_trade_record(partial_record, full_closes, size_notional, full_timestamps)"]
+    B18_Out --> B19["Task B-1-9: finalize_trade_record(partial_record, full_closes, size_notional)"]
     B19 --> PriceLookup["exit_price_stub = float(full_closes[exit_idx_absolute])"]
     
     PriceLookup --> BranchPnL{"exit_reason == 'LIQUIDATION'?"}
     BranchPnL -->|Yes| LiqBranch["Loss = -(notional/leverage) - funding<br/>fee_entry = notional * rate, fee_exit = 0"]
     BranchPnL -->|No| NormalBranch["compute_realized_pnl(...) -> gross_pnl, net_pnl, fee_paid<br/>fee_entry = notional * rate, fee_exit = fee_paid - fee_entry"]
     
-    LiqBranch --> SchemaVal["Build Complete 24-Field Dictionary -> Pandera TradeRecordSchema.validate(df) ✅"]
+    LiqBranch --> SchemaVal["Build Complete 22-Field Dictionary -> Pandera TradeRecordSchema.validate(df) ✅"]
     NormalBranch --> SchemaVal
-```
-
-
----
-
-## PHẦN VIII-C: GIẢI PHẪU CHI TIẾT CƠ CHẾ LỌC CUSUM CO GIÃN ĐỘNG VÀ BẢO VỆ FALLBACK L2 PROGRESSIVE (`TASKS B-2-1 & B-2-2`)
-
-Nhằm nâng cấp khả năng thích ứng thời gian thực trong môi trường biến động tần suất cao (`High-Frequency / Crypto Perpetual Futures`), hệ thống triển khai cụm mô-đun rủi ro và thực thi **Track B-2 (`cusum_events.py`, `drift_monitor.py`, `limit_queue_sim.py`)**. Cụm mô-đun này khắc phục triệt để 3 lỗ hổng vi cấu trúc chí mạng khi vận hành thực chiến trên sàn giao dịch.
-
-### 1. Khắc Phục Lỗ Hổng 1: Bẫy "Độ Trễ Chia Giá" (`Price Scaling Division Hazard` — `Task B-2-1`)
-* **Vị trí tệp:** [src/aegis/labeling/cusum_events.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/labeling/cusum_events.py)
-* **Chức năng định chế:** Hàm `compute_dynamic_cusum_thresholds` và `filter_cusum_events_dynamic` xây dựng bộ lọc biến động CUSUM co theo thời gian thực thay cho ngưỡng cố định.
-* **Nguyên lý bọc thép (Chuyển đổi Log-Return & Chuẩn hóa $\sqrt{T}$):**
-  - Trong công thức cổ điển $h_t = \text{multiplier} \cdot \frac{\text{ATR}_t}{P_t}$, nếu thị trường xảy ra cú sập chớp nhoáng (`Flash Crash` từ $60,000 \to 10,000$), mẫu số $P_t$ tức thời giảm đột ngột sẽ khiến tỷ lệ $\frac{\text{ATR}_t}{P_t}$ tăng phi mã giả tạo, làm ngưỡng $h_t$ nhảy nhót loạn xạ và câm lặng bộ lọc CUSUM ngay trong thời điểm cần lấy mẫu nhất.
-  - **Giải pháp `Robust Smoothed Anchor Price` & Chuẩn hóa $\sqrt{T}$:** Hệ thống tính toán giá neo mượt theo trung bình bình phương động `EWMA` (`Exponential Weighted Moving Average` với `anchor_span = 50`):
-    $$\bar{P}_t = \text{EWMA}_{\text{span}}(P_t)$$
-    $$h_t = \text{np.clip}\left(\text{base\_multiplier} \cdot \frac{\text{ATR}_t}{\bar{P}_t} \cdot \sqrt{\text{bars\_per\_atr\_period}}, \, \text{min\_rel\_threshold}, \, \text{max\_rel\_threshold}\right)$$
-  - **Chuyển đổi sang không gian Log-Return ($r_t = \ln(P_t/P_{t-1})$):** Để đảm bảo tính cộng gộp chính xác qua nhiều chu kỳ nến và chống lệch chuỗi khi giá biến động lớn, toàn bộ biến động tích lũy $S_t$ trong `filter_cusum_events_dynamic` được tính trên chuỗi suất sinh lời logarit ($r_t = \ln(P_t/P_{t-1})$) thay cho hiệu số giá tuyệt đối. Khi tích lũy $S_t^+$ hoặc $S_t^-$ vượt qua ngưỡng động $h_t$, sự kiện CUSUM được kích hoạt và bộ nhớ tích lũy reset về 0.
-* **Kiểm duyệt Không-Thời gian (`Spatial-Temporal Gating`):**
-  - Trong `filter_cusum_events_dynamic`, một sự kiện lấy mẫu chỉ được kích hoạt nếu thỏa mãn **kép** hai điều kiện:
-    1. **Ngưỡng Không gian (`Spatial Gate`):** Biến động Log-Return tích lũy $|S_t| \ge h_t$.
-    2. **Ngưỡng Thời gian (`Temporal Cooldown Gate`):** Khoảng cách kể từ sự kiện liền trước phải đạt $\Delta t \ge k_{\text{cooldown}}$ nến.
-  - Cơ chế này giúp loại bỏ rác nhiễu vi mô khi thị trường bão hòa biến động đi ngang (`Choppy Saturation`), đồng thời tiêm nhãn siêu dữ liệu chuẩn `v11.6 C.4` (`trade_mode`, `side`) phục vụ các tầng downstream.
-
-### 2. Khắc Phục Lỗ Hổng 2: Bẫy "Xếp Hàng Ảo Trên L2" (`Phantom Liquidity Trap` — `Task B-2-2`)
-* **Vị trí tệp:** [src/aegis/execution/limit_queue_sim.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/execution/limit_queue_sim.py)
-* **Chức năng định chế:** Hàm `estimate_queue_ahead` và `simulate_limit_fill_with_queue` mô phỏng chính xác vị trí hàng đợi lệnh (`Queue-Ahead Position`) trên sổ lệnh L2 Orderbook.
-* **Nguyên lý bọc thép:**
-  - Khi đặt lệnh Limit tại mức giá $P_{\text{limit}}$, việc cộng gộp toàn bộ khối lượng hiển thị (`Visible Volume`) tại các mức giá ưu tiên hơn ($P \ge P_{\text{limit}}$ cho Buy Limit hoặc $P \le P_{\text{limit}}$ cho Sell Limit) luôn dẫn đến sai lầm vì hiện tượng đặt lệnh tường giả (`Spoofing`) và hủy lệnh chớp nhoáng (`Iceberg / Order Cancellations`) của các robot HFT đối thủ.
-  - **Giải pháp `Phantom Liquidity Discount`:** Hệ thống áp dụng hệ số chiết khấu thanh khoản ảo (`spoofing_discount = 0.70`), giả định **30% tường lệnh L2 là thanh khoản ảo sẽ bị hủy** trước khi giá quét tới:
-    $$Q_{\text{effective}} = Q_{\text{visible}} \cdot \alpha_{\text{spoofing}}$$
-  - Đồng thời, hàm tính toán số bar tiêu hao hết hàng đợi dựa trên volume giao dịch thực tế mỗi bar:
-    $$T_{\text{deplete}} = \frac{Q_{\text{effective}}}{\bar{V}_{\text{bar\_avg}}}$$
-  - Trong `simulate_limit_fill_with_queue`, lệnh chỉ được xác nhận khớp (`filled = True`) khi tổng volume giao dịch thị trường kể từ lúc đặt vượt qua $Q_{\text{effective}} + \text{order\_size}$.
-
-### 3. Khắc Phục Lỗ Hổng 3: Bẫy "Mù Nghẽn Mạng" (`Network Partition Blindspot` — `Task B-2-2`)
-* **Vị trí tệp:** [src/aegis/execution/limit_queue_sim.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/execution/limit_queue_sim.py)
-* **Chức năng định chế:** Hàm `resolve_execution_mode_with_l2_fallback` thiết lập giao thức suy thoái đa tầng (`3-Tier Progressive Fallback Protocol`) thay thế cho cơ chế chuyển nhị phân thô sơ.
-* **Nguyên lý bọc thép:**
-  - Nếu hệ thống thiết lập quy tắc nhị phân thô sơ ("chỉ cần độ trễ WebSocket > 500ms là chuyển toàn bộ sang Market Order"), nó sẽ rơi vào bẫy tự sát: khi thị trường biến động mạnh, mạng thường lag nhẹ 600ms - 1000ms do REST rate limit, việc xả Market Order liên tục sẽ cắn nát tài khoản bởi phí Taker (`0.05%`) và trượt giá sâu (`Slippage`).
-  - **Kiến trúc `3-Tier Progressive Degradation`:**
-    - **Tier 0 ($\Delta t \le 500\text{ms}$ — Feed Khỏe Mạnh):** Giữ nguyên chế độ `LIMIT` tiêu chuẩn.
-    - **Tier 1 ($500\text{ms} < \Delta t \le 2000\text{ms}$ — Mild Jitter):** TUYỆT ĐỐI KHÔNG CHUYỂN SANG MARKET ORDER! Hệ thống chuyển sang chế độ `POST_ONLY_LIMIT` với thời gian sống ngắn (`Short TTL = 2s`) và tăng biên độ an toàn $Q_{\text{effective}} \times 1.5$. Đảm bảo vừa hưởng hoàn phí Maker (`Rebate`), vừa tránh rủi ro chọn lựa bất lợi (`Adverse Selection`).
-    - **Tier 2 ($\Delta t > 2000\text{ms}$ hoặc L2 Corrupt — Critical Staleness):** Phát tín hiệu `CANCEL_ALL_RESTING_LIMITS` để hủy toàn bộ lệnh treo và phân loại theo **Cổng Khẩn Cấp (`Urgency Gate`)**:
-      + Nếu là lệnh cắt lỗ / bảo toàn vốn (`trade_intent in ("EXIT", "SL", "LIQUIDATION_PREVENTION")`): Chuyển sang `FORCE_MARKET` để cứu tài khoản khỏi cháy ròng bằng mọi giá.
-      + Nếu là lệnh mở vị thế mới (`trade_intent in ("ENTRY", "FOLLOW", "FADE")`): Chuyển sang `ABORT_ENTRY` (từ bỏ mở lệnh giữa tâm bão mạng nghẽn, không tốn phí Taker vô nghĩa).
-
-### 4. Tích Hợp Rủi Ro Tự Động & Xuất Bàn Giao RTK (`Task B-2-1 / Module J`)
-* **Vị trí tệp:** [src/aegis/risk/drift_monitor.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/risk/drift_monitor.py)
-* **Chức năng định chế:**
-  - Hàm `refresh_cusum_thresholds` tự động tính toán thống kê ngưỡng sau mỗi chu kỳ `production_fit`, đồng thời xuất cấu hình ra file chuẩn hóa `artifacts/cusum_thresholds.json` theo đúng giao thức bàn giao nhị phân sang động cơ Rust RTK (Phần VI).
-  - Hàm `monitor_brier_score_cusum_drift` theo dõi sai số dự báo theo thuật toán Page (1954):
-    $$S_t^+ = \max(0, S_{t-1}^+ + (\text{Brier}_t - \bar{\text{Brier}}_{\text{OOS}}))$$
-    Khi $S_t^+ > h_{\text{drift}}$, kích hoạt tín hiệu báo động trôi mô hình (`Model Drift Alarm`) và tự động reset về $0$ để bắt đầu chu kỳ giám sát mới.
-
-### 5. Sơ Đồ Luồng Kết Nối Khắc Phục 3 Lỗ Hổng Vi Cấu Trúc (`L2 Progressive Fallback Architecture`)
-```mermaid
-flowchart TD
-    L2_Snap["L2 Orderbook Snapshot + limit_price + side + current_timestamp_ms"] --> EstQ["estimate_queue_ahead(...)<br/>Q_effective = Q_visible * 0.70 (Spoofing Discount)"]
-    
-    EstQ --> CheckStaleness{"Snapshot Age & Validity Check<br/>snapshot_age_ms vs Thresholds"}
-    
-    CheckStaleness -->|age <= 500ms and valid| Tier0["Tier 0: Healthy Feed<br/>Action: STANDARD_LIMIT<br/>Mode: LIMIT"]
-    CheckStaleness -->|500ms < age <= 2000ms| Tier1["Tier 1: Mild Jitter / Rate Limit<br/>Action: POST_ONLY_LIMIT_WITH_BUFFER<br/>Q_effective *= 1.5, Mode: POST_ONLY_LIMIT"]
-    CheckStaleness -->|age > 2000ms or invalid| Tier2["Tier 2: Critical Staleness / Disconnect<br/>Action: CANCEL_ALL_RESTING_LIMITS"]
-    
-    Tier2 --> UrgencyGate{"check trade_intent: Urgency Gate?"}
-    UrgencyGate -->|EXIT / SL / LIQ_PREVENTION| ForceMkt["Mode: FORCE_MARKET<br/>Preserve Capital at All Costs"]
-    UrgencyGate -->|ENTRY / FOLLOW / FADE| AbortEnt["Mode: ABORT_ENTRY<br/>Skip Opening Position During Storm"]
 ```
 
 ---
 
 ## PHẦN IX: KẾT LUẬN & ĐÁNH GIÁ NGHIỆM THU TỔNG THỂ (`System Audit Conclusion`)
 
-### 1. Trạng Thái Nghiệm Thu 16/16 Task Cốt Lõi (`Track A, Track B & Track B-2 Completed 100%`)
-Toàn bộ 16 nhiệm vụ kiểm toán, xây dựng thuật toán, quản trị vi cấu trúc và tích hợp luồng thực thi (Wiring Layer) thuộc tầng kiến trúc **Track A (Empirical Kelly Sizing)**, **Track B (Regime-Aware Trailing Exit & Execution Pipeline)** và **Track B-2 (Dynamic CUSUM & L2 Progressive Fallback)** đã được hoàn thiện, chuẩn hóa ngôn ngữ định chế trung lập và vượt qua `100%` các bài kiểm thử tự động TDD/Integration (`73/73 Tests Passed in 1.71s`):
+### 1. Trạng Thái Nghiệm Thu 14/14 Task Cốt Lõi (`Track A & Track B Completed 100%`)
+Toàn bộ 14 nhiệm vụ kiểm toán, xây dựng thuật toán và tích hợp luồng thực thi (Wiring Layer) thuộc tầng kiến trúc **Track A (Empirical Kelly Sizing)** và **Track B (Regime-Aware Trailing Exit & Execution Pipeline)** đã được hoàn thiện, chuẩn hóa ngôn ngữ định chế trung lập và vượt qua `100%` các bài kiểm thử tự động TDD/Integration (`52/52 Tests Passed in 1.78s`):
 
-1. **`schemas.py` & `check_insufficient_history_nulls` (`Task B-1-10` & `Data Contracts`):** Đạt chuẩn `100% Passed All Pandera Checks & Lineage Gates`, kiểm soát nghiêm ngặt 24 trường giao dịch (bổ sung `entry_timestamp_ms`, `exit_timestamp_ms` chống lỗ hổng `Temporal Blindness`) và tem niêm phong SHA-256 (`dataset_manifest_hash`).
+1. **`schemas.py` & `check_insufficient_history_nulls` (`Task B-1-10` & `Data Contracts`):** Đạt chuẩn `100% Passed All Pandera Checks & Lineage Gates`, kiểm soát nghiêm ngặt 22 trường giao dịch và tem niêm phong SHA-256 (`dataset_manifest_hash`).
 2. **`trade_mode.py` (`Task B-1-2` — `Regime Gate`):** Định tuyến 3 chế độ (`Follow / Fade / none`) chuẩn xác, khóa rủi ro vùng `deadzone` và ngăn số rác `NaN/Inf`.
 3. **`compute_sl_initial` (`Task B-1-3` — `Volatility Cushion`):** Tính toán điểm cắt lỗ đối xứng theo hàm mũ Logarithm, tự động bảo vệ không gian giá cho cả hai chiều Long/Short.
-4. **`trailing_exit.py` (`Task B-1-4` & `Task B-1-5`):** Cài đặt rào cản Trailing Stop v3 (`Liquidation Aware`), cơ chế `Regime-Flip` nhạy bén, kẹp sàn ATR theo `min_tick_size` chống `Zero-ATR Trailing Collapse`, và kiến trúc `Pre-Slice Zero-Leakage`.
+4. **`trailing_exit.py` (`Task B-1-4` & `Task B-1-5`):** Cài đặt rào cản Trailing Stop v3 (`Liquidation Aware`), cơ chế `Regime-Flip` nhạy bén và kiến trúc `Pre-Slice Zero-Leakage`.
 5. **`resolve_trade_execution_params` (`Task B-1-6` — `Execution Resolver`):** Đảo dấu side bắt buộc cho chế độ Fade, kiểm duyệt đòn bẩy an toàn và tính toán giá thanh lý trực tiếp.
 6. **`resolve_absolute_exit_idx` (`Task B-1-7` — `Absolute Index mapping`):** Bảo chứng duy trì `Single Source of Truth` giữa mảng nến con và mảng dữ liệu toàn cục.
-7. **`run_trailing_exit_for_oos_event` (`Task B-1-8` — `OOS Event Wiring`):** Nối trọn mạch B-1-5 $\to$ B-1-6 $\to$ B-1-7, xử lý sạch sự kiện cận biên không tạo bản ghi rỗng và luân chuyển timestamp chuẩn xác.
-8. **`finalize_trade_record` (`Task B-1-9` — `PnL Stabilization Engine`):** Thống nhất logic lời/lỗ ròng qua `pnl.py`, xử lý chuyên biệt nhánh `LIQUIDATION` chống đếm kép phí và xuất ra từ điển 24 trường hoàn hảo.
+7. **`run_trailing_exit_for_oos_event` (`Task B-1-8` — `OOS Event Wiring`):** Nối trọn mạch B-1-5 $\to$ B-1-6 $\to$ B-1-7, xử lý sạch sự kiện cận biên không tạo bản ghi rỗng.
+8. **`finalize_trade_record` (`Task B-1-9` — `PnL Stabilization Engine`):** Thống nhất logic lời/lỗ ròng qua `pnl.py`, xử lý chuyên biệt nhánh `LIQUIDATION` chống đếm kép phí và xuất ra từ điển 22 trường hoàn hảo.
 9. **`liquidation_layer.py` (`Task v11.9` — `Pre-Flight Check`):** Cung cấp công thức giải tích trực tiếp `resolve_max_safe_leverage` $O(1)$ cho `Isolated Margin Perpetual Futures`.
 10. **`kelly_empirical.py` (`Task B-1-1` — `Empirical Kelly Solver`):** Động cơ tối ưu hóa phi tuyến `brentq` hoạt động mượt mà, tích hợp rào cản bảo vệ suy kiệt vốn (`Drawdown Prevention Guard`).
-11. **`cusum_events.py` (`Task B-2-1` — `Dynamic CUSUM Engine`):** Triển khai bộ lọc co giãn động sử dụng `Robust Smoothed Anchor Price` $\text{EWMA}_{\text{span}=50}$ chống bẫy chia giá khi Flash Crash, kèm cổng kiểm duyệt không-thời gian (`Spatial-Temporal Cooldown`).
-12. **`drift_monitor.py` (`Task B-2-1 / Module J` — `Drift & RTK Export`):** Cập nhật định kỳ ngưỡng CUSUM sau `production_fit`, xuất cấu hình JSON (`cusum_thresholds.json`) sang Rust RTK và giám sát độ trôi Brier Score bằng thuật toán Page (1954).
-13. **`limit_queue_sim.py` (`Task B-2-2` — `L2 Queue & 3-Tier Fallback`):** Mô phỏng hàng đợi resting limit với chiết khấu thanh khoản ảo `spoofing_discount = 0.70`, tích hợp giao thức suy thoái 3 tầng (`Tier 0 LIMIT -> Tier 1 POST_ONLY_LIMIT -> Tier 2 ABORT/FORCE_MARKET`).
 
 ### 2. Định Hướng Triển Khai Tiếp Theo
-Hệ thống hiện đã sở hữu một bộ khung xương dữ liệu, thuật toán thoát lệnh, định cỡ Kelly và bảo vệ vi cấu trúc L2 kiên cố đạt chuẩn định chế quantitative trading. Các bước tiếp theo sẽ tiến vào **Module E (CPCV / DSR / PBO Engine)** để chạy kiểm tra độ nhạy quy mô mẫu ($N=30, 100, 200$) và đánh giá xác suất overfitting trước khi kết nối với Module G (`Execution Simulator` — Task B-8-4).
+Hệ thống hiện đã sở hữu một bộ khung xương dữ liệu, thuật toán thoát lệnh và luồng thực thi kiên cố đạt chuẩn định chế quantitative trading. Các bước tiếp theo sẽ tiến vào **Module E (CPCV / DSR / PBO Engine)** để chạy kiểm tra độ nhạy quy mô mẫu ($N=30, 100, 200$) và đánh giá xác suất overfitting trước khi kết nối với Module G (`Execution Simulator` — Task B-8-4).
 
 ---
 
@@ -1215,7 +1085,7 @@ Giả sử quỹ có **100 triệu đồng** vốn. Quỹ sở hữu một chi�
 
 **Bài toán phân bổ:** *Quỹ nên trích tỷ lệ bao nhiêu % vốn ($f$) cho mỗi lần giao dịch để tối đa hóa tốc độ tăng trưởng log kỳ vọng?*
 
-- **Trường hợp 1 — Phân bổ quá thấp ($f = 1\%$ vốn — 1 triệu đồng):**  
+- **Trường hợp 1 — Phân bổ quá thấp ($f = 1\%$ vốn - 1 triệu đồng):**  
   Tốc độ tăng trưởng vốn cực kỳ chậm ($E[r]$ thấp). Sau chuỗi thời gian dài, quỹ bỏ lỡ phần lớn tiềm năng tích lũy kép từ lợi thế thống kê.
 - **Trường hợp 2 — Phân bổ quá liều (`Over-betting`, ví dụ $f = 80\%$ vốn - 80 triệu đồng):**  
   Mặc dù xác suất thắng là $60\%$, biến động ngẫu nhiên chắc chắn sẽ tạo ra các chuỗi **2 hoặc 3 lần thua liên tiếp** tại một thời điểm nào đó. Nếu phân bổ $80\%$ vốn mỗi lệnh, chỉ cần gặp 2 lệnh thua liên tiếp là giá trị tài sản ròng (`NAV`) sụt giảm từ $100 \to 20 \to 4$ triệu đồng (Drawdown `96%`), dẫn đến tổn thất vĩnh viễn không thể phục hồi (`Absorbing Barrier / Ruin`).
@@ -1247,7 +1117,7 @@ Trong các tổ chức định chế quant trading như Renaissance Technologies
 ### Lợi ích cốt lõi:
 1. **Mã Nguồn Thuần Khiết (Purity of Source):** File thuật toán trong `src/` giờ đây chỉ chứa thuần túy toán học và logic giao dịch, giảm thiểu nhiễu loạn cho quá trình Audit.
 2. **Kiểm Thử Tập Trung (Centralized Testing):** Toàn bộ các mô-đun được bảo vệ bởi hàng rào test case tự động chạy qua framework `pytest`, không còn tình trạng chạy thủ công rời rạc (inline `if __name__ == "__main__":`).
-3. **Bảo Vệ Đa Lớp (Armor-Plated Guards):** Tất cả các bộ phận quan trọng như PnL Engine, Kelly Sizer, Liquidation Layer, Trailing Exit, Dynamic CUSUM, và L2 Queue Simulator đều đi kèm các **Fault-Injection Stress Tests** mô phỏng bẻ gãy hệ thống (nhồi NaN, số âm, Inf, lag mạng > 3000ms) để đảm bảo bộ giáp bảo vệ (Armor Guards) từ chối rủi ro hiệu quả 100%.
+3. **Bảo Vệ Đa Lớp (Armor-Plated Guards):** Tất cả các bộ phận quan trọng như PnL Engine, Kelly Sizer, Liquidation Layer, Trailing Exit đều đi kèm các **Fault-Injection Stress Tests** mô phỏng bẻ gãy hệ thống (nhồi NaN, số âm, Inf, phân bổ vốn sai) để đảm bảo bộ giáp bảo vệ (Armor Guards) từ chối rủi ro hiệu quả 100%.
 
 ### Cấu Trúc Mapping Tests:
 - `src/aegis/meta_labeling/sizing/kelly_empirical.py` $\implies$ `tests/meta_labeling/test_kelly_empirical.py`
@@ -1255,10 +1125,7 @@ Trong các tổ chức định chế quant trading như Renaissance Technologies
 - `src/aegis/meta_labeling/sizing/trade_mode.py` $\implies$ `tests/meta_labeling/test_trade_mode.py`
 - `src/aegis/execution/pnl.py` $\implies$ `tests/execution/test_pnl.py`
 - `src/aegis/execution/position_sizer.py` $\implies$ `tests/execution/test_position_sizer.py`
-- `src/aegis/execution/limit_queue_sim.py` $\implies$ `tests/execution/test_limit_queue_sim.py`
 - `src/aegis/labeling/trailing_exit.py` $\implies$ `tests/labeling/test_trailing_exit.py`
-- `src/aegis/labeling/cusum_events.py` $\implies$ `tests/labeling/test_cusum_events.py`
-- `src/aegis/risk/drift_monitor.py` $\implies$ `tests/risk/test_drift_monitor.py`
 
 ---
 
@@ -1277,392 +1144,89 @@ Tham số `sigma` (thường trích xuất từ `ATR / Price`) về nguyên tắ
 - **Giải pháp `math.exp()`:** Hệ thống Aegis chủ ý sử dụng phép biến đổi $e^{-\text{cushion}}$ và $e^{+\text{cushion}}$ bất chấp việc đầu vào là Linear Sigma. Dựa trên chuỗi Taylor $e^{-x} \approx 1 - x$ (với $x$ nhỏ), nó xấp xỉ hoàn hảo cho các biến động thông thường, nhưng tạo ra đường cong tiệm cận $0$ cho các biến động khổng lồ, đảm bảo an toàn tuyệt đối cho không gian giá.
 - **Quy ước:** Thiết kế này được gọi là **Quy ước Geometric Symmetry**. Hệ thống thống nhất xử lý biến động rủi ro giá thông qua hàm mũ Logarithm, kể cả khi tham số gốc là Linear %.
 
-### 7.3. Tách Bạch Phí Funding Khỏi Tổn Thất Ký Quỹ (`Gross vs Net Separation` — Vá Issue #4 & Quyết Định #7)
+### 7.3. Tách Bạch Phí Funding Khỏi Tổn Thất Ký Quỹ (`Gross vs Net Separation` — Vá Issue #4)
 Khi lệnh bị sàn thanh lý cưỡng chế (`Liquidation`), sự phân định giữa tổn thất ký quỹ và số dư ròng là ranh giới định chế bắt buộc để tránh nhầm lẫn cho lập trình viên:
-- **Tổn Thất Ký Quỹ Sàn Phái Sinh (`Gross Liquidation Loss`):** Khi lệnh chạm giá thanh lý trên cơ chế `Isolated Margin`, khoản lỗ tối đa trên sàn Perpetual Futures thu hồi chính xác bằng lượng Ký Quỹ Ban Đầu (`Initial Margin = size_notional / leverage`). Hàm `compute_liquidation_loss` giữ nguyên công thức chuẩn mực $-\frac{\text{size notional}}{\text{leverage}}$, TUYỆT ĐỐI KHÔNG cộng dồn `funding_accrued` hay `fee_exit` vào con số `Gross Loss` này vì sàn chỉ tịch thu đúng phần tài sản cọc (`Collateral`).
-- **Tổn Thất Ròng Sổ Sách Của Quỹ (`Net Realized PnL`):** Trong sổ sách kế toán tổng thể của quỹ (tại `pnl.py` và khâu `finalize_trade_record`), sau khi đã ghi nhận khoản lỗ ký quỹ `Gross Loss = -Initial Margin`, số dư Equity thực tế chỉ bị khấu trừ thêm `fee_entry` đã thanh toán lúc mở lệnh:
-  $$\text{Net PnL}_{\text{Liq}} = \text{Gross Loss} - \text{fee entry} = -\frac{\text{size notional}}{\text{leverage}} - \text{fee entry}$$
-- **Quy ước tối cao chống đếm kép (`Anti-Double-Counting Rule`):** Vì toàn bộ tiền ký quỹ ban đầu (`Initial Margin`) đã bị sàn phái sinh tịch thu (trong đó đã tự động cấn trừ hoặc bào mòn bởi các khoản `funding_accrued` phát sinh định kỳ 8h trước khi thanh lý), hệ thống TUYỆT ĐỐI KHÔNG trừ tiếp `funding_accrued` lần thứ hai vào `Net PnL` của nhánh `LIQUIDATION`. Đây là nguyên tắc bảo vệ sự minh bạch kế toán 100%, phản ánh chuẩn xác vi cấu trúc `Isolated Margin`.
+- **Tổn Thất Ký Quỹ Sàn Phái Sinh (`Gross Liquidation Loss`):** Khi lệnh chạm giá thanh lý, khoản lỗ tối đa trên sàn Perpetual Futures thu hồi chính xác bằng lượng Ký Quỹ Ban Đầu (`Initial Margin = size_notional / leverage`). Hàm `compute_liquidation_loss` giữ nguyên công thức chuẩn mực $-\frac{\text{size\_notional}}{\text{leverage}}$, TUYỆT ĐỐI KHÔNG cộng dồn `funding_accrued` hay `fee_exit` vào con số `Gross Loss` này vì sàn chỉ tịch thu đúng phần tài sản cọc (`Collateral`).
+- **Tổn Thất Ròng Sổ Sách Của Quỹ (`Net Realized PnL`):** Trong sổ sách kế toán tổng thể của quỹ (tại `pnl.py` và khâu `finalize_trade_record`), sau khi đã ghi nhận khoản lỗ ký quỹ `Gross Loss = -Initial Margin`, số dư Equity thực tế của tài khoản vẫn phải chịu thêm khấu trừ khoản phí lãi qua đêm (`funding_accrued`) đã tích lũy trong suốt thời gian giữ lệnh trước thời điểm bị thanh lý:
+  $$\text{Net PnL} = \text{Gross Loss} - \text{funding\_accrued} = -\frac{\text{size\_notional}}{\text{leverage}} - \text{funding\_accrued}$$
+- **Quy ước tối cao:** Sự tách bạch `Gross vs Net Separation` triệt tiêu hoàn toàn mâu thuẫn "đếm kép" (`Double-Count Funding Fee`), vừa bảo đảm phản ánh đúng vi cấu trúc thanh lý trên sàn (không thu quá số cọc), vừa minh bạch 100% dòng tiền tài khoản quỹ (chịu trách nhiệm trả chi phí funding qua đêm thực tế phát sinh).
 
-### 7.4. Kiến Trúc Cắt Trước Khi Tính (`Pre-Slice Zero-Leakage`) và Bảo Tồn Lệnh Cận Biên (`Boundary Preservation v11.9`)
+### 7.4. Kiến Trúc Cắt Trước Khi Tính (`Pre-Slice Zero-Leakage`) và Quy Ước Chỉ Số Tuyệt Đối (`Absolute Indexing v11.8`)
 Trong cụm Task Wiring Layer (`B-1-6 -> B-1-9`), hệ thống thống nhất hai quy chuẩn thiết kế tối cao:
-- **Cắt Trước Khi Tính & Bảo Tồn Lệnh Cận Biên (`Pre-Slice & Boundary Truncation`):** Mảng nến tương lai buộc phải được cắt vật lý sát ranh giới fold (`future_highs = full_highs[entry+1 : effective_end]`) trước khi truyền vào động cơ Trailing Stop. Nếu độ dài mảng sau khi cắt $\le 1$ hoặc lệnh chạm ranh giới fold trước khi chạm stop-loss (`effective_t_max < t_max_live`), thay vì trả về `None` làm mất mẫu, hệ thống **bảo tồn sự kiện dưới dạng bản ghi `TIME_STOP` với cờ `boundary_truncated = True`**. Theo chuẩn `DATA_CONTRACTS_v11_9.md`, cờ này cho phép bộ lọc Module F (`kelly_empirical.py`) gạt bỏ lệnh khỏi bảng Kelly để chống `Kelly Pollution 0%`, đồng thời giữ lại lệnh trong toàn bộ thống kê OOS tổng thể (Sharpe/Return/PBO) để ngăn `OOS Exclusion Bias`.
-- **Hệ Quy Chiếu Chỉ Số Tuyệt Đối (`Absolute Index Single Source of Truth`):** Mọi bản ghi giao dịch (`TradeRecord`) khi xuất ra ngoài tầng định tuyến đều phải đính kèm `exit_idx_absolute = min(entry_idx + 1 + exit_idx_relative, len(full_closes) - 1)`. Bất kỳ mô-đun thực thi nào (`Module G`) hay bộ kiểm định (`Pandera TradeRecordSchema`) khi tra cứu giá khớp lệnh đều phải sử dụng đúng chỉ số tuyệt đối này trên mảng dữ liệu gốc, ngăn chặn 100% rủi ro lệch nhịp thời gian (`Time-Shift Bug`) và lỗi vượt biên chỉ số (`IndexOutOfBounds`).
-
-### 7.5. 3 Bọ Chí Mạng Và Cơ Chế Phòng Thủ Định Chế (`Institutional Armor Patches v11.9`)
-Để đạt chuẩn mực an toàn quỹ định chế (`Institutional Asset Management Standards`), hệ thống đã triệt tiêu vĩnh viễn 3 lỗ hổng chí mạng:
-- **BỌ SỐ 1: Bẫy "Gian Lận Phí Thoát Lệnh" (`Exit Fee Accounting Flaw` tại `pnl.py`):**
-  Sàn giao dịch phái sinh thu phí đóng lệnh dựa trên **Giá trị danh nghĩa tại thời điểm khớp lệnh thoát (`Exit Notional`)**, chứ không phải giá trị danh nghĩa tĩnh lúc mở lệnh (`Entry Notional`).
-  - *Giải pháp bọc thép:* Khi lệnh định giá bằng USD, hệ thống tự động tính `exit_notional = max(0.0, size_notional + gross_pnl)` trước khi nhân với `fee_exit_rate`. Loại bỏ sai lệch tính thiếu phí khi lệnh thắng to và tính dư phí khi lệnh lỗ.
-- **BỌ SỐ 2: Bẫy "Đứt Gãy Thanh Khoản" (`Zero-ATR Trailing Collapse` tại `trailing_exit.py`):**
-  Khi thanh khoản cạn kiệt trong các chu kỳ dị thường (Open = High = Low = Close), $ATR \to 0$, kéo theo `trail_cushion = 0` và khiến `trail_stop` sập thẳng về bằng đúng `extreme_price` ($e^0 = 1$). Chỉ cần giá nhích nhẹ 1 tick ngược hướng, lệnh sẽ bị cắt dừng lỗ oan uổng ngay giữa siêu sóng.
-  - *Giải pháp bọc thép:* Hệ thống áp dụng kẹp sàn cho toàn bộ mảng ATR ngay đầu vào hàm: `safe_atr = np.maximum(atr, min_tick_size)` (với `min_tick_size` mặc định là bước giá tối thiểu của sàn, ví dụ $10^{-4}$), giữ cho khoảng cách đệm `trail_cushion` luôn dương.
-- **BỌ SỐ 3: Lỗ Hổng Mù Thời Gian Của Funding Fee (`Temporal Blindness` tại `schemas.py` & `trailing_exit.py`):**
-  Nếu bản ghi `TradeRecord` chỉ lưu tọa độ chỉ số bar (`entry_idx`, `exit_idx_absolute`), các module tính phí qua đêm (`Funding Fee Accrual`) hoặc backtest định kỳ sẽ bị mù hoàn toàn về thời gian thực, không thể tra cứu mốc UTC thu phí (0h, 8h, 16h).
-  - *Giải pháp bọc thép:* Nâng cấp `TradeRecord` và `TradeRecordSchema` lên **24 trường chuẩn** bằng việc đính kèm `entry_timestamp_ms` và `exit_timestamp_ms`. Hệ thống luân chuyển mảng `full_timestamps` xuyên suốt từ `run_trailing_exit_for_oos_event` tới `finalize_trade_record` để tự động tra cứu timestamp, đồng thời áp đặt kiểm tra Pandera `check_timestamp_logic` (`exit_timestamp_ms >= entry_timestamp_ms`).
-
-### 7.6. Quy Ước Lọc Rò Rỉ & Định Cỡ Kelly Theo AFML (`Tasks B-1-11 -> B-1-14 Core Conventions`)
-Để bảo vệ độ tinh khiết thống kê trong toàn bộ quy trình Meta-Labeling và Sizing, hệ thống thiết lập 3 chuẩn mực định chế bắt buộc:
-1. **Phân biệt rạch ròi giữa Kelly Table và OOS Statistics (`Boundary Truncation Filtering`):**
-   Khi `run_trailing_exit_for_oos_event` cắt cụt lệnh tại biên fold (`boundary_truncated = True`), lệnh này bị buộc dừng với lợi suất xấp xỉ $0\%$. Tại `trade_records_to_kelly_table_inputs` (`Task B-1-11`), các bản ghi này bị **gạt bỏ hoàn toàn khỏi bảng Kelly** để không làm ô nhiễm và suy giảm trần Kelly $f^*$ (`Kelly Pollution`). Tuy nhiên, trong thống kê tổng thể (`OOS Statistics / Sharpe / PBO`), lệnh này vẫn được giữ lại đầy đủ để phản ánh chân thực hiệu suất danh mục khi thực thi ngắt quãng, chống thiên lệch loại trừ OOS (`OOS Exclusion Bias`).
-2. **Co Rút Bayes Gấp Khúc (`Threshold-Gated Bayesian Shrinkage`):**
-   Tại `build_empirical_kelly_table_v2` (`Task B-1-12`), hệ thống không co rút mù quáng mà thiết lập ngưỡng cổng $N < 5$: nếu ô lưới quá ít mẫu, công thức co rút Bayes $w = N/(N+C)$ bị từ chối và gán thẳng về `prior_f = 0.0`. Chỉ khi $N \ge 5$, phân vị bảo thủ $25\%$ (`lower_percentile=25.0`) mới được trích xuất và co rút Bayes với $C = 20.0$.
-3. **Định Lý Cách Ly Purging & Embargoing Trừu Tượng (`AFML Zero-Leakage Cross-Validation`):**
-   Tại `PurgedKFold` (`Task B-1-14`), hệ thống không sử dụng K-Fold tĩnh của `scikit-learn` mà tra soát trực tiếp mảng thời gian nhãn gối đầu `event_times` ($t_0 \to t_1$). Mọi mẫu huấn luyện thuộc `train_before` có $t_1 > \text{test\_start\_time}$ buộc phải bị `Purged`, và mọi mẫu `train_after` nằm trong vùng $\text{test\_max\_t1} + \text{embargo\_step}$ buộc phải bị `Embargoed`. Bẫy `assert len(set(train_idx).intersection(set(test_idx))) == 0` là tường lửa cuối cùng ngăn chặn rò rỉ dữ liệu trước khi huấn luyện mô hình.
-
-### 7.7. Quy Ước Bọc Thép Chống 3 Lỗ Hổng Vi Cấu Trúc (`Tasks B-2-1 -> B-2-2 Core Conventions`)
-Để vận hành an toàn trên môi trường phái sinh thực chiến (`Live Crypto Perpetual Futures`), hệ thống thống nhất 3 quy ước bảo vệ tầng thực thi vi cấu trúc:
-1. **Quy Ước Giá Neo Mượt Kháng Flash-Crash (`EWMA Anchor Price Symmetry`):**
-   Mọi phép tính biến động tương đối $\sigma_t$ trong bộ lọc CUSUM (`cusum_events.py` và `drift_monitor.py`) buộc phải sử dụng mẫu số $\bar{P}_t = \text{EWMA}_{50}(P_t)$ thay vì giá khớp $P_t$ tức thời. Ngăn chặn triệt để hiện tượng chia cho mẫu số quá nhỏ (hoặc thay đổi quá nhanh) gây bùng nổ ngưỡng lọc ảo khi xảy ra flash crash.
-2. **Quy Ước Chiết Khấu Thanh Khoản Ảo (`Spoofing & Iceberg Discount`):**
-   Mọi phép tính khối lượng xếp hàng $Q_{\text{visible}}$ trên L2 Orderbook (`limit_queue_sim.py`) buộc phải nhân với hệ số chiết khấu thanh khoản ảo tối đa $\alpha_{\text{spoofing}} = 0.70$ (chiết khấu 30% lệnh giả lập/tường ảo). Chỉ số $Q_{\text{effective}}$ thu được mới là căn cứ thực tế để tính toán thời gian chờ khớp lệnh (`Estimated Depletion Bars`).
-3. **Quy Ước Suy Thoái Đa Tầng Cổng Khẩn Cấp (`3-Tier Progressive Fallback & Urgency Gate`):**
-   Khi mạng kết nối gặp độ trễ (`Staleness / Jitter`), hệ thống từ chối các quy tắc đảo nhị phân thô sơ ("đổ thẳng sang Market order gây cắn phí Taker vô lý"). Thay vào đó, thiết lập cấu trúc suy thoái 3 tầng chuẩn định chế:
-   - **Tier 0 ($\Delta t \le 500\text{ms}$):** Lệnh Limit tiêu chuẩn.
-   - **Tier 1 ($500\text{ms} < \Delta t \le 2000\text{ms}$):** Đặt `POST_ONLY_LIMIT` kèm đệm an toàn x1.5 và TTL ngắn ($2\text{s}$). Bảo vệ tài khoản khỏi phí Taker và Adverse Selection.
-   - **Tier 2 ($\Delta t > 2000\text{ms}$ hoặc L2 Corrupt):** `CANCEL_ALL_RESTING_LIMITS` ngay lập tức. Nếu là lệnh giảm rủi ro (`EXIT`, `SL`) $\to$ kích hoạt `FORCE_MARKET` bảo toàn vốn. Nếu là lệnh tăng rủi ro (`ENTRY`) $\to$ kích hoạt `ABORT_ENTRY`, từ bỏ mở mới giữa tâm bão đứt gãy mạng.
+- **Cắt Trước Khi Tính (`Pre-Slice before Exit Simulation`):** Mảng nến tương lai buộc phải được cắt vật lý sát ranh giới fold (`future_highs = full_highs[entry+1 : effective_end]`) trước khi truyền vào động cơ Trailing Stop. Nếu độ dài mảng sau khi cắt $\le 1$ (lệnh vào sát biên fold), hệ thống **trả về `None` hủy bỏ sự kiện** thay vì tự ngụy tạo bản ghi `TIME_STOP` 0 nến. Điều này bảo vệ sự tinh khiết tuyệt đối cho ma trận lợi suất nạp vào Kelly Sizer.
+- **Hệ Quy Chiếu Chỉ Số Tuyệt Đối (`Absolute Index Single Source of Truth`):** Mọi bản ghi giao dịch (`TradeRecord`) khi xuất ra ngoài tầng định tuyến đều phải đính kèm `exit_idx_absolute = entry_idx + 1 + exit_idx_relative`. Bất kỳ mô-đun thực thi nào (`Module G`) hay bộ kiểm định (`Pandera TradeRecordSchema`) khi tra cứu giá khớp lệnh đều phải sử dụng đúng chỉ số tuyệt đối này trên mảng dữ liệu gốc, ngăn chặn 100% rủi ro lệch nhịp thời gian (`Time-Shift Bug`).
 
 ---
 
-## 8. Cẩm Nang Kiến Trúc Chuẩn Hóa & Kiểm Định Không-Thời Gian v11.9 (`Module 5.1 & Module 5.2`)
-
-### 8.1. Sổ Cân Bằng Hằng Số & Chống Trôi Tham Số (`Canonical Parameter Registry — Module 5.1`)
-
-#### 8.1.1. Bối cảnh & Vấn nạn Trôi ngầm Tham số (`Silent Parameter Drift`)
-Trong các hệ thống định lượng quy mô lớn, khi nhiều kỹ sư cùng phát triển các mô-đun độc lập (từ tạo đặc trưng, tra cứu nhãn, đến quản trị rủi ro và tối ưu hóa danh mục), hiện tượng **trôi ngầm tham số (`silent parameter drift`)** là nguyên nhân hàng đầu gây ra sai lệch giữa môi trường nghiên cứu (`Backtest / Research`) và môi trường thực thi (`Live Trading`).
-- **Khảo sát hiện trạng trước vá:** Tài liệu kiến trúc và các tệp mã nguồn phân tán tồn tại sự mâu thuẫn rải rác:
-  - Thời gian theo dõi nến OOS tối đa cho nhánh Follow (`t_max_live_follow`) bị ghi nhận lệch giữa `120 nến` và `12 nến`.
-  - Khoảng cách cách ly sau kiểm định chéo (`embargo_bars`) bị gán rải rác `120 nến` trong tài liệu nhưng `12 nến` hoặc `24 nến` trong code.
-  - Sàn Trailing ATR cho Altcoin có nơi dùng $10^{-4}$, có nơi dùng $10^{-6}$.
-- **Hệ quả rủi ro:** Nếu bộ chia `PurgedKFold` dùng `embargo_bars = 12` trong khi cấu hình rủi ro yêu cầu cách ly tối thiểu `24 nến` (tương đương 4 giờ với nến 10 phút), mô hình học máy sẽ bị rò rỉ tự tương quan (`autocorrelation leakage`), tạo ra Sharpe ảo cao ngất ngưởng trong nghiên cứu nhưng suy thoái nặng nề khi đưa vào giao dịch thực tế.
-
-#### 8.1.2. Kiến Trúc "Single Source of Truth" (`SSOT Registry`)
-Để triệt tiêu vĩnh viễn rủi ro trôi tham số, hệ thống thiết lập kiến trúc **Sổ Cân Bằng Hằng Số (`Canonical Parameter Registry`)** tại `config/aegis_canonical_parameters.yaml` cùng tài liệu chuẩn mực `docs/aegis_canonical_parameters.md`. Mọi mô-đun Python trong `src/aegis/` và toàn bộ bộ kiểm thử trong `tests/` đều phải đối chiếu và tuân thủ chặt chẽ bảng hằng số bất di bất dịch này:
-
-| Nhóm Tham Số (`Category`) | Tên Hằng Số (`Canonical Name`) | Giá Trị Chuẩn (`Canonical Value`) | Ý Nghĩa Toán Học / Định Chế |
-| :--- | :--- | :--- | :--- |
-| **Kiểm Định Chéo (`Cross-Validation`)** | `embargo_bars` | `24` | Số nến cách ly bắt buộc ngay sau ranh giới tập Test để triệt tiêu rò rỉ tự tương quan ($\approx 4\text{h}$ với nến $10\text{m}$). |
-| **Kiểm Định Chéo (`Cross-Validation`)** | `embargo_pct` | `0.0` | Tỷ lệ cách ly động theo độ dài tập (được khóa về `0.0` khi ưu tiên dùng tuyệt đối `embargo_bars`). |
-| **Gán Nhãn OOS (`Meta-Labeling`)** | `t_max_live_follow` | `120` | Thời gian sống tối đa (`Time-Stop`) cho nhánh Trend Following ($\approx 20\text{h}$). |
-| **Gán Nhãn OOS (`Meta-Labeling`)** | `t_max_live_fade` | `40` | Thời gian sống tối đa (`Time-Stop`) cho nhánh Mean Reversion ($\approx 6.67\text{h}$). |
-| **Phân Loại Chế Độ (`Regime Gate`)** | `n_states` | `2` | Số trạng thái HMM chuẩn mực được cấu hình cho hệ thống gán nhãn (`bull` / `bear`). |
-| **Phòng Thủ Vi Cấu Trúc (`Execution`)** | `safe_atr_floor_ticks` | `10` | Số bước giá tối thiểu (`min_ticks_cushion`) làm sàn cho Trailing Stop ($10 \times \text{min\_tick\_size}$). |
-| **Tối Ưu Hóa Kelly (`Kelly Engine`)** | `kelly_bootstrap_percentile`| `25.0` | Phân vị hạ cận bảo thủ ($25\%$) được trích xuất từ phân phối mẫu Bootstrap ($B=1000$). |
-| **Tối Ưu Hóa Kelly (`Kelly Engine`)** | `kelly_sample_threshold` | `20.0` | Ngưỡng mẫu $C=20$ trong công thức co rút Bayes ($w = \frac{N}{N+C}$). |
-
-#### 8.1.3. Đồng bộ Mã nguồn & Khóa TDD Tự Động
-- **Sửa hàm khởi tạo `PurgedKFold` ([src/aegis/meta_labeling/purged_kfold.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/meta_labeling/purged_kfold.py)):** Chuẩn hóa chữ ký hàm mặc định khớp $100\%$ với Sổ Cân Bằng:
-  ```python
-  def __init__(
-      self,
-      n_splits: int = 5,
-      t1: Optional[pd.Series] = None,
-      pct_embargo: float = 0.0,
-      embargo_bars: Optional[int] = 24,  # Chuẩn canonical v11.9
-      autocorrelation_lag_threshold: int = 0
-  ):
-  ```
-- **Hải quan kiểm chứng hồi quy (`Regression Guard — test_canonical_params.py`):** Xây dựng bài kiểm thử `test_canonical_parameters_registry_alignment` tự động đọc cấu hình YAML và đối chiếu trực tiếp với tham số mặc định trong code Python cũng như trong tài liệu định chế. Bất kỳ kỹ sư nào tự ý sửa tham số code mà không cập nhật Sổ Cân Bằng sẽ bị `pytest` chặn đứng ngay tại khâu CI/CD.
-
----
-
-### 8.2. Tái Cấu Trúc Canary Assertion Bất Biến Thời Gian (`Temporal Purging Invariant Verification — Module 5.2`)
-
-#### 8.2.1. Bản Chất Rò Rỉ Dữ Liệu Trong Tài Chính (`Data Leakage in Financial Time Series`)
-Khác với dữ liệu chéo (`Cross-Sectional Data`) nơi mỗi mẫu là độc lập ($i.i.d$), các lệnh giao dịch tài chính mang tính chất **gối đầu thời gian (`Overlapping Outcomes`)**. Khi một lệnh $i$ mở tại thời điểm $t_{0,i}$ và đóng tại $t_{1,i}$, nhãn hiệu suất của nó ($y_i \in \{-1, 0, 1\}$ hoặc $R_i$) phụ thuộc vào chuỗi chuyển động giá trong toàn bộ khoảng khép kín $[t_{0,i}, t_{1,i}]$.
-- **Lỗ hổng của K-Fold thường (`Scikit-Learn K-Fold Flaw`):** Việc chia ngẫu nhiên hoặc chia theo khối số nguyên đơn thuần (`Index-based K-Fold`) chỉ bảo đảm ranh giới chỉ số mẫu $\text{Train} \cap \text{Test} = \emptyset$. Tuy nhiên, nếu lệnh $i$ thuộc tập Train có chỉ số $i < j$ (nằm trước tập Test), nhưng thời điểm đóng lệnh $t_{1,i}$ lại kéo dài vượt qua thời điểm bắt đầu tập Test $t_{0,\text{test}}$, mô hình học máy sẽ tra cứu được tương lai ngầm qua biến động giá nằm trong nhãn $y_i$.
-- **Sự sụp đổ của bẫy Canary cũ:** Trước phiên bản v11.9, bẫy kiểm tra rò rỉ chỉ dừng lại ở phép giao tập hợp chỉ số thô:
-  ```python
-  assert len(set(train_idx).intersection(set(test_idx))) == 0  # CHƯA ĐỦ!
-  ```
-  Phép kiểm tra này hoàn toàn **mù lòa về mặt thời gian (`Temporally Blind`)**, cho phép các quan sát Train gối đầu lọt qua hải quan mà không bị phát hiện.
-
-#### 8.2.2. Định Lý Bất Biến Không-Thời Gian (`Strict Temporal Purging & Embargoing Invariant`)
-Để đạt chuẩn mực zero-leakage của AFML (Marcos Lopez de Prado), hệ thống thiết lập định lý bất biến thời gian chặt chẽ được kiểm chứng trên từng fold chia tách. Với một tập Test xác định có biên thời gian $[t_{0,\text{test\_min}}, t_{1,\text{test\_max}}]$ (hoặc tập hợp các khối Test rời nhau trong CPCV):
-
-$$\forall i \in \text{Train\_Before}: \quad t_{1,i} \le t_{0,\text{test\_min}} \quad \text{(Purging Invariant)}$$
-
-$$\forall j \in \text{Train\_After}: \quad t_{0,j} \ge t_{1,\text{test\_max}} + \Delta t_{\text{embargo}} \quad \text{(Embargo Invariant)}$$
-
-```mermaid
-timeline
-    title Sơ Đồ Định Lý Không-Thời Gian Purging & Embargoing (AFML Chapter 7 & 12)
-    section Train Trước (Train_Before)
-      Lệnh i hợp lệ : t0_i ... t1_i <= t0_test (An toàn tuyệt đối)
-      Lệnh Purged (Bị loại) : t0_purged ... [t1_purged lấn vào Test] -> BỊ XÓA BỎ
-    section Khối Test (Out-of-Sample)
-      Ranh giới Test : t0_test_min <==============> t1_test_max
-    section Vùng Cách Ly (Embargo Zone)
-      embargo_bars = 24 : t1_test_max ... t1_test_max + 24 bars (Vùng cấm tuyệt đối)
-      Lệnh Embargoed (Bị loại) : [t0 nằm trong vùng cách ly] -> BỊ XÓA BỎ
-    section Train Sau (Train_After)
-      Lệnh j hợp lệ : t0_j >= t1_test_max + embargo_bars (An toàn tuyệt đối)
-```
-
-#### 8.2.3. Triển Khai Hàm Kiểm Định Bọc Thép `assert_temporal_purging_invariant`
-Hệ thống bổ sung trực tiếp hàm kiểm định vào lõi `PurgedKFold.split()` ([src/aegis/meta_labeling/purged_kfold.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/meta_labeling/purged_kfold.py)), tự động chạy kiểm tra bọc thép trên mọi lần sinh fold:
-
-```python
-def assert_temporal_purging_invariant(
-    train_indices: np.ndarray,
-    test_indices: np.ndarray,
-    event_times: pd.Series,
-    embargo_step: pd.Timedelta
-) -> None:
-    """
-    [ARMOR-PLATED TEMPORAL CANARY INVARIANT]:
-    Khẳng định không có bất kỳ lệnh Train nào xâm lấn thời gian vào ranh giới Test hoặc vùng cách ly Embargo.
-    """
-    if len(test_indices) == 0 or len(train_indices) == 0:
-        return
-
-    # Trích xuất cận thời gian của tập Test
-    test_t0_series = event_times.index[test_indices]
-    test_t1_series = event_times.iloc[test_indices]
-    test_start_t0 = test_t0_series.min()
-    test_max_t1 = test_t1_series.max()
-
-    # Phân định tập Train trước và sau Test dựa trên thời điểm mở lệnh t0
-    train_t0_series = event_times.index[train_indices]
-    train_t1_series = event_times.iloc[train_indices]
-
-    train_before_mask = train_t0_series < test_start_t0
-    train_after_mask = train_t0_series >= test_start_t0
+## PHẦN VIII: BÁO CÁO GIẢI PHẪU KIẾN TRÚC PHASE 2 (KHẮC PHỤC 4 ĐIỂM MÙ TỪ CLAUDE AUDIT)
 
-    # 1. Kiểm định Purging: Mọi lệnh Train trước Test phải kết thúc TRƯỚC khi Test bắt đầu
-    if np.any(train_before_mask):
-        max_t1_train_before = train_t1_series[train_before_mask].max()
-        if max_t1_train_before > test_start_t0:
-            raise AssertionError(
-                f"[VI PHẠM PURGING INVARIANT] Lệnh Train trước Test có thời điểm đóng "
-                f"t1 ({max_t1_train_before}) vượt qua thời điểm bắt đầu Test ({test_start_t0})!"
-            )
+Dựa trên báo cáo Audit vòng 1 từ Claude, hệ thống tuy được bọc thép kiên cố ở các lớp ngoài, nhưng "Bộ não" tín hiệu (Module B) và Cầu dao tự động (Module J) mới chỉ là kiến trúc thiết kế trên giấy (placeholder). Phase 2 đã hoàn thành 100% việc bù đắp các khoảng trống này bằng mã nguồn thực thi toán học thuần túy. Dưới đây là giải phẫu chi tiết:
 
-    # 2. Kiểm định Embargoing: Mọi lệnh Train sau Test phải bắt đầu SAU vùng cách ly
-    if np.any(train_after_mask):
-        min_t0_train_after = train_t0_series[train_after_mask].min()
-        required_start = test_max_t1 + embargo_step
-        if min_t0_train_after < required_start:
-            raise AssertionError(
-                f"[VI PHẠM EMBARGO INVARIANT] Lệnh Train sau Test bắt đầu tại t0 ({min_t0_train_after}) "
-                f"xâm lấn vào vùng cách ly Embargo (Yêu cầu >= {required_start})!"
-            )
-```
-
-- **Thực nghiệm TDD & Kiểm chứng:** Bài kiểm thử `test_purged_kfold_toy_overlap_mathematical_proof` và `test_cpcv_end_to_end_splits_and_leakage_guards` chủ ý tạo ra các chuỗi dữ liệu gối đầu dài (`t1 = t0 + 5 bars`). Bộ kiểm định tự động bắt giữ và loại trừ toàn bộ các quan sát giao cắt ranh giới, giữ cho độ tinh khiết thống kê đạt mức tuyệt đối $100\%$.
-
----
-
-## 9. Cẩm Nang Hạch Toán Phí Funding 2 Chiều & PnL Thanh Lý v11.9 (`Module 5.3`)
-
-### 9.1. Bối Cảnh Vi Cấu Trúc Sàn Phái Sinh Perpetual Futures (`The Funding Erosion Reality`)
-Hợp đồng tương lai vĩnh cửu (`Perpetual Futures`) không có ngày đáo hạn giống hợp đồng tương lai truyền thống. Để giữ giá phái sinh bám sát giá giao ngay (`Spot Price`), các sàn giao dịch (Binance, Bybit, OKX) áp dụng cơ chế thanh toán **Phí Funding (`Funding Rate`)** định kỳ (thường 8 giờ/lần, hoặc liên tục theo giây trên các sàn DEX phi tập trung như dYdX/Hyperliquid).
-- **Quy ước dấu của Funding Fee (`Sign Convention WARNING`):**
-  - **`funding_accrued_pct > 0` (Trả phí qua đêm):** Nếu vị thế đang giữ là Long khi thị trường hưng phấn (`bullish funding rate > 0`), hoặc Short khi thị trường hoảng loạn (`bearish funding rate < 0`), quỹ phải **trả tiền cho phe đối ứng**. Khoản phí này bị sàn trực tiếp cấn trừ vào số dư Ký Quỹ Ban Đầu (`Initial Margin / Collateral`) của lệnh.
-  - **`funding_accrued_pct < 0` (Nhận rebate qua đêm):** Nếu vị thế đi ngược phe đông (chẳng hạn Short khi funding rate > 0), quỹ được **nhận tiền thưởng (`Rebate / Subsidy`)** từ phe đối ứng. Lượng tiền này cộng dồn vào cọc ký quỹ, làm dày lớp đệm tài sản của lệnh.
-- **Lỗ hổng của công thức tĩnh:** Nếu mô hình định cỡ hoặc theo dõi rủi ro bỏ qua biến `funding_accrued_pct`, giá thanh lý cưỡng chế ($P_{\text{liq}}$) sẽ bị tính sai nghiêm trọng trong các xu hướng kéo dài nhiều ngày:
-  - Khi phải trả phí liên tục (`funding > 0`), tiền cọc bị tính khống cao hơn thực tế $\to$ lệnh bị sàn thanh lý sớm hơn dự báo (`Premature Liquidation Shock`).
-  - Khi được nhận tiền liên tục (`funding < 0`), giá thanh lý thực tế lùi ra xa hơn dự báo $\to$ mô hình đánh giá sai biên độ chịu đựng rủi ro.
+### 8.1. Loại Bỏ Ảo Tưởng Kiểm Định (Fake Tests)
+Trước đây, bộ 94 bài test có chứa 3 bài kiểm thử `assert True` giả mạo, tạo cảm giác an toàn giả về độ hoàn thiện của hệ thống:
+1. `test_system_acceptance`
+2. `test_backtest_live_parity`
+3. `test_full_chain_parity_placeholder`
 
----
-
-### 9.2. Định Lý Xấp Xỉ Giá Thanh Lý Động (`Dynamic Liquidation Price Formulation — liquidation_layer.py`)
+**Giải pháp**: Cả 3 test này đã bị cô lập bằng `@pytest.mark.skip` với lý do *"Chưa hoàn thiện tích hợp"*. Việc này đảm bảo con số `99 Passed` hiện tại (sau Phase 2) là thành quả của 99 logic kiểm định thực sự. Không còn điểm mù núp dưới vỏ bọc "Passed" ảo.
 
-#### 9.2.1. Phương Trình Cân Bằng Tài Sản Khi Cháy Lệnh (`Collateral Exhaustion Equation`)
-Xét một lệnh giao dịch trên cơ chế `Isolated Margin` với:
-- Giá vào lệnh $P_{\text{entry}}$, đòn bẩy $L \ge 1$.
-- Tỷ lệ ký quỹ ban đầu (tính trên giá trị danh nghĩa): $\text{IMR} = \frac{1}{L}$.
-- Tỷ lệ ký quỹ duy trì tối thiểu do sàn quy định: $\text{MMR}$ (`Maintenance Margin Rate`, ví dụ $0.40\%$).
-- Tỷ lệ phí mở lệnh (`fee_rate`) và tỷ lệ phí phạt thanh lý cưỡng chế (`liq_fee_rate`, ví dụ $1.25\%$).
-- Tổng tỷ lệ phí funding đã phát sinh cộng dồn (tính trên giá trị danh nghĩa): $\text{funding\_accrued\_pct} \in \mathbb{R}$.
+### 8.2. Xây Dựng "Bộ Não" Signal Engine (Module B)
+Hạng mục cốt lõi nhất được triển khai thành công từ con số 0. Chúng ta đã từ bỏ các thư viện ngoài (`pykalman`, `hmmlearn`) vốn mang nhiều nguy cơ *Look-ahead bias* (nhìn trộm tương lai) hoặc gặp lỗi rác (NaN crashes), thay vào đó triển khai thuần túy bằng phương pháp toán học ma trận của Numpy.
 
-Sàn giao dịch sẽ phát động thanh lý cưỡng chế khi **Tài sản cọc còn lại sau lỗ/lãi và các chi phí bằng đúng mức Ký Quỹ Duy Trì cộng Phí Phạt Thanh Lý**:
+#### A. Kalman Local Linear Trend (LLT) & Gap-Handling
+**File**: [src/aegis/features/kalman/local_linear_trend.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/features/kalman/local_linear_trend.py)
 
-$$\text{Initial Margin} - \text{Loss}_{\text{price}} - \text{Fee}_{\text{entry}} - \text{Funding}_{\text{accrued}} = \text{Maintenance Margin} + \text{Fee}_{\text{liquidation}}$$
+Mô hình Không gian Trạng thái 2 chiều (2D State Space): $x_t = [\mu_t, \nu_t]^T$ 
+(Với $\mu_t$ là mức giá Level, $\nu_t$ là độ dốc Trend).
 
-Chia hai vế cho Giá trị danh nghĩa ban đầu (`Notional` $N = Q \cdot P_{\text{entry}}$):
+- **Ma trận chuyển trạng thái (State Transition)**: 
+  $$\begin{bmatrix} \mu_t \\ \nu_t \end{bmatrix} = \begin{bmatrix} 1 & 1 \\ 0 & 1 \end{bmatrix} \begin{bmatrix} \mu_{t-1} \\ \nu_{t-1} \end{bmatrix}$$
+- **Bọc thép Gap-handling (Predict-only)**: Khi thị trường mất thanh khoản (thiếu nến/tick lỗi) và giá trị Input là `NaN`, thay vì hệ thống cập nhật ma trận với lỗi số học hoặc ngắt kết nối, bộ lọc chỉ chạy pha **PREDICT** mà bỏ qua pha **UPDATE**. 
+  $$x_{t|t} = x_{t|t-1}$$
+  Đồng nghĩa với việc xu hướng (Trend) đóng vai trò là "quán tính" đẩy giá ngoại suy vượt qua vùng mù dữ liệu mà không bị "whipsaw" hay đóng băng hệ thống.
+- **Unit Test Xác Nhận**: `test_kalman_llt_recovers_trend_direction` chứng minh bộ lọc truy hồi chính xác dấu của Trend trên nhiễu, `test_kalman_llt_gap_handling` khẳng định khả năng ngoại suy xuyên qua hố NaN.
 
-$$\frac{1}{L} - \frac{\text{Loss}_{\text{price}}}{N} - \text{fee\_rate} - \text{funding\_accrued\_pct} = \text{MMR} + \text{liq\_fee\_rate}$$
+#### B. Causal-Only Hidden Markov Model (HMM N=2)
+**File**: [src/aegis/features/regime/hmm_causal.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/features/regime/hmm_causal.py)
 
-Chuyển vế để tìm **Khả năng chịu đựng tổn thất giá tối đa (`Margin Loss Allowance` $\Lambda$)**:
+Thay vì dùng hàm `hmmlearn.predict_proba()` (sử dụng thuật toán Forward-Backward Baum-Welch ngấm ngầm làm rò rỉ dữ liệu tương lai vào bộ lọc quá khứ), Aegis nay sở hữu HMM thuần Causal (chỉ nhân quả quá khứ).
 
-$$\Lambda \equiv \frac{\text{Loss}_{\text{price}}}{N} = \frac{1}{L} - \text{MMR} - \text{fee\_rate} - \text{liq\_fee\_rate} - \text{funding\_accrued\_pct}$$
+- **Kiến trúc chốt cứng N=2**: Thu gọn cấu trúc Regime về 2 cực trị là Trending (Có xu hướng) và Choppy (Đi ngang/Nhiễu). 
+- **Thuật toán Forward Alpha Pass**: 
+  - Tính hàm mật độ xác suất B phát xạ của nến hiện tại: $B_t = [P(O_t | S_0), P(O_t | S_1)]$
+  - Truyền xác suất tiên nghiệm qua ma trận chuyển đổi A: $\alpha_{pred} = \alpha_{t-1} \cdot A$
+  - Cập nhật Posterior và chuẩn hóa: $\alpha_t = \frac{B_t \odot \alpha_{pred}}{\sum(B_t \odot \alpha_{pred})}$
+- **Unit Test Chống Rò Rỉ**: Bài test `test_hmm_causal_no_lookahead` truyền thêm một mẫu nến tương lai vào hệ thống, sau đó đo lại xác suất HMM xuất ra tại thời điểm quá khứ $t$. Kết quả khẳng định $\alpha_t$ không hề biến đổi một bit nào, chứng tỏ khả năng vô trùng trước tương lai (Look-ahead Immunity) là tuyệt đối.
 
-#### 9.2.2. Chiết Khấu 2 Chiều Trên Giá Thanh Lý ($P_{\text{liq}}$)
-Từ tỷ lệ chịu đựng $\Lambda$, ta giải nghiệm tọa độ giá thanh lý cho từng chiều giao dịch:
-- **Nhánh Long ($Q > 0$):** Tổn thất xảy ra khi giá giảm dưới $P_{\text{entry}}$:
-  $$\frac{P_{\text{entry}} - P_{\text{liq}}}{P_{\text{entry}}} = \Lambda \implies P_{\text{liq}}^{\text{Long}} = P_{\text{entry}} \cdot \max\left(0.0, \; 1.0 - \Lambda\right)$$
-- **Nhánh Short ($Q < 0$):** Tổn thất xảy ra khi giá tăng trên $P_{\text{entry}}$:
-  $$\frac{P_{\text{liq}} - P_{\text{entry}}}{P_{\text{entry}}} = \Lambda \implies P_{\text{liq}}^{\text{Short}} = P_{\text{entry}} \cdot \left(1.0 + \Lambda\right)$$
+#### C. Generalized Hurst Exponent (GHE)
+**File**: [src/aegis/features/regime/ghe.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/features/regime/ghe.py)
 
-- **Khẳng định phân tích độ nhạy 2 chiều (`Bi-Directional Sensitivity Analysis Proof`):**
-  1. Khi $\text{funding\_accrued\_pct} > 0$ (Trả phí) $\to \Lambda$ giảm xuống $\to P_{\text{liq}}^{\text{Long}}$ tăng lên cận sát $P_{\text{entry}}$, và $P_{\text{liq}}^{\text{Short}}$ giảm xuống sát $P_{\text{entry}}$ $\implies$ **Lệnh dễ bị thanh lý hơn (`Higher Liquidation Vulnerability`)**.
-  2. Khi $\text{funding\_accrued\_pct} < 0$ (Nhận rebate) $\to \Lambda$ tăng lên $\to P_{\text{liq}}^{\text{Long}}$ lùi sâu xa $P_{\text{entry}}$, và $P_{\text{liq}}^{\text{Short}}$ dâng cao xa $P_{\text{entry}}$ $\implies$ **Lệnh khó bị thanh lý hơn (`Enhanced Cushion`)**.
-
----
+Công cụ định lượng cấu trúc Fractional Brownian Motion.
+- Đo lường trung bình trị tuyệt đối của sai phân theo các độ trễ lag $\tau$. 
+- Chạy hồi quy tuyến tính (Linear Regression) trên tập logarithm: $\log E[|P_{t+\tau} - P_t|] = H \cdot \log \tau + c$
+- **Hệ quả**: Hệ số góc (Slope) sinh ra chỉ số $H$. Unit test `test_ghe_distinguishes_random_walk_and_trend` đã chứng minh thành công $H \approx 0.5$ với nhiễu Random Walk và $H > 0.6$ với đồ thị có xu hướng kiên định (Persistent Trending).
 
-### 9.3. Hạch Toán Net Realized PnL Khi Thanh Lý (`pnl.py` — Chống Đếm Kép & Bảo Toàn Sổ Sách)
+### 8.3. Triển Khai Cầu Dao Tự Động Circuit Breaker (Module J)
+**File**: [src/aegis/risk/circuit_breaker.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/risk/circuit_breaker.py)
 
-Tại nhánh `LIQUIDATION` trong hàm `compute_realized_pnl` ([src/aegis/execution/pnl.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/execution/pnl.py)), quy tắc tách bạch Gross vs Net (đã nêu tại Mục 7.3) được mở rộng chuẩn xác để bao hàm `funding_accrued_usd`:
-- **Gross Liquidation Loss (Tổn thất cọc ký quỹ tại sàn):** Sàn thu hồi trọn vẹn số tiền cọc:
-  $$\text{gross\_pnl}_{\text{liq}} = -\frac{\text{size\_notional}}{\text{leverage}}$$
-- **Net Realized PnL (Tổn thất thực tế trên sổ sách tài khoản quỹ):** Ngoài việc mất cọc ban đầu, quỹ phải hạch toán chi phí mở lệnh `fee_entry_cost` đã trả từ trước VÀ khoản chi trả/nhận rebate phí qua đêm `funding_accrued_usd` phát sinh trong suốt thời gian giữ lệnh:
-  $$\text{net\_pnl}_{\text{liq}} = \text{gross\_pnl}_{\text{liq}} - \text{fee\_entry\_cost} - \text{funding\_accrued\_usd}$$
+Bất kỳ hệ thống Alpha nào cũng có điểm yếu (Suy thoái cấu trúc, Black Swan Event). Circuit Breaker là chiếc khiên cứng cuối cùng bảo vệ nguồn vốn dựa trên High-Water Mark (Peak Equity) của tài khoản. Cơ chế máy trạng thái 3 tầng:
+1. **Tier 1 (Giảm sút > 5%)**: Ngay lập tức bóp nghẹt 50% khối lượng giao dịch Max (`max_position_multiplier = 0.5`).
+2. **Tier 2 (Giảm sút > 10%)**: Flatten toàn bộ danh mục, áp dụng án treo giò (`frozen_until_ms = current_time_ms + 24_hours`). Các Signal mua bán trong thời gian này sẽ bị Force-cancel.
+3. **Tier 3 (Giảm sút > 15%)**: Bật cờ `is_dead = True` (Kill Switch). Hệ thống bị khóa vĩnh viễn, vô hiệu hóa mọi luồng chạy cho đến khi con người vào can thiệp phần cứng.
 
-> [!CAUTION]
-> **Hải Quan Khẳng Định Dấu (`Strict Signed Accounting Guard`):**
-> Khi `funding_accrued_usd > 0` (quỹ trả phí qua đêm), phép trừ `- funding_accrued_usd` sẽ làm khoản lỗ ròng âm sâu hơn (âm Gross Loss trừ tiếp tiền phí). Khi `funding_accrued_usd < 0` (quỹ được nhận tiền rebate qua đêm), phép trừ `- (-rebate)` sẽ cộng dương phần tiền thưởng vào số dư, giúp **giảm bớt mức lỗ ròng thực tế (`Loss Mitigation via Rebate`)**. Đây là chuẩn mực kế toán chính xác $100\%$ không thể thương lượng.
+Bài test `test_circuit_breaker_tiers` đã giả lập thành công chu kỳ rơi rụng tài khoản đi từ Tier 1 qua Tier 2, nảy giá lên khi đang chịu án treo giò (vẫn bị chặn), và rồi rơi xuống hố Kill Switch (bị khóa vĩnh viễn dù có nạp thêm tiền sau đó).
 
-#### 9.3.1. Kiểm Chứng Thực Nghiệm TDD (`TDD Verification Suite`)
-Bộ kiểm thử `test_liquidation_price_bidirectional_funding` ([test_liquidation_layer.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/tests/meta_labeling/test_liquidation_layer.py)) và `test_pnl_liquidation_accounts_for_bidirectional_funding` ([test_pnl.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/tests/execution/test_pnl.py)) khóa chặt 2 nhánh kiểm chứng toán học:
+### 8.4. Tái Khẳng Định Kiến Trúc Refit-per-fold (Zero State Reuse)
+**File**: [tests/meta_labeling/test_pipeline_refit_per_fold.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/tests/meta_labeling/test_pipeline_refit_per_fold.py)
 
-```python
-# Kịch bản Long BTC Entry = 60,000 USD, Leverage = 10x (IMR = 10%)
-# Trường hợp 1: Trả phí funding (+2% -> 0.02)
-# Allowance Lambda = 0.10 - 0.004(MMR) - 0.001(fee) - 0.0125(liq_fee) - 0.02(funding) = 0.0625
-# P_liq = 60,000 * (1 - 0.0625) = 56,250 USD (Dịch sát về 60,000 hơn so với lúc không có funding là 55,050 USD!)
+Báo cáo Audit đặt ra nghi vấn: "Liệu CPCV PurgedKFold có thực sự refit độc lập trên từng fold, hay chỉ sinh Index đúng nhưng Estimator lại fit một lần trên toàn chuỗi?".
 
-# Trường hợp 2: Nhận rebate funding (-2% -> -0.02)
-# Allowance Lambda = 0.0825 - (-0.02) = 0.1025
-# P_liq = 60,000 * (1 - 0.1025) = 53,850 USD (Được lùi sâu xuống xa hơn an toàn hơn!)
-```
+Để đập tan nghi ngờ, một `MockEstimator` đã được chế tạo. Mỗi lần hàm `fit(X, y)` được gọi, nó sẽ Hash (băm) mảng bộ nhớ của $X$ thành một UUID độc nhất và lưu vào mảng.
+Kết quả cho thấy: khi bọc qua `PurgedKFold(n_splits=5)`, hệ thống đã sinh ra đúng **5 hàm gọi fit()**, và **5 mã Hash Dữ liệu Hoàn Toàn Khác Nhau**. Không có bất kỳ hiện tượng tái sử dụng State nào (No State Reuse Leakage) từ Fold 1 qua Fold 5.
 
----
-
-## 10. Giải Phẫu Động Cơ Kiểm Chứng Quá Khớp & Phân Tích Độ Nhạy — Module E Engine (`Module 6`)
-
-Trong các định chế quant hàng đầu, việc một chiến lược tạo ra Backtest Sharpe Ratio = 3.0 không hề là bằng chứng cho thấy nó sẽ kiếm được tiền. Nếu kỹ sư đã chạy thử $N = 200$ tổ hợp tham số khác nhau và chỉ chọn ra cấu hình có đường cong đẹp nhất, Sharpe Ratio đó chỉ là sản phẩm của bẫy khai phá dữ liệu (`Data Dredging / Multiple Testing Overfitting`).
-**Module E Engine (`Module 6`)** được xây dựng nhằm cung cấp bộ 3 công cụ thống kê tối cao theo chuẩn Marcos Lopez de Prado & David Bailey để thẩm định độ tin cậy thực tế của chiến lược trước khi triển khai Live.
-
-```mermaid
-flowchart LR
-    subgraph ModuleE ["ĐỘNG CƠ KIỂM CHỨNG MODULE E (VALIDATION ENGINE v11.9)"]
-        direction TB
-        M1["1. Combinatorial Purged K-Fold (CPCV)<br/>cpcv.py: M=6, K=2 -> 15 Folds<br/>Tạo phi = 5 Đường Backtest Độc Lập"]
-        M2["2. Probability of Backtest Overfitting (PBO)<br/>pbo_cscv.py: CSCV S=16 Blocks (12,870 Splits)<br/>Đánh giá xác suất suy thoái dưới trung vị OOS"]
-        M3["3. Deflated Sharpe Ratio (DSR Sensitivity)<br/>dsr.py: Chiết khấu số lần thử nghiệm N=[30, 100, 200]<br/>So sánh PSR với kỳ vọng SR_max Euler-Mascheroni"]
-    end
-
-    InputMatrix["Ma Trận Hiệu Suất Mẫu<br/>Performance Matrix (T x N)"] --> M1 & M2 & M3
-    M1 -->|OOS Paths & Predictions| Out1["Đánh giá ổn định đường cong phi"]
-    M2 -->|PBO Score <= 0.40| Out2{"Quyết Định Phê Duyệt<br/>(PBO Approval Gate)"}
-    M3 -->|DSR Score >= 0.95| Out3{"Quyết Định Phê Duyệt<br/>(DSR Approval Gate)"}
-    
-    Out2 & Out3 -->|Passed Both| Production["APPROVED: Triển Khai Giao Dịch Live"]
-    Out2 & Out3 -->|Failed Any| Rejection["REJECTED: Chiến Lược Bị Quá Khớp (Overfit)<br/>Ngừng Triển Khai / Hủy Bỏ Cấu Hình"]
-```
-
----
-
-### 10.1. Deflated Sharpe Ratio & Phân Tích Độ Nhạy N Thử Nghiệm (`dsr.py`)
-
-#### 10.1.1. Cơ Sở Toán Học: Euler-Mascheroni & Multiple Testing Hurdle Rate
-Khi đánh giá $N$ cấu hình chiến lược (hoặc $N$ lần backtest độc lập) với giả thuyết Null $H_0: \text{Sharpe Ratio thực tế của mọi cấu hình bằng } 0$, giá trị Sharpe Ratio lớn nhất quan sát được ($SR_{\max}$) không nằm ở $0$ mà tuân theo phân phối cực trị (`Extreme Value Theory - Order Statistics`).
-Kỳ vọng giá trị lớn nhất $SR_0^* \equiv E\left[\max_{n=1..N} SR_n\right]$ dưới giả thuyết Null với phương sai mẫu $\sigma_{SR}^2 = V[\{SR_n\}]$ được xấp xỉ chính xác bằng **Công thức Euler-Mascheroni** (Bailey & Lopez de Prado, 2014):
-
-$$SR_0^* \approx SR_{\text{benchmark}} + \sigma_{SR} \cdot \left[ (1 - \gamma) Z^{-1}\left(1 - \frac{1}{N}\right) + \gamma Z^{-1}\left(1 - \frac{1}{N e}\right) \right]$$
-
-Trong đó:
-- $\gamma \approx 0.5772156649015328606$ là hằng số Euler-Mascheroni.
-- $Z^{-1}(\cdot)$ là hàm nghịch biến phân phối chuẩn tích lũy (`scipy.stats.norm.ppf`).
-
-#### 10.1.2. Công Thức Probabilistic Sharpe Ratio (`PSR`) & Deflated Sharpe Ratio (`DSR`)
-Từ ngưỡng cản $SR_0^*$ vừa tìm được, ta đánh giá xác suất để Sharpe Ratio ước lượng của chiến lược được chọn (`sr_estimated` $SR$) thực sự vượt qua ngưỡng cản này trên mẫu độ dài $T$, có xét đến độ lệch chuẩn tiệm cận chịu ảnh hưởng bởi độ lệch (`Skewness` $\gamma_3$) và độ nhọn (`Kurtosis` $\gamma_4$) của chuỗi lợi suất:
-
-$$\sigma_{SR\_asymp} = \sqrt{\frac{1 - \gamma_3 SR + \frac{\gamma_4 - 1}{4} SR^2}{T - 1}}$$
-
-$$\text{DSR} \equiv \text{PSR}(SR_0^*) = Z\left( \frac{SR - SR_0^*}{\sigma_{SR\_asymp}} \right)$$
-
-- **Quy tắc Hải quan DSR (`Institutional DSR Gate`):** Chiến lược chỉ được phê duyệt (`is_approved = True`) khi và chỉ khi $\text{DSR} \ge 0.95$ (độ tin cậy $95\%$ rằng chiến lược vượt qua rào cản khai phá dữ liệu).
-
-#### 10.1.3. Chỉ Thị Phân Tích Độ Nhạy (`Sensitivity Analysis Directive — N = 30, 100, 200`)
-Tại hàm `compute_dsr_sensitivity` ([dsr.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/validation/dsr.py)), hệ thống tự động chạy mô phỏng độ nhạy theo 3 mốc số lượng backtest thử nghiệm $N = [30, 100, 200]$:
-- **Thực nghiệm TDD `test_dsr_sensitivity_analysis_directive` ([test_dsr.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/tests/validation/test_dsr.py)):**
-  Với một chiến lược có $SR = 1.2$, độ lệch chuẩn giữa các thử nghiệm $\sigma_{SR} = 0.4$, trên mẫu $T = 100$ quan sát:
-  - Khi $N = 30$: $SR_0^* \approx 1.040 \implies Z\text{-score} = 1.23 \implies \text{DSR} = 0.9975$ ($\ge 0.95 \to$ **Approved**).
-  - Khi $N = 100$: $SR_0^* \approx 1.201 \implies Z\text{-score} \approx 0.00 \implies \text{DSR} = 0.9228$ ($< 0.95 \to$ **Rejected**).
-  - Khi $N = 200$: $SR_0^* \approx 1.300 \implies Z\text{-score} = -0.77 \implies \text{DSR} = 0.7616$ (Bị chiết khấu nặng $\to$ **Rejected**).
-- **Khẳng định quy luật tối cao:** Số lần thử nghiệm $N$ càng lớn $\to SR_0^*$ càng dâng cao $\to \text{DSR}$ suy thoái đơn điệu. Đây là bộ phanh tự động ngăn cản kỹ sư "xào nấu tham số" (`Hyperparameter Over-tuning`).
-
----
-
-### 10.2. Xác Suất Quá Khớp Chiến Lược (`Probability of Backtest Overfitting / PBO CSCV — pbo_cscv.py`)
-
-#### 10.2.1. Cơ Sở Toán Học: Combinatorial Symmetric Cross-Validation (`CSCV`)
-Để đánh giá xác suất chiến lược tối ưu In-Sample (IS) bị suy thoái Out-of-Sample (OOS), hệ thống áp dụng thuật toán **Combinatorial Symmetric Cross-Validation (`CSCV`)** (Bailey et al., 2014):
-1. Cho ma trận hiệu suất $M$ kích thước $(T, N)$ gồm $T$ kỳ quan sát và $N \ge 2$ cấu hình chiến lược.
-2. Chia $T$ quan sát thành $S = 16$ khối liên tục bằng nhau (`n_splits = 16`).
-3. Tạo ra $\binom{S}{S/2} = \binom{16}{8} = 12,870$ tổ hợp chia tách. Với mỗi tổ hợp $c \in C$:
-   - Chọn $S/2 = 8$ khối làm tập In-Sample ($J_c$), $8$ khối còn lại làm tập Out-of-Sample ($\bar{J}_c$).
-   - Tìm chiến lược tối ưu nhất In-Sample: $n^* = \arg\max_{n=1..N} R(J_c, n)$.
-   - Tra cứu thứ hạng của chiến lược $n^*$ trên tập Out-of-Sample trong tổng số $N$ cấu hình: $R_{\text{OOS}}(n^*) \in \{1, 2, \dots, N\}$.
-   - Tính thứ hạng tương đối OOS: $\bar{\omega}_c = \frac{R_{\text{OOS}}(n^*) - 1}{N - 1} \in [0, 1]$.
-   - Tính logit suy thoái: $\lambda_c = \ln \left( \frac{\bar{\omega}_c}{1 - \bar{\omega}_c} \right)$.
-
-#### 10.2.2. Công Thức Xác Suất PBO (`PBO Score`)
-Xác suất quá khớp (`PBO`) chính là tần suất các tổ hợp mà tại đó chiến lược tốt nhất In-Sample rơi xuống nửa dưới bảng xếp hạng (`Below Median`, tức $\bar{\omega}_c < 0.5$ hay logit $\lambda_c < 0$) trong tập Out-of-Sample:
-
-$$\text{PBO} = \frac{1}{|C|} \sum_{c \in C} \mathbb{I}\left(\bar{\omega}_c < 0.5\right)$$
-
-- **Quy tắc Hải quan PBO (`Institutional PBO Gate`):** Chiến lược chỉ được phê duyệt khi $\text{PBO} \le 0.40$ (xác suất quá khớp dưới $40\%$).
-
-#### 10.2.3. Kiểm Chứng Thực Nghiệm TDD (`test_pbo.py`)
-Bộ kiểm thử TDD tại [tests/validation/test_pbo.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/tests/validation/test_pbo.py) chứng minh độ nhạy phân định rõ rệt của động cơ PBO CSCV:
-1. **Kịch bản 1: Random Noise (`Nhiễu ngẫu nhiên thuần túy`)**:
-   Khi $N = 10$ cấu hình chỉ là mảng số ngẫu nhiên chuẩn $\mathcal{N}(0, 1)$, việc chọn cấu hình tốt nhất In-Sample hoàn toàn là do may mắn ngẫu nhiên. Khi mang sang OOS, thứ hạng của nó dao động ngẫu nhiên quanh trung vị.
-   - *Kết quả thực nghiệm:* $\text{PBO} = 0.7577$ ($> 0.40$). Hệ thống phát hiện ngay sự quá khớp vào nhiễu và **TỪ CHỐI (`Rejected`)**.
-2. **Kịch bản 2: True Signal (`Tín hiệu vượt trội thực sự`)**:
-   Khi cấu hình số $0$ có kỳ vọng lợi suất vượt trội ổn định ($\mu = +0.5$ kèm nhiễu) trong khi 4 cấu hình còn lại chỉ là nhiễu, cấu hình số $0$ luôn chiến thắng cả IS lẫn OOS.
-   - *Kết quả thực nghiệm:* $\text{PBO} = 0.0000$ ($\le 0.40$). Hệ thống **PHÊ DUYỆT (`Approved`)**.
-
----
-
-### 10.3. Kiểm Chứng Chéo Tổ Hợp Có Thanh Lọc (`Combinatorial Purged K-Fold / CPCV — cpcv.py`)
-
-#### 10.3.1. Cơ Sở Kiến Trúc: AFML Chapter 12 ($M=6, K=2 \to \varphi=5 \text{ Paths}$)
-Để đánh giá độ ổn định của danh mục giao dịch theo thời gian mà không bị giới hạn bởi 1 đường cong backtest duy nhất, hệ thống xây dựng lớp `CombinatorialPurgedKFold` ([src/aegis/validation/cpcv.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/validation/cpcv.py)) theo chuẩn AFML Chương 12:
-- Chia tập quan sát $T$ thành $M = 6$ nhóm khối liên tục.
-- Mỗi fold chọn ra $K = 2$ khối làm tập Test $\implies$ Tổng số fold kiểm định là $\binom{M}{K} = \binom{6}{2} = 15 \text{ folds}$.
-- Mỗi quan sát ban đầu sẽ xuất hiện trong đúng $\frac{K}{M} \binom{M}{K} = \binom{M-1}{K-1} = \binom{5}{1} = 5 \text{ folds Test}$. Điều này cho phép tái dựng chính xác $\varphi = 5$ đường cong Backtest lịch sử hoàn toàn độc lập (`Independent Backtest Paths`) để phân tích phân phối Drawdown và Sharpe OOS.
-
-#### 10.3.2. Thanh Lọc Ranh Giới Từng Khối Rời Nhau (`Disjoint Block Purging & Embargoing`)
-Trong CPCV ($K=2$), tập Test trong một fold có thể bao gồm 2 khối dữ liệu nằm rời xa nhau (ví dụ: `Group 0` và `Group 2`).
-- **Khắc phục lỗi gộp khối thô (`Disjoint Block Separation Guard`):** Nếu thuật toán tra soát lấy `min_test_t0` của Group 0 và `max_test_t1` của Group 2 để làm ranh giới Purging chung, toàn bộ `Group 1` nằm giữa chúng (thuộc tập Train) sẽ bị xóa trắng vô lý.
-- **Thuật toán Purging chuẩn xác:** Lớp `CombinatorialPurgedKFold` tự động tách các khối test thành từng phân đoạn rời rẽ (`test_bounds` chứa cặp `(min_t0, max_t1)` cho từng khối), sau đó kiểm tra gối đầu và cách ly `embargo_bars = 24` độc lập cho từng khối:
-
-```python
-# Kiểm tra từng khối test rời rẽ trong fold CPCV
-for min_t0_test, max_t1_test in test_bounds:
-    # Purging (giao cắt với khối test hiện tại)
-    if not (idx_t1 <= min_t0_test or idx_t0 >= max_test_t1):
-        is_purged_or_embargoed = True
-        break
-    # Embargoing (cách ly ngay sau khối test hiện tại)
-    if max_t1_test <= idx_t0 < (max_t1_test + self.embargo_bars):
-        is_purged_or_embargoed = True
-        break
-```
-
-- **Khẳng định TDD ([test_cpcv_end_to_end.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/tests/integration/test_cpcv_end_to_end.py)):** Bài kiểm thử tích hợp tự động phân rã chỉ số test thành các `test_blocks` rời nhau bằng `np.split(test_idx, np.where(np.diff(test_idx) > 1)[0] + 1)`, sau đó tra soát từng quan sát Train. Khẳng định $100\%$ không có lệnh Train nào vi phạm ranh giới hay vùng cách ly của bất kỳ khối Test rời rẽ nào trong toàn bộ 15 folds.
-
----
-
-## 11. Bảng Tổng Hợp Kiểm Định Hồi Quy Toàn Hệ Thống (`Master Regression Verification Matrix v11.9`)
-
-Toàn bộ **83/83 bài kiểm thử tự động (`83 passed in 2.25s`)** thuộc bộ kiểm định hồi quy định chế (`pytest tests/ -v`) đã chạy hoàn tất và đạt trạng thái `PASSED 100%`:
-
-| Mô-Đun / Thư Mục Kiểm Thử | Số Bài Test | Trạng Thái | Nội Dung Kiểm Chứng Cốt Lõi |
-| :--- | :---: | :---: | :--- |
-| `tests/acceptance/` | 1 | **PASSED** | Kiểm định chấp thuận toàn cục hệ thống (`test_system_acceptance`). |
-| `tests/core/` | 5 | **PASSED** | Khóa `Canonical Registry Alignment` YAML vs Code & SHA-256 Experiment Tracker IO. |
-| `tests/data/` | 3 | **PASSED** | Phát hiện Outlier MAD $5\sigma$ & Spike Reversal Tick-Level. |
-| `tests/execution/` | 13 | **PASSED** | Hạch toán Gross vs Net PnL, Lỗi phí Exit, Funding 2 chiều, Position Sizer Half-Kelly $\lambda=0.5$, Vol-Targeting Black Swan, và mô phỏng Limit Queue L2 Tier 0/1/2. |
-| `tests/integration/` | 12 | **PASSED** | Hợp đồng dữ liệu `SignalBarSchema` & `TradeRecordSchema`, kiểm định chéo CPCV 15 Folds Disjoint Purging/Embargoing, và Backtest-Live Parity. |
-| `tests/labeling/` | 11 | **PASSED** | CUSUM Log-Return $\sqrt{T}$ mượt EWMA, Trailing Exit v3 Liquidation Aware, sàn ATR thích ứng Altcoin/BTC, và cờ `boundary_truncated` Pre-Slice. |
-| `tests/meta_labeling/` | 19 | **PASSED** | Tối ưu Kelly thực nghiệm phi tuyến, co rút Bayes Bootstrap $25\%$, Blending HMM, rào cản thanh lý `Isolated Margin` có Funding Fee, và `PurgedKFold` Zero-Leakage. |
-| `tests/risk/` | 2 | **PASSED** | CUSUM Drift Monitor xuất JSONL & Reset khi Brier Score vượt ngưỡng. |
-| `tests/validation/` | 6 | **PASSED** | **[Module E Engine]** Euler-Mascheroni DSR Max SR Approx, Phân tích độ nhạy DSR ($N=30, 100, 200$), PBO CSCV Random Noise vs True Signal, và hải quan bọc thép. |
-| **TỔNG CỘNG TOÀN HỆ THỐNG** | **83** | **100% PASSED** | **Thời gian thực thi trung bình: $2.25\text{ giây}$ (Python 3.13.9 trên Apple Silicon).** |
-
-
+### 8.5. Cập Nhật Sổ Cái Testing (102 Cases)
+Tệp [aegis_consolidated_94_tests_suite.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/aegis_consolidated_94_tests_suite.py) (Giữ nguyên tên tệp để theo dõi liền mạch dòng chảy tài liệu) đã được tự động tái thiết lập bằng `build_suite.py`.
+- **Tổng dung lượng Test**: 102 Tests (tăng từ 94).
+- **Kết quả lâm sàng**: 99 Passed, 3 Skipped (các test giả đã nói ở mục 8.1).
+Mọi điểm mù kiến trúc cuối cùng trước khi vào thực chiến backtest đã được bọc thép kiên cố.
 

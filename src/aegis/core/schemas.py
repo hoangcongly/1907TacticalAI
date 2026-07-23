@@ -5,6 +5,7 @@ import pandas as pd # Thư viện xử lý dữ liệu dạng bảng (như bản
 import pandera.pandas as pa # Thư viện kiểm tra dữ liệu dạng bảng (như bảng tính excel, sử dụng namespace pandas chuẩn mới tránh cảnh báo tương lai)
 from pandera.pandas import Column, Check, DataFrameSchema # Thư viện định nghĩa cấu trúc dữ liệu dạng bảng và các điều kiện ràng buộc
 from typing import Dict, Any, TypedDict, Literal, Optional
+from dataclasses import dataclass, asdict, replace
 
 # ============================================================================
 # [TASK B-1-10] TYPED DICT CHO BẢN GHI GIAO DỊCH (Cho xử lý nội bộ dạng từ điển dict)
@@ -38,6 +39,81 @@ class TradeRecord(TypedDict):
     funding_accrued: float
     gross_pnl: float
     realized_return: float
+
+
+# ============================================================================
+# [TASK v11.10 / LỖ HỔNG 9] IMMUTABLE TRADE RECORD DATA STRUCTURE
+# ============================================================================
+@dataclass(frozen=True)
+class ImmutableTradeRecord:
+    """
+    [KHẮC PHỤC LỖ HỔNG 9 - MUTABILITY TRAP]:
+    Bản ghi giao dịch bất biến (`frozen=True`). Ngăn chặn rủi ro nửa trạng thái (`half-mutated state`)
+    nếu xảy ra Exception khi truyền qua các trạm (Gatekeepers).
+    Bất kỳ thay đổi nào đều bắt buộc phải tạo ra một thể hiện mới (thông qua `update()` hoặc `replace()`).
+    """
+    schema_version: str
+    dataset_manifest_hash: str
+    symbol: str
+    entry_idx: int
+    entry_timestamp_ms: int
+    entry_price: float
+    p_i: float
+    p_chop_i: float
+    mode: Literal["follow", "fade", "none"]
+    side: int
+    sl_initial: float
+    size_notional: float
+    exit_idx_relative: int
+    exit_idx_absolute: int
+    exit_timestamp_ms: int
+    exit_reason: Literal["SL", "TRAIL", "REGIME_FLIP", "TIME_STOP", "LIQUIDATION"]
+    fill_price_exit: float
+    boundary_truncated: bool
+    fee_entry: float
+    fee_exit: float
+    funding_accrued: float
+    gross_pnl: float
+    realized_return: float
+    fold_id: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "ImmutableTradeRecord":
+        """Khởi tạo từ dict / TypedDict."""
+        return cls(
+            schema_version=str(d["schema_version"]),
+            dataset_manifest_hash=str(d["dataset_manifest_hash"]),
+            symbol=str(d["symbol"]),
+            entry_idx=int(d["entry_idx"]),
+            entry_timestamp_ms=int(d["entry_timestamp_ms"]),
+            entry_price=float(d["entry_price"]),
+            p_i=float(d["p_i"]),
+            p_chop_i=float(d["p_chop_i"]),
+            mode=d["mode"],
+            side=int(d["side"]),
+            sl_initial=float(d["sl_initial"]),
+            size_notional=float(d["size_notional"]),
+            exit_idx_relative=int(d["exit_idx_relative"]),
+            exit_idx_absolute=int(d["exit_idx_absolute"]),
+            exit_timestamp_ms=int(d["exit_timestamp_ms"]),
+            exit_reason=d["exit_reason"],
+            fill_price_exit=float(d["fill_price_exit"]),
+            boundary_truncated=bool(d["boundary_truncated"]),
+            fee_entry=float(d["fee_entry"]),
+            fee_exit=float(d["fee_exit"]),
+            funding_accrued=float(d["funding_accrued"]),
+            gross_pnl=float(d["gross_pnl"]),
+            realized_return=float(d["realized_return"]),
+            fold_id=d.get("fold_id"),
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Chuyển đổi ngược ra dict."""
+        return asdict(self)
+
+    def update(self, **kwargs: Any) -> "ImmutableTradeRecord":
+        """Trả về bản ghi mới với các thuộc tính được cập nhật (bảo toàn tính bất biến gốc)."""
+        return replace(self, **kwargs)
 
 
 # ============================================================================

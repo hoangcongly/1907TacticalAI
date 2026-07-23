@@ -89,12 +89,42 @@ class ExperimentTracker:
                 versions[pkg] = "unknown"
         return versions
 
+    def _get_canonical_constants(self) -> Dict[str, Any]:
+        """
+        Đọc và ghi nhận các hằng số chiến lược & microstructure guards từ sổ cân bằng hằng số
+        (`config/aegis_canonical_parameters.yaml`) vào nhật ký thử nghiệm (ExperimentTracker)
+        nhằm tuân thủ tuyệt đối kỷ luật quản lý hằng số theo Request 9.
+        """
+        try:
+            import yaml
+            # Tìm đường dẫn từ gốc dự án
+            project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+            reg_path = os.path.join(project_root, "config", "aegis_canonical_parameters.yaml")
+            if os.path.exists(reg_path):
+                with open(reg_path, "r", encoding="utf-8") as f:
+                    reg = yaml.safe_load(f)
+                return {
+                    "microstructure_guards": {
+                        k: v.get("value") for k, v in reg.get("microstructure_guards", {}).items() if isinstance(v, dict)
+                    },
+                    "strategic_parameters": {
+                        k: v.get("value") for k, v in reg.get("strategic_parameters", {}).items() if isinstance(v, dict)
+                    },
+                    "architectural_constants": {
+                        k: v.get("value") for k, v in reg.get("architectural_constants", {}).items() if isinstance(v, dict)
+                    },
+                }
+        except Exception:
+            pass
+        return {}
+
     def log_trial(self, trial_class: TrialClass, params: Dict[str, Any], metrics: Dict[str, Any]) -> str:
         """
         Ghi lại một lần chạy thử nghiệm xuống file JSONL.
         Trả về param_hash.
         """
         param_hash = self.hash_params(params)
+        canonical_constants = self._get_canonical_constants()
         
         record = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -102,6 +132,7 @@ class ExperimentTracker:
             "param_hash": param_hash,
             "git_commit": self._get_git_commit(),
             "env_versions": self._get_env_versions(),
+            "canonical_constants": canonical_constants,
             "params": params,
             "metrics": metrics
         }
@@ -111,3 +142,4 @@ class ExperimentTracker:
                 f.write(json.dumps(record, sort_keys=True, default=_json_default) + "\n")
                 
         return param_hash
+

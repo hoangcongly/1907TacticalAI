@@ -1,5 +1,6 @@
 import math
 import numpy as np
+import pytest
 from aegis.labeling.trailing_exit import (
     compute_sl_initial,
     compute_regime_aware_trailing_exit_v3_liquidation_aware,
@@ -417,29 +418,55 @@ def test_finalize_trade_record_output_passes_schema():
 
 def test_zero_atr_trailing_collapse_fixed():
     """
-    [Vá BỌ SỐ 2: Zero-ATR Trailing Collapse] Kiểm chứng khi ATR = 0.0 (thanh khoản cạn kiệt Open=High=Low=Close),
-    hệ thống tự động kẹp safe_atr = min_tick_size, giữ cho trail_cushion > 0 và ngăn trail_stop = extreme_price.
+    [Vá BỌ SỐ 2: Zero-ATR Trailing Collapse — Instrument-Adaptive & Percentage Anchored Floor]
+    Kiểm chứng khi ATR = 0.0 (thanh khoản cạn kiệt), hệ thống tự động kẹp safe_atr theo
+    max(min_tick_size * min_ticks_cushion, entry_price * min_atr_pct), giữ cho trail_cushion > 0
+    và ngăn trail_stop ôm sát khít đỉnh/đáy cho CẢ tài sản giá cao (BTC $60,000) lẫn altcoin ($0.001).
     """
-    # ATR toàn bằng 0, giá đi ngang hoặc nhích nhẹ 1 tick xuống
-    future_highs = np.array([100.0, 100.0, 100.0])
-    future_lows = np.array([100.0, 99.999, 100.0])
-    future_atr = np.array([0.0, 0.0, 0.0]) # Cạn kiệt thanh khoản
-    future_p_trend = np.array([0.8, 0.8, 0.8])
+    # 1. Kiểm chứng với BTC ($60,000, tick_size = 0.1)
+    # Giá nhích xuống 1 tick ($0.1) hoặc $1, ATR = 0
+    btc_highs = np.array([60000.0, 60000.0, 60000.0])
+    btc_lows = np.array([60000.0, 59999.0, 60000.0]) # Giảm $1 (10 ticks)
+    btc_atr = np.array([0.0, 0.0, 0.0])
+    btc_p_trend = np.array([0.8, 0.8, 0.8])
 
-    res = compute_regime_aware_trailing_exit_v3_liquidation_aware(
-        entry_price=100.0,
+    res_btc = compute_regime_aware_trailing_exit_v3_liquidation_aware(
+        entry_price=60000.0,
         side=1,
         trade_mode="follow",
-        future_highs=future_highs,
-        future_lows=future_lows,
-        future_atr=future_atr,
-        future_p_trend=future_p_trend,
-        sl_initial=95.0,
-        min_tick_size=1e-3, # Đặt min_tick_size = 0.001
+        future_highs=btc_highs,
+        future_lows=btc_lows,
+        future_atr=btc_atr,
+        future_p_trend=btc_p_trend,
+        sl_initial=55000.0,
+        min_tick_size=0.1,
+        min_ticks_cushion=10,
+        min_atr_pct=0.001, # safe_atr_floor = max(1.0, 60.0) = 60.0
     )
-    # Vì safe_atr >= 0.001, trail_cushion > 0, trail_stop < 100.0 (không ôm sát khít 100.0) -> nến thứ 2 low 99.999 KHÔNG bị stop-out oan uổng
-    assert res is None or res["exit_idx"] != 1, "Lỗi: Trailing stop bị sập về giá cực đại do ATR = 0!"
-    print("✅ [Vá BỌ SỐ 2] Zero-ATR Trailing Collapse PASSED!")
+    assert res_btc is None or res_btc["exit_idx"] != 1, "Lỗi: BTC bị stop-out oan uổng do ATR = 0!"
+
+    # 2. Kiểm chứng với Altcoin ($0.001, tick_size = 0.0001)
+    alt_highs = np.array([0.001, 0.001, 0.001])
+    alt_lows = np.array([0.001, 0.000999, 0.001]) # Giảm 1 micro-tick
+    alt_atr = np.array([0.0, 0.0, 0.0])
+    alt_p_trend = np.array([0.8, 0.8, 0.8])
+
+    res_alt = compute_regime_aware_trailing_exit_v3_liquidation_aware(
+        entry_price=0.001,
+        side=1,
+        trade_mode="follow",
+        future_highs=alt_highs,
+        future_lows=alt_lows,
+        future_atr=alt_atr,
+        future_p_trend=alt_p_trend,
+        sl_initial=0.0008,
+        min_tick_size=1e-4,
+        min_ticks_cushion=10,
+        min_atr_pct=0.001, # safe_atr_floor = max(0.001, 0.000001) = 0.001
+    )
+    assert res_alt is None or res_alt["exit_idx"] != 1, "Lỗi: Altcoin bị stop-out oan uổng do ATR = 0!"
+
+    print("✅ [Vá BỌ SỐ 2] Instrument-Adaptive & Percentage Anchored Zero-ATR Trailing Collapse PASSED!")
 
 
 def test_finalize_trade_record_timestamp_plumbing():
@@ -465,4 +492,23 @@ def test_finalize_trade_record_timestamp_plumbing():
     df = pd.DataFrame([result])
     TradeRecordSchema.validate(df)
     print("✅ [Vá BỌ SỐ 3] Temporal Blindness Timestamp Plumbing PASSED!")
+
+
+def test_round_sl_safe_asymmetric_behavior():
+    """
+    [TDD VERIFICATION - BẪY 2: ASYMMETRIC STOP-LOSS SAFE ROUNDING]:
+    Kiểm tra làm tròn SL bất đối xứng theo bước nhảy tick_size của sàn:
+    - Long (side = 1): SL phải làm tròn XUỐNG (floor) để xa entry hơn, bảo vệ không cắn SL sớm.
+    - Short/Fade (side = -1): SL phải làm tròn LÊN (ceil) để xa entry hơn, bảo vệ không cắn SL sớm.
+    """
+    from aegis.labeling.trailing_exit import round_sl_safe
+
+    # Long (side = 1): SL thô là 49999.8, bước nhảy 1.0 -> phải floor về 49999.0
+    sl_long = round_sl_safe(sl_raw=49999.8, tick_size=1.0, side=1)
+    assert sl_long == pytest.approx(49999.0)
+
+    # Short/Fade (side = -1): SL thô là 50000.2, bước nhảy 1.0 -> phải ceil lên 50001.0
+    sl_short = round_sl_safe(sl_raw=50000.2, tick_size=1.0, side=-1)
+    assert sl_short == pytest.approx(50001.0)
+
 

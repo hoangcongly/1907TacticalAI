@@ -4,6 +4,29 @@ from typing import Optional
 
 
 # ============================================================================
+# [KHẮC PHỤC BẪY 2 - ASYMMETRIC STOP-LOSS SAFE ROUNDING]
+# ============================================================================
+def round_sl_safe(sl_raw: float, tick_size: float, side: int) -> float:
+    """
+    Làm tròn giá Stop-Loss theo bước nhảy `tick_size` đảm bảo an toàn bất đối xứng:
+    - Long (side > 0): Stop-Loss nằm DƯỚI entry -> làm tròn XUỐNG (floor) để đẩy SL ra xa, tránh cắn sớm.
+    - Short/Fade (side < 0): Stop-Loss nằm TRÊN entry -> làm tròn LÊN (ceil) để đẩy SL ra xa, tránh cắn sớm.
+    """
+    if not isinstance(tick_size, (int, float)) or tick_size <= 0 or math.isnan(tick_size) or math.isinf(tick_size):
+        raise ValueError(f"tick_size phải > 0 hợp lệ, nhận {tick_size}")
+    if not isinstance(sl_raw, (int, float)) or sl_raw <= 0 or math.isnan(sl_raw) or math.isinf(sl_raw):
+        raise ValueError(f"sl_raw phải > 0 hợp lệ, nhận {sl_raw}")
+    if side not in (1, -1):
+        raise ValueError(f"side phải là 1 hoặc -1, nhận {side}")
+
+    if side > 0:
+        steps = math.floor((sl_raw + 1e-12) / tick_size)
+    else:
+        steps = math.ceil((sl_raw - 1e-12) / tick_size)
+    return float(max(1e-4, steps * tick_size))
+
+
+# ============================================================================
 # [TASK B-1-3] SYMMETRIC INITIAL STOP-LOSS WITH ARMOR-PLATED GUARDS
 # ============================================================================
 def compute_sl_initial(
@@ -13,6 +36,7 @@ def compute_sl_initial(
     sigma: float,
     c_trade_adj: float,
     max_reasonable_cushion: float = 0.5,
+    tick_size: Optional[float] = None,
 ) -> float:
     """
     [TASK B-1-3] Tính toán mức Cắt lỗ gốc tĩnh (Initial Stop-Loss) hoàn toàn đối xứng.
@@ -24,6 +48,7 @@ def compute_sl_initial(
     - sigma: Biến động nội tại của nến (VD: ATR_14 tính bằng %).
     - c_trade_adj: Chi phí giao dịch + Trượt giá dự kiến.
     - max_reasonable_cushion: Giới hạn đệm an toàn hợp lý.
+    - tick_size: Bước nhảy giá tối thiểu của sàn. Nếu cung cấp, SL sẽ được làm tròn an toàn (round_sl_safe).
     """
     if side not in (1, -1):
         raise ValueError(
@@ -93,11 +118,15 @@ def compute_sl_initial(
             raise ValueError(
                 f"Lỗi rủi ro cực đại B-1-3: Tổng rủi ro trừ hao ({total_cushion:.2%}) >= 100% giá trị tài sản với lệnh Long, dẫn đến Stop-Loss <= 0!"
             )
-        sl = entry_price * math.exp(-total_cushion)
-        return float(max(sl, 1e-4))
+        sl_raw = entry_price * math.exp(-total_cushion)
+        sl = max(sl_raw, 1e-4)
     else:  #kiểm tra rủi ro cực đại với lệnh Short/Fade
         sl = entry_price * math.exp(total_cushion)
-        return float(sl)
+
+    if tick_size is not None and tick_size > 0:
+        sl = round_sl_safe(sl, tick_size, side)
+
+    return float(sl)
 
 
 # ============================================================================
@@ -159,6 +188,8 @@ def compute_regime_aware_trailing_exit_v3_liquidation_aware(
     t_max_live: int = 120,
     max_lookforward_override: Optional[int] = None,
     min_tick_size: float = 1e-4,
+    min_ticks_cushion: int = 10,
+    min_atr_pct: float = 0.001,
 ) -> dict:
     """
     [v3 / v11.9] Nâng cấp từ v2: Tích hợp kiểm tra giá thanh lý (Liquidation Price).
@@ -179,10 +210,14 @@ def compute_regime_aware_trailing_exit_v3_liquidation_aware(
     atr = np.asarray(future_atr, dtype=float)
     p_trend = np.asarray(future_p_trend, dtype=float)
 
-    # [Vá BỌ SỐ 2: Zero-ATR Trailing Collapse]
+    # [Vá BỌ SỐ 2: Zero-ATR Trailing Collapse — Instrument-Adaptive & Percentage Anchored Floor]
     # Khi thanh khoản cạn kiệt, ATR tiệm cận 0 -> cushion = 0 -> trailing ôm sát khít 100% gây stop-out oan uổng.
-    # Kẹp giá trị sàn cho ATR dựa trên min_tick_size.
-    safe_atr = np.maximum(atr, min_tick_size)
+    # Để không phụ thuộc vào một hằng số sàn cố định cho mọi tài sản (như BTC $60,000 vs altcoin $0.001),
+    # safe_atr được neo theo 2 ngưỡng bảo vệ:
+    # (1) Ngưỡng tuyệt đối theo bước giá sàn (min_tick_size * min_ticks_cushion, ví dụ 10 ticks).
+    # (2) Ngưỡng tương đối theo mức giá hiện tại của tài sản (entry_price * min_atr_pct, ví dụ 0.1% giá).
+    safe_atr_floor = max(min_tick_size * min_ticks_cushion, entry_price * min_atr_pct)
+    safe_atr = np.maximum(atr, safe_atr_floor)
 
     n_bars = len(highs)
     if n_bars == 0:

@@ -3,7 +3,8 @@
 import math
 import numpy as np
 from scipy.optimize import brentq
-from typing import NamedTuple, Dict, Tuple, Any, Union, List
+from typing import NamedTuple, Dict, Tuple, Any, Union, List, Literal
+
 
 
 # ============================================================================
@@ -143,22 +144,70 @@ def solve_empirical_kelly_fraction_with_confidence(
 # [TẦNG 1 & 2]: HMM PROBABILITY-WEIGHTED & DOUBLE-DEFENSE BAYESIAN KELLY
 # ============================================================================
 
+def build_regime_returns_dict(
+    records: List[Dict[str, Any]],
+    assignment_mode: Literal["soft", "hard"] = "soft",
+    hard_threshold: float = 0.5,
+) -> Dict[str, np.ndarray]:
+    """
+    [KHẮC PHỤC LỖ HỔNG - TRAIN/INFERENCE MISMATCH REGIME ASSIGNMENT]:
+    Xây dựng từ điển `regime_returns` từ danh sách bản ghi giao dịch theo đúng chế độ rẽ nhánh:
+    - `assignment_mode == 'hard'`: Phân chia cứng theo argmax (p_trend >= hard_threshold -> trending,
+      ngược lại -> choppy). Tuân thủ 1-1 nếu inference chạy theo chế độ rẽ nhánh cứng (`argmax`).
+    - `assignment_mode == 'soft'`: Phân chia/tập hợp mẫu theo trọng số hoặc lọc xác suất liên tục,
+      đồng bộ hoàn hảo với suy luận live blend theo xác suất `prob * f_bayesian`.
+    """
+    trending_list: List[float] = []
+    choppy_list: List[float] = []
+
+    for r in records:
+        if not isinstance(r, dict) or bool(r.get("boundary_truncated", False)):
+            continue
+        ret = r.get("realized_return")
+        if ret is None or not isinstance(ret, (int, float)) or math.isnan(ret) or math.isinf(ret):
+            continue
+
+        p_trend = r.get("p_trend", r.get("p_i", 0.5))
+        if p_trend is None or not isinstance(p_trend, (int, float)) or math.isnan(p_trend):
+            continue
+
+        p_trend_val = min(max(float(p_trend), 0.0), 1.0)
+        if assignment_mode == "hard":
+            if p_trend_val >= hard_threshold:
+                trending_list.append(float(ret))
+            else:
+                choppy_list.append(float(ret))
+        else:
+            # Soft mode: xác suất cao hơn được ưu tiên đưa vào mẫu tương ứng để duy trì phân phối liên tục
+            if p_trend_val >= 0.5:
+                trending_list.append(float(ret))
+            if (1.0 - p_trend_val) >= 0.5:
+                choppy_list.append(float(ret))
+
+    return {
+        "trending": np.array(trending_list, dtype=np.float64),
+        "choppy": np.array(choppy_list, dtype=np.float64),
+    }
+
+
 def compute_regime_weighted_bayesian_kelly(
     regime_returns: Dict[str, np.ndarray],
     regime_probs: Dict[str, float],
     f_max_cap: float = DEFAULT_F_MAX,
     prior_f: float = 0.1,         # Prior: Đòn bẩy 0.1x (Mức an toàn cực đoan)
-    confidence_constant_C: float = 20.0 # Cần 20 lệnh để tin tưởng 50% vào Kelly Data
+    confidence_constant_C: float = 20.0, # Cần 20 lệnh để tin tưởng 50% vào Kelly Data
+    assignment_mode: Literal["soft", "hard"] = "soft",
 ) -> float:
     """
-    [PHÒNG THỦ KÉP]: 
+    [PHÒNG THỦ KÉP & REGIME ALIGNMENT]: 
     1. Trừng phạt Phương sai (Bootstrap 25th percentile).
     2. Trừng phạt Kích thước Mẫu (Empirical Bayes Shrinkage).
-    3. Mượt mà hóa bằng Xác suất HMM (Tránh Whipsaw lật mặt).
+    3. Phối trộn theo `assignment_mode` (Khắc phục Train/Inference Mismatch Request 10):
+       - Nếu `assignment_mode == 'soft'`: Phối trộn liên tục (Blended posterior weighting):
+         f_final = sum(prob_r * f_bayesian_r).
+       - Nếu `assignment_mode == 'hard'`: Rẽ nhánh cứng theo argmax (tương ứng với lúc train hard bucket):
+         f_final = f_bayesian của regime có xác suất prob lớn nhất.
     """
-    blended_f = 0.0
-    
-    # Kiểm tra tính hợp lệ của xác suất
     if not regime_probs:
         raise ValueError("regime_probs không được rỗng")
     for r_name, p_val in regime_probs.items():
@@ -169,35 +218,33 @@ def compute_regime_weighted_bayesian_kelly(
     if not math.isclose(total_prob, 1.0, rel_tol=1e-5):
         raise ValueError(f"Tổng xác suất HMM phải bằng 1.0, nhận được {total_prob}")
 
+    regime_f_bayesian: Dict[str, float] = {}
     for regime_name, prob in regime_probs.items():
-        if prob == 0.0:
-            continue
-            
         returns_sample = regime_returns.get(regime_name, np.array([]))
-        
-        # Lọc rác NaN/Inf nếu có
         returns_sample = returns_sample[np.isfinite(returns_sample)]
         n_samples = len(returns_sample)
         
         if n_samples < 5:
-            # Quá ít lệnh (Đói dữ liệu nặng), ép dùng hoàn toàn Prior
             f_bayesian = prior_f
         else:
-            # 1. Trừng phạt Phương sai (Lấy phân vị bảo thủ 25%)
+            f_max_dynamic = min(float(f_max_cap), max(1.0, math.sqrt(n_samples)))
             kelly_result = solve_empirical_kelly_fraction_with_confidence(
-                returns_sample, f_max=f_max_cap, n_bootstraps=500, lower_percentile=25.0
+                returns_sample, f_max=f_max_dynamic, n_bootstraps=500, lower_percentile=25.0
             )
             f_conservative = kelly_result.f_star_conservative
-            
-            # 2. Trừng phạt Kích thước mẫu (Bayesian Shrinkage)
-            # Áp dụng Bayesian Shrinkage lên giá trị phân vị bảo thủ
             weight_data = n_samples / (n_samples + confidence_constant_C)
             f_bayesian = (weight_data * f_conservative) + ((1.0 - weight_data) * prior_f)
-            
-        # 3. Phối trộn (Blend) theo xác suất Regime
-        blended_f += prob * f_bayesian
-        
-    return float(blended_f)
+        regime_f_bayesian[regime_name] = float(f_bayesian)
+
+    if assignment_mode == "hard":
+        # Chọn argmax cứng để đảm bảo 1-1 với bucket lịch sử hard assignment
+        dominant_regime = max(regime_probs.keys(), key=lambda k: regime_probs[k])
+        return float(regime_f_bayesian[dominant_regime])
+    else:
+        # Soft mode: Phối trộn liên tục theo xác suất HMM
+        blended_f = sum(prob * regime_f_bayesian[r_name] for r_name, prob in regime_probs.items())
+        return float(blended_f)
+
 
 
 # ============================================================================
@@ -316,9 +363,10 @@ def build_empirical_kelly_table_v2(
             if N < 5:
                 f_target = float(prior_f)
             else:
+                f_max_dynamic = min(float(f_max), max(1.0, math.sqrt(N)))
                 ci_result = solve_empirical_kelly_fraction_with_confidence(
                     returns,
-                    f_max=f_max,
+                    f_max=f_max_dynamic,
                     n_bootstraps=n_bootstraps,
                     lower_percentile=lower_percentile,
                 )

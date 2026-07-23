@@ -59,6 +59,12 @@ def test_log_trial_jsonl_io():
         assert isinstance(record1["env_versions"], dict)
         assert record1["params"] == params
         assert record1["metrics"] == metrics
+        assert "canonical_constants" in record1
+        assert "microstructure_guards" in record1["canonical_constants"]
+        assert record1["canonical_constants"]["microstructure_guards"]["spoofing_discount"] == 0.70
+        assert record1["canonical_constants"]["microstructure_guards"]["tier1_threshold_ms"] == 500
+        assert record1["canonical_constants"]["microstructure_guards"]["tier2_threshold_ms"] == 2000
+
 
 
 def test_log_trial_numpy_types():

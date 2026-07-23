@@ -25,26 +25,38 @@ class PurgedKFold:
     def __init__(
         self,
         n_splits: int = 5,
-        embargo_pct: float = 0.01,
+        embargo_pct: float = 0.0,
         event_times: Optional[pd.Series] = None,
+        embargo_bars: Optional[int] = 24,
+        autocorrelation_lag_threshold: int = 0,
     ):
         """
-        Khởi tạo PurgedKFold.
+        Khởi tạo PurgedKFold (Chuẩn hóa canonical v11.9).
 
         Tham số:
         - n_splits: Số lượng fold phân chia (mặc định 5).
-        - embargo_pct: Tỷ lệ cách ly (embargo) tính trên tổng kích thước mẫu (mặc định 0.01 = 1%).
+        - embargo_pct: Tỷ lệ cách ly (embargo) tính trên tổng kích thước mẫu (mặc định canonical 0.0).
         - event_times: pd.Series với Index = Entry Time (t0), Values = Exit Time (t1).
                        Có thể truyền tại constructor hoặc tại phương thức .split().
+        - embargo_bars: Số lượng nến cách ly cố định sau mỗi test fold (mặc định canonical 24 nến = 24 giờ).
+                        Có mức ưu tiên cao nhất (Override Priority), ghi đè embargo_pct để tránh biến dạng theo kích thước mẫu N.
+        - autocorrelation_lag_threshold: Ngưỡng độ trễ tự tương quan (mặc định 0).
+                        Sử dụng làm số nến cách ly nếu embargo_bars là None.
         """
         if not isinstance(n_splits, int) or n_splits < 2:
             raise ValueError(f"Lỗi B-1-14: n_splits phải là số nguyên >= 2, nhận {n_splits}")
         if not isinstance(embargo_pct, (int, float)) or math.isnan(embargo_pct) or math.isinf(embargo_pct) or not (0.0 <= embargo_pct < 1.0):
             raise ValueError(f"Lỗi B-1-14: embargo_pct phải hợp lệ trong [0, 1), nhận {embargo_pct}")
+        if embargo_bars is not None and (not isinstance(embargo_bars, int) or embargo_bars < 0):
+            raise ValueError(f"Lỗi B-1-14: embargo_bars phải là số nguyên >= 0 hoặc None, nhận {embargo_bars}")
+        if not isinstance(autocorrelation_lag_threshold, int) or autocorrelation_lag_threshold < 0:
+            raise ValueError(f"Lỗi B-1-14: autocorrelation_lag_threshold phải là số nguyên >= 0, nhận {autocorrelation_lag_threshold}")
 
         self.n_splits = n_splits
         self.embargo_pct = float(embargo_pct)
         self.event_times = event_times
+        self.embargo_bars = embargo_bars
+        self.autocorrelation_lag_threshold = autocorrelation_lag_threshold
 
     def split(
         self,
@@ -94,8 +106,17 @@ class PurgedKFold:
         indices = np.arange(n_samples)
         fold_bounds = np.array_split(indices, self.n_splits)
 
-        # Tính số lượng nến/bước cách ly (embargo_bars) trên tổng n_samples
-        embargo_step = int(math.floor(self.embargo_pct * n_samples))
+        # [OVERRIDE PRIORITY - TASK B-1-14]
+        # Tính số lượng nến/bước cách ly (embargo_step) theo Thứ tự ưu tiên tuyệt đối (Override Priority):
+        # 1. embargo_bars (nếu khác None) -> Ưu tiên cao nhất, giữ số nến cách ly cố định không phụ thuộc N.
+        # 2. autocorrelation_lag_threshold (nếu > 0 và embargo_bars là None).
+        # 3. embargo_pct (chỉ sử dụng khi cả hai tham số trên không được kích hoạt / bằng None và 0).
+        if self.embargo_bars is not None:
+            embargo_step = int(self.embargo_bars)
+        elif self.autocorrelation_lag_threshold > 0:
+            embargo_step = int(self.autocorrelation_lag_threshold)
+        else:
+            embargo_step = int(math.floor(self.embargo_pct * n_samples))
 
         for i, test_idx in enumerate(fold_bounds):
             test_idx = np.asarray(test_idx, dtype=int)
@@ -156,18 +177,51 @@ class PurgedKFold:
 # ============================================================================
 # UNIT TESTS (TDD)
 # ============================================================================
+def assert_temporal_purging_invariant(splits, event_times, embargo_step: int):
+    """
+    [CANARY ASSERTION v11.9 — TEMPORAL PURGING & EMBARGO INVARIANT VERIFICATION]
+    Khẳng định tuyệt đối không có sự xâm phạm không-thời gian (Spatiotemporal Leakage) giữa Train và Test.
+    Thay thế cho phép kiểm định thiếu sót `len(set(train_idx).intersection(set(test_idx))) == 0`.
+    """
+    t0_arr = np.array(event_times.index)
+    t1_arr = np.array(event_times.values)
+    for fold_idx, (train_idx, test_idx) in enumerate(splits):
+        # 1. Bất biến cơ bản: Không trùng lặp chỉ số integer
+        assert len(set(train_idx).intersection(set(test_idx))) == 0, f"Trùng lặp chỉ số integer tại fold {fold_idx}!"
+        if len(test_idx) == 0:
+            continue
+        
+        test_start_t0 = t0_arr[test_idx[0]]
+        test_max_t1 = np.max(t1_arr[test_idx])
+        embargo_boundary_t = test_max_t1 + embargo_step
+        
+        for idx in train_idx:
+            # 2. Bất biến Purging (Train before): Mọi lệnh mở trước Test Fold phải ĐÓNG trước hoặc ngay tại thời điểm mở Test Fold
+            if idx < test_idx[0]:
+                assert t1_arr[idx] <= test_start_t0, (
+                    f"[Canary Error] Rò rỉ Purging tại fold {fold_idx}! Lệnh train_before idx={idx} "
+                    f"có t1={t1_arr[idx]} > test_start_t0={test_start_t0}"
+                )
+            # 3. Bất biến Embargo (Train after): Mọi lệnh mở sau Test Fold chỉ được phép MỞ sau ranh giới Embargo
+            elif idx > test_idx[-1]:
+                assert t0_arr[idx] >= embargo_boundary_t, (
+                    f"[Canary Error] Rò rỉ Embargo tại fold {fold_idx}! Lệnh train_after idx={idx} "
+                    f"có t0={t0_arr[idx]} < embargo_boundary_t={embargo_boundary_t}"
+                )
+
+
 def test_purged_kfold_no_overlap_simple():
     """Kiểm tra trên chuỗi nến không chồng lấp t1 == t0 (mỗi nến chốt ngay tại bar đó)."""
     n = 100
     X = pd.DataFrame({"feat": np.random.randn(n)})
     et = pd.Series(index=np.arange(n), data=np.arange(n)) # t0 = t1
 
-    pkf = PurgedKFold(n_splits=5, embargo_pct=0.0)
+    pkf = PurgedKFold(n_splits=5, embargo_pct=0.0, embargo_bars=24)
     splits = list(pkf.split(X, event_times=et))
     assert len(splits) == 5
+    assert_temporal_purging_invariant(splits, et, embargo_step=24)
     for train_idx, test_idx in splits:
         assert len(set(train_idx).intersection(set(test_idx))) == 0
-        assert len(train_idx) + len(test_idx) == n
     print("✅ test_purged_kfold_no_overlap_simple PASSED!")
 
 
@@ -184,7 +238,7 @@ def test_purged_kfold_toy_overlap_mathematical_proof():
     - Lệnh 2: t0 = 2, t1 = 3 <= test_start_t0 (4) -> GIỮ (Retained).
     - Lệnh 3: t0 = 3, t1 = 5 > test_start_t0 (4)  -> PURGED (Vì vắt qua nến 4, 5 thuộc test set)!
 
-    Phân tích train_after (j > 5) với embargo_pct = 0.2 (2 bars trên tổng 10 bars -> embargo_step = 2):
+    Phân tích train_after (j > 5) với embargo_step = 2:
     - test_max_t1 = 7. Embargo boundary = 7 + 2 = 9.
     - Lệnh 6: t0 = 6 <= 9 -> PURGED & EMBARGOED!
     - Lệnh 7: t0 = 7 <= 9 -> EMBARGOED!
@@ -210,7 +264,7 @@ def test_purged_kfold_toy_overlap_mathematical_proof():
     ])
     et = pd.Series(index=t0_list, data=t1_list)
 
-    pkf = PurgedKFold(n_splits=5, embargo_pct=0.2) # 5 fold -> mỗi fold 2 phần tử. Fold 2 là [4, 5].
+    pkf = PurgedKFold(n_splits=5, embargo_pct=0.2, embargo_bars=None) # 5 fold -> mỗi fold 2 phần tử. Fold 2 là [4, 5].
     
     splits = list(pkf.split(X, event_times=et))
     train_idx, test_idx = splits[2] # Fold index 2 tương ứng với test_idx = [4, 5]
@@ -225,9 +279,54 @@ def test_purged_kfold_toy_overlap_mathematical_proof():
     for after_j in [6, 7, 8, 9]:
         assert after_j not in train_idx, f"Lệnh {after_j} phải bị EMBARGOED (embargo boundary = 9)!"
         
-    # Xác nhận Strict Intersection Assertion
-    assert len(set(train_idx).intersection(set(test_idx))) == 0
+    # Xác nhận Strict Temporal Purging Invariant Assertion
+    assert_temporal_purging_invariant([splits[2]], et, embargo_step=2)
     print("✅ test_purged_kfold_toy_overlap_mathematical_proof PASSED!")
+
+
+def test_purged_kfold_override_priority():
+    """
+    [TDD VERIFICATION - TASK B-1-14 OVERRIDE PRIORITY]:
+    Kiểm chứng thứ tự ưu tiên ghi đè tuyệt đối:
+    embargo_bars > autocorrelation_lag_threshold > embargo_pct.
+    """
+    n = 100
+    X = pd.DataFrame({"feat": np.arange(n)})
+    et = pd.Series(index=np.arange(n), data=np.arange(n))
+
+    # 1. Mặc định canonical: embargo_bars = 24 -> cách ly 24 nến
+    pkf_default = PurgedKFold(n_splits=5)
+    splits_default = list(pkf_default.split(X, event_times=et))
+    # Với fold 0 (test_idx 0->19), test_max_t1 = 19, embargo boundary = 19 + 24 = 43. Lệnh từ 44 trở đi được giữ!
+    assert 44 in splits_default[0][0]
+    assert 43 not in splits_default[0][0]
+    assert_temporal_purging_invariant(splits_default, et, embargo_step=24)
+
+    # 2. Khi truyền cả embargo_bars=5, autocorrelation_lag=20, embargo_pct=0.5 -> ưu tiên embargo_bars=5
+    pkf_bars = PurgedKFold(n_splits=5, embargo_pct=0.5, embargo_bars=5, autocorrelation_lag_threshold=20)
+    splits_bars = list(pkf_bars.split(X, event_times=et))
+    # Fold 0: test_idx = 0..19, test_max_t1 = 19. embargo_step = 5 => boundary = 24.
+    # Các lệnh j từ 25 trở đi được giữ lại!
+    assert 25 in splits_bars[0][0]
+    assert 24 not in splits_bars[0][0]
+    assert_temporal_purging_invariant(splits_bars, et, embargo_step=5)
+
+    # 3. Khi embargo_bars=None, autocorrelation_lag=10 -> ưu tiên autocorrelation_lag_threshold=10
+    pkf_lag = PurgedKFold(n_splits=5, embargo_pct=0.5, embargo_bars=None, autocorrelation_lag_threshold=10)
+    splits_lag = list(pkf_lag.split(X, event_times=et))
+    # Fold 0: boundary = 19 + 10 = 29. Lệnh từ 30 trở đi được giữ lại!
+    assert 30 in splits_lag[0][0]
+    assert 29 not in splits_lag[0][0]
+    assert_temporal_purging_invariant(splits_lag, et, embargo_step=10)
+
+    # 4. Khi embargo_bars=None và autocorrelation_lag=0 -> sử dụng embargo_pct=0.1 (10 bars)
+    pkf_pct = PurgedKFold(n_splits=5, embargo_pct=0.1, embargo_bars=None, autocorrelation_lag_threshold=0)
+    splits_pct = list(pkf_pct.split(X, event_times=et))
+    assert 30 in splits_pct[0][0]
+    assert 29 not in splits_pct[0][0]
+    assert_temporal_purging_invariant(splits_pct, et, embargo_step=10)
+
+    print("✅ test_purged_kfold_override_priority PASSED!")
 
 
 def test_purged_kfold_input_validation_guards():
@@ -257,4 +356,5 @@ def test_purged_kfold_input_validation_guards():
 if __name__ == "__main__":
     test_purged_kfold_no_overlap_simple()
     test_purged_kfold_toy_overlap_mathematical_proof()
+    test_purged_kfold_override_priority()
     test_purged_kfold_input_validation_guards()

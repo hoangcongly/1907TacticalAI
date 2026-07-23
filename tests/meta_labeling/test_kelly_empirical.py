@@ -1,4 +1,6 @@
+import math
 import numpy as np
+
 
 from aegis.meta_labeling.sizing.kelly_empirical import (
     DEFAULT_F_MAX,
@@ -222,3 +224,36 @@ def test_b_1_13_compute_bi_directional_kelly_v14_unified():
     assert res_none["f_target"] == 0.0
 
     print("✅ [TASK B-1-13] compute_bi_directional_kelly_v14_unified PASSED!")
+
+
+def test_small_sample_bayesian_dynamic_f_max_cap():
+    """
+    [TDD VERIFICATION - VÁ LỖ HỔNG 8: BAYESIAN SHRINKAGE DYNAMIC CAP N vs C]:
+    Kiểm chứng với mẫu nhỏ N=10, trần đòn bẩy động f_max_dynamic = min(f_max_cap, max(1.0, sqrt(N))) ≈ 3.16x
+    chặn đứng over-betting trước khi đi qua shrinkage, thay vì để f_conservative vọt lên tận 20.0x.
+    """
+    # Mẫu N=10 lệnh thắng liên tiếp (hoặc có rủi ro cực nhỏ khiến Kelly muốn max đòn bẩy 20x)
+    returns_small = np.array([0.05] * 10)
+    regime_returns = {"Bull": returns_small}
+    regime_probs = {"Bull": 1.0}
+
+    # Với f_max_cap = 20.0, N = 10 -> f_max_dynamic = sqrt(10) ≈ 3.162x.
+    # Khi C=20, trọng số w = 10 / (10 + 20) = 1/3.
+    # prior_f = 0.1 -> f_bayes tối đa có thể đạt được là (1/3 * 3.162) + (2/3 * 0.1) ≈ 1.054 + 0.0667 ≈ 1.12x.
+    f_bayes = compute_regime_weighted_bayesian_kelly(
+        regime_returns=regime_returns,
+        regime_probs=regime_probs,
+        f_max_cap=20.0,
+        prior_f=0.1,
+        confidence_constant_C=20.0
+    )
+
+    max_possible_with_dynamic_cap = (10.0 / 30.0) * math.sqrt(10.0) + (20.0 / 30.0) * 0.1
+    assert f_bayes <= max_possible_with_dynamic_cap + 1e-6, (
+        f"f_bayes ({f_bayes:.4f}) phải bị chặn dưới mức {max_possible_with_dynamic_cap:.4f} do dynamic cap sqrt(N)!"
+    )
+
+    # Nếu không có dynamic cap, f_bayes khi đó sẽ đạt cỡ (10/30)*20 + (20/30)*0.1 ≈ 6.73x
+    assert f_bayes < 2.0, f"Đòn bẩy mẫu nhỏ phải an toàn dưới 2.0x, nhận {f_bayes:.4f}"
+    print(f"✅ [VÁ LỖ HỔNG 8] Bayesian Shrinkage Dynamic Cap với N=10: f_bayes = {f_bayes:.4f}x (Max cap: ~{max_possible_with_dynamic_cap:.4f}x) PASSED!")
+

@@ -20,7 +20,8 @@ MARGIN_LEVERAGE_CAP = 20.0
 # ============================================================================
 def compute_liquidation_price(
     entry_price: float, side: int, leverage: float, maintenance_margin_rate: float,
-    fee_rate: float = 0.0004, liquidation_fee_rate: float = 0.005
+    fee_rate: float = 0.0004, liquidation_fee_rate: float = 0.005,
+    funding_accrued_pct: float = 0.0
 ) -> float:
     """
     [v11.9] Xấp xỉ giá thanh lý cho Isolated Margin Perpetual Futures.
@@ -29,12 +30,15 @@ def compute_liquidation_price(
     - fee_rate: Phí giao dịch thường khi mở lệnh (taker/maker fee, ví dụ 0.04%).
     - liquidation_fee_rate: Phí phạt thanh lý cưỡng chế (Liquidation Clearance Fee, ví dụ 0.5%).
       Sàn thu phí này thay vì fee_rate khi cưỡng chế đóng lệnh. Thường cao gấp 10-20 lần fee_rate.
+    - funding_accrued_pct: Tỷ lệ % phí funding cộng dồn (= funding_accrued_usd / size_notional).
+      + Nếu > 0 (chúng ta trả phí, ví dụ Long khi Funding Dương): làm thu hẹp khoảng gồng lỗ -> P_liq sát Entry hơn (dễ cháy hơn).
+      + Nếu < 0 (chúng ta nhận phí/rebate, ví dụ Short khi Funding Dương): mở rộng khoảng gồng lỗ -> P_liq đẩy ra xa Entry hơn (khó cháy hơn).
 
     [ARMOR-PLATED GUARDS — HẢI QUAN BỌC THÉP]:
     - Chặn side == 0 hoặc ngoài (+1, -1).
     - Chặn leverage < 1.0 hoặc rác NaN/Inf gây lỗi chia cho số 0 (ZeroDivisionError).
     - Chặn entry_price <= 0 và maintenance_margin_rate ngoài đoạn [0, 1).
-    - Chặn fee_rate ngoài đoạn [0, 0.05).
+    - Chặn fee_rate ngoài đoạn [0, 0.05) và funding_accrued_pct rác/bất thường.
     """
     if side not in (1, -1):
         raise ValueError(
@@ -91,10 +95,22 @@ def compute_liquidation_price(
             f"Lỗi hải quan v11.9: liquidation_fee_rate phải nằm trong đoạn [0.0, 0.1), nhận {liquidation_fee_rate}"
         )
 
-    # Khoảng cho phép lỗ trước khi sàn thanh lý (trừ hao mọi loại phí)
-    margin_loss_allowance = (1.0 / leverage) - maintenance_margin_rate - fee_rate - liquidation_fee_rate
+    if (
+        not isinstance(funding_accrued_pct, (int, float))
+        or math.isnan(funding_accrued_pct)
+        or math.isinf(funding_accrued_pct)
+        or abs(funding_accrued_pct) >= 1.0
+    ):
+        raise ValueError(
+            f"Lỗi hải quan v11.9: funding_accrued_pct phải là tỷ lệ hợp lệ (-1.0 đến < 1.0), nhận {funding_accrued_pct}"
+        )
 
-    # Nếu margin_loss_allowance <= 0, đòn bẩy quá cao so với tổng phí → giá thanh lý = entry
+    # Khoảng cho phép lỗ trước khi sàn thanh lý (trừ hao mọi loại phí và funding cộng dồn)
+    # funding_accrued_pct > 0: trả funding -> allowance nhỏ đi -> P_liq sát Entry
+    # funding_accrued_pct < 0: nhận funding (- (-)) -> allowance lớn lên -> P_liq xa Entry
+    margin_loss_allowance = (1.0 / leverage) - maintenance_margin_rate - fee_rate - liquidation_fee_rate - funding_accrued_pct
+
+    # Nếu margin_loss_allowance <= 0, đòn bẩy quá cao hoặc funding/phí ăn hết ký quỹ → giá thanh lý = entry
     if margin_loss_allowance <= 0:
         return float(entry_price)
 
@@ -115,6 +131,7 @@ def validate_leverage_against_sl(
     safety_buffer_pct: float = 0.15,
     fee_rate: float = 0.0004,
     liquidation_fee_rate: float = 0.005,
+    funding_accrued_pct: float = 0.0,
 ) -> Dict[str, Any]:
     """
     [v11.9] Pre-Flight Check: Đảm bảo khoảng cách Cắt Lỗ (SL) đủ an toàn trước khi chạm giá thanh lý.
@@ -153,8 +170,18 @@ def validate_leverage_against_sl(
             f"Lỗi hải quan v11.9: liquidation_fee_rate phải nằm trong đoạn [0.0, 0.1), nhận {liquidation_fee_rate}"
         )
 
+    if (
+        not isinstance(funding_accrued_pct, (int, float))
+        or math.isnan(funding_accrued_pct)
+        or math.isinf(funding_accrued_pct)
+        or abs(funding_accrued_pct) >= 1.0
+    ):
+        raise ValueError(
+            f"Lỗi hải quan v11.9: funding_accrued_pct phải là tỷ lệ hợp lệ (-1.0 đến < 1.0), nhận {funding_accrued_pct}"
+        )
+
     liq_price = compute_liquidation_price(
-        entry_price, side, leverage, maintenance_margin_rate, fee_rate, liquidation_fee_rate
+        entry_price, side, leverage, maintenance_margin_rate, fee_rate, liquidation_fee_rate, funding_accrued_pct
     )
 
     if side > 0:
@@ -214,16 +241,18 @@ def resolve_max_safe_leverage(
     leverage_cap: float = MARGIN_LEVERAGE_CAP,
     fee_rate: float = 0.0004,
     liquidation_fee_rate: float = 0.005,
+    max_expected_funding_loss: float = 0.0,
 ) -> float:
     """
-    [v11.9] Giải closed-form đòn bẩy tối đa cho phép.
-    Công thức: L_max = 1 / [ (SL_frac / (1 - buffer)) + MaintRate + fee_rate + liquidation_fee_rate ]
+    [v11.9 + Lỗ Hổng 6] Giải closed-form đòn bẩy tối đa cho phép có tính khấu hao Funding.
+    Công thức: L_max = 1 / [ (SL_frac / (1 - buffer)) + MaintRate + fee_rate + liquidation_fee_rate + max_expected_funding_loss ]
 
     Tham số:
     - fee_rate: Phí giao dịch khi mở lệnh (taker fee, ví dụ 0.04%).
     - liquidation_fee_rate: Phí phạt thanh lý cưỡng chế (Liquidation Clearance Fee, ví dụ 0.5%).
     - leverage_cap: Trần MARGIN EFFICIENCY (mặc định MARGIN_LEVERAGE_CAP = 20.0).
       Đây là trần margin, KHÔNG PHẢI trần rủi ro giá (đó là f_max trong Kelly).
+    - max_expected_funding_loss: Khấu hao Funding lớn nhất dự kiến (ví dụ 0.01 = 1% tài sản) trong thời gian gồng lệnh.
     """
     if side not in (1, -1):
         raise ValueError(
@@ -296,6 +325,16 @@ def resolve_max_safe_leverage(
             f"Lỗi hải quan v11.9: maintenance_margin_rate phải thuộc [0.0, 1.0), nhận {maintenance_margin_rate}"
         )
 
+    if (
+        not isinstance(max_expected_funding_loss, (int, float))
+        or math.isnan(max_expected_funding_loss)
+        or math.isinf(max_expected_funding_loss)
+        or not (0.0 <= max_expected_funding_loss < 0.5)
+    ):
+        raise ValueError(
+            f"Lỗi hải quan v11.9: max_expected_funding_loss phải thuộc [0.0, 0.5), nhận {max_expected_funding_loss}"
+        )
+
     if side > 0:
         sl_distance_frac = (entry_price - sl_initial) / entry_price
     else:
@@ -306,7 +345,7 @@ def resolve_max_safe_leverage(
             f"Lỗi hải quan v11.9: Điểm Cắt Lỗ sl_initial ({sl_initial}) đặt sai chiều hoặc bằng Entry ({entry_price}) cho lệnh side={side}!"
         )
 
-    denom = (sl_distance_frac / (1.0 - safety_buffer_pct)) + maintenance_margin_rate + fee_rate + liquidation_fee_rate
+    denom = (sl_distance_frac / (1.0 - safety_buffer_pct)) + maintenance_margin_rate + fee_rate + liquidation_fee_rate + max_expected_funding_loss
     max_leverage = 1.0 / max(denom, 1e-6)
     return float(min(max_leverage, leverage_cap))
 

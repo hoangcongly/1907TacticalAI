@@ -1,0 +1,78 @@
+# ============================================================================
+# [AEGIS CANONICAL PARAMETER REGISTRY]
+# SINGLE SOURCE OF TRUTH (SỔ CÂN BẰNG HẰNG SỐ BỌC THÉP V11.9)
+# ============================================================================
+# Mọi sự thay đổi tham số tại bất kỳ module nào (sizing, labeling, cross-validation,
+# pnl, config YAML) BẮT BUỘC phải đối chiếu và tuân thủ tuyệt đối các giá trị tại đây.
+# Tuyệt đối không tự ý viết lại tham số mà không có lý do định chế phê duyệt.
+# ============================================================================
+
+strategic_parameters:
+  t_max_live_follow:
+    value: 120
+    unit: "bars"
+    origin: "v11.7 Patch C.2 / trend_following_v1.yaml"
+    rationale: "Đu theo xu hướng lớn (let winners run). Giữ tối đa 120 nến trước khi chốt theo thời gian."
+  
+  t_max_live_fade:
+    value: 40
+    unit: "bars"
+    origin: "v11.7 Patch C.2 / trend_following_v1.yaml"
+    rationale: "Đánh chặn hồi quy ngắn hạn trong sideway/choppy. Giữ tối đa 40 nến để không loãng giả thuyết ban đầu và tránh rủi ro cắt biên fold CPCV."
+  
+  embargo_bars:
+    value: 24
+    unit: "bars"
+    origin: "v3/v4 / v11.5 / architecture.md"
+    rationale: "Số lượng nến cách ly cố định sau mỗi test fold trong PurgedKFold để triệt tiêu tự tương quan HMM. Có mức ưu tiên cao nhất (Override Priority), không bị phụ thuộc hoặc biến dạng theo kích thước mẫu N."
+  
+  embargo_pct:
+    value: 0.0
+    unit: "ratio"
+    origin: "v11.9 Canonical Alignment"
+    rationale: "Mặc định bằng 0.0. Chỉ sử dụng như phương án dự phòng cuối cùng khi embargo_bars=None và autocorrelation_lag_threshold=0."
+
+architectural_constants:
+  n_states:
+    value: 2
+    type: "int"
+    origin: "v11.6 / Task B-1-2"
+    rationale: "Số lượng trạng thái HMM cố định là 2 (Trend vs Chop). Bọc thép xác định p_trend + p_chop = 1.0, ngăn chặn bẫy đoán mò mô hình."
+  
+  m_sl_follow:
+    value: 2.0
+    unit: "multiplier"
+    origin: "v11.6 / trend_following_v1.yaml"
+    rationale: "Hệ số nhân ATR cho rào cản cắt lỗ (Stop-loss multiplier) chế độ Follow."
+  
+  m_sl_fade:
+    value: 1.5
+    unit: "multiplier"
+    origin: "v11.6 / docs"
+    rationale: "Hệ số nhân ATR cho rào cản cắt lỗ (Stop-loss multiplier) chế độ Fade. Ngắn hơn Follow để cắt lỗ nhanh khi đánh ngược xu hướng."
+
+microstructure_guards:
+  spoofing_discount:
+    value: 0.70
+    unit: "ratio"
+    origin: "v11.6 Task B-2-2"
+    rationale: "Chiết khấu thanh khoản ảo L2 (30% tường lệnh bị coi là spoofing hủy trước khi giá quét tới)."
+
+  tier1_threshold_ms:
+    value: 500
+    unit: "ms"
+    origin: "v11.6 Task B-2-2"
+    rationale: "Ngưỡng độ trễ mạng Tier 1 (500ms). Dưới ngưỡng là Tier 0 (LIMIT thông thường). Trên 500ms chuyển sang POST_ONLY_LIMIT với buffer x1.5."
+
+  tier2_threshold_ms:
+    value: 2000
+    unit: "ms"
+    origin: "v11.6 Task B-2-2"
+    rationale: "Ngưỡng độ trễ mạng Tier 2 (2000ms). Trên 2000ms kích hoạt hủy toàn bộ lệnh treo và rẽ nhánh Urgency Gate (FORCE_MARKET / POSTPONE / ABORT)."
+  
+  safety_buffer_pct:
+    value: 0.15
+    unit: "ratio"
+    origin: "v11.9 Liquidation Layer"
+    rationale: "Đệm an toàn tối thiểu 15% giữa giá Cắt Lỗ (SL) và giá Thanh Lý cưỡng chế (Liquidation Price)."
+

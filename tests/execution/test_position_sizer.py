@@ -1,4 +1,5 @@
-from aegis.execution.position_sizer import compute_position_size
+import pytest
+from aegis.execution.position_sizer import compute_position_size, AccountStateTracker
 
 def test_position_size_uses_current_equity():
     """
@@ -88,4 +89,78 @@ def test_position_size_inf_guards():
     with pytest.raises(ValueError, match="max_notional_cap phải > 0 và hợp lệ"):
         compute_position_size(f_star=1.0, current_equity=1000.0, max_notional_cap=float("inf"))
     print("✅ [ARMOR GUARD] Position Sizer chặn đứng Inf cho ATR/Cap PASSED!")
+
+
+def test_compute_position_size_round_notional_down():
+    """
+    [TDD VERIFICATION - KHẮC PHỤC LỖ HỔNG 5: LOT SIZE PRECISION]:
+    Kiểm chứng quy mô danh nghĩa (size_notional) được làm tròn xuống (floor / round down)
+    theo bước nhảy lot_step_size của sàn, bảo vệ không bao giờ làm tròn lên vượt đòn bẩy/vốn.
+    """
+    # f_star * lambda_kelly * equity = 0.5 * 0.5 * 1000 = 250.0.
+    # Giả sử do vol_multiplier hay trần dẫn tới thô là 257.8 USD, bước nhảy lot_step_size = 10.0
+    size = compute_position_size(
+        f_star=0.5156, current_equity=1000.0, lambda_kelly=0.5, lot_step_size=10.0
+    )
+    # 0.5156 * 0.5 * 1000 = 257.8 -> floor(257.8 / 10.0) * 10.0 = 250.0
+    assert size == pytest.approx(250.0)
+
+
+def test_vol_targeting_clamped_by_lmax_safety_gate():
+    """
+    [TDD VERIFICATION - VÁ LỖ HỔNG 7 & BẪY 1: VOL-TARGETING WITH L_MAX GATE]:
+    Kiểm chứng hệ thống cho phép upscaling biến động (vol_ratio up to 2.5x khi ATR hiện tại rất nhỏ),
+    nhưng bắt buộc bị kẹp bởi rào chắn L_max safety gate kiểm duyệt lần cuối.
+    """
+    # Khi ATR_current = 1%, ATR_hist = 5% -> vol_ratio = 5.0 -> bị kẹp ở max_vol_multiplier = 2.5
+    # f_star = 1.0, lambda = 0.5, equity = 1000.0 -> size ban đầu = 1.0 * 0.5 * 1000 * 2.5 = 1250.0
+    size_no_gate = compute_position_size(
+        f_star=1.0, current_equity=1000.0, lambda_kelly=0.5,
+        atr_hist_mean_pct=0.05, atr_current_pct=0.01,
+        max_vol_multiplier=2.5, max_safe_leverage=None
+    )
+    assert abs(size_no_gate - 1250.0) < 1e-6, f"Kỳ vọng 1250.0, nhận {size_no_gate}"
+
+    # Khi có rào chắn L_max = 1.0x (chẳng hạn SL đặt rất xa, hoặc margin cap giới hạn ở 1.0x = 1000 USD)
+    size_with_gate = compute_position_size(
+        f_star=1.0, current_equity=1000.0, lambda_kelly=0.5,
+        atr_hist_mean_pct=0.05, atr_current_pct=0.01,
+        max_vol_multiplier=2.5, max_safe_leverage=1.0
+    )
+    assert abs(size_with_gate - 1000.0) < 1e-6, (
+        f"Size phải bị kẹp lại ở mức L_max * equity = 1000.0, nhận {size_with_gate}"
+    )
+    print("✅ [L_MAX SAFETY GATE] Vol-targeting upscaling bị kẹp bởi L_max safety gate PASSED!")
+
+
+def test_account_state_tracker_isolated_margin_no_upnl_leak():
+    """
+    [TDD VERIFICATION - VÁ LỖ HỔNG 10 & BẪY 3: ACCOUNT STATE TRACKER]:
+    Kiểm chứng AccountStateTracker phân định wallet_balance và unrealized_pnl,
+    đảm bảo available_margin tuyệt đối không bao gồm uPnL (lãi lơ lửng chưa chốt)
+    trong chế độ Isolated Margin.
+    """
+    # Ví thật = 10,000 USD, đang mở lệnh khác tốn 2,000 USD cọc, đang lãi lơ lửng 5,000 USD
+    tracker = AccountStateTracker(
+        wallet_balance=10_000.0,
+        unrealized_pnl=5_000.0,
+        used_initial_margin=2_000.0
+    )
+    assert abs(tracker.margin_balance - 15_000.0) < 1e-6, "Mark-to-Market equity phải là 15k"
+    assert abs(tracker.available_margin - 8_000.0) < 1e-6, "Available margin chỉ được là 10k - 2k = 8k, không cộng uPnL!"
+
+    # Khi đưa vào compute_position_size ở chế độ chuẩn Isolated Margin
+    size = compute_position_size(f_star=1.0, current_equity=tracker, lambda_kelly=0.5)
+    # size = 1.0 * 0.5 * 8000.0 = 4000.0
+    assert abs(size - 4000.0) < 1e-6, f"Kỳ vọng 4000.0 (dựa trên 8k available_margin), nhận {size}"
+
+    # Kiểm tra guard rác
+    with pytest.raises(ValueError):
+        AccountStateTracker(wallet_balance=-100.0)
+    with pytest.raises(ValueError):
+        AccountStateTracker(wallet_balance=100.0, used_initial_margin=-50.0)
+
+    print("✅ [ACCOUNT STATE TRACKER] Phân định wallet_balance & uPnL, chống lọt cọc ảo PASSED!")
+
+
 

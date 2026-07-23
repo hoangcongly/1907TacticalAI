@@ -12,6 +12,7 @@ def classify_trade_mode(
     p_chop_i: float,
     fade_enabled: bool,
     fade_regime_gate_threshold: float = 0.60,
+    n_states: int = 2,
 ) -> Literal["follow", "fade", "none"]:
     """
     Hàm DUY NHẤT phân loại Follow / Fade / None.
@@ -20,12 +21,22 @@ def classify_trade_mode(
     [ARMOR-PLATED GUARDS — BẢO VỆ CHỐNG LỖ HỔNG]:
     - Kiểm tra nghiêm ngặt p_i và p_chop_i phải thuộc đoạn [0.0, 1.0].
     - Chặn đứng số rác NaN / Inf trước khi đi vào logic rẽ nhánh.
+    - Hằng số kiến trúc n_states (Architectural Constant) truyền trực tiếp vào hàm để rẽ nhánh,
+      tuyệt đối không dùng float addition guessing.
 
     Quy tắc:
     - p_i >= 0.5: Tin tưởng xu hướng (Follow).
-    - p_i < 0.2: Xu hướng rất yếu. Đủ điều kiện xét Fade.
-    - Khóa cổng Fade: Chỉ kích hoạt nếu xác suất choppy (p_chop_i) > ngưỡng an toàn.
+    - Khóa cổng Fade theo n_states:
+      + Nếu n_states == 2 (HMM 2 trạng thái Trend vs Chop, p_trend + p_chop = 1.0):
+        Chỉ kích hoạt Fade nếu p_chop_i > max(0.80, fade_regime_gate_threshold).
+      + Nếu n_states >= 3 (HMM >= 3 trạng thái Bull, Bear, Chop, độc lập):
+        Chỉ kích hoạt Fade nếu p_i < 0.2 VÀ p_chop_i > fade_regime_gate_threshold.
     """
+    if not isinstance(n_states, int) or n_states < 2:
+        raise ValueError(
+            f"Lỗi hải quan B-1-2: n_states phải là số nguyên >= 2, nhận {n_states}"
+        )
+
     if (
         not isinstance(p_i, (int, float))
         or math.isnan(p_i)
@@ -55,9 +66,14 @@ def classify_trade_mode(
     if p_i >= 0.5:
         return "follow"
 
-    # Khóa cổng: Fade chỉ kích hoạt nếu xác suất choppy > ngưỡng
-    if fade_enabled and p_i < 0.2 and p_chop_i > fade_regime_gate_threshold:
-        return "fade"
+    # Khóa cổng: Fade chỉ kích hoạt nếu xác suất choppy > ngưỡng theo kiến trúc n_states
+    if fade_enabled:
+        if n_states == 2:
+            if p_chop_i > max(0.80, fade_regime_gate_threshold):
+                return "fade"
+        else:
+            if p_i < 0.2 and p_chop_i > fade_regime_gate_threshold:
+                return "fade"
 
     return "none"
 
@@ -75,6 +91,7 @@ def resolve_trade_execution_params(
     c_trade_adj: float,
     fade_enabled: bool,
     fade_regime_gate_threshold: float = 0.60,
+    n_states: int = 2,
     t_max_live_follow: int = 120,
     t_max_live_fade: int = 40,
     leverage_requested: float = 10.0,
@@ -83,6 +100,7 @@ def resolve_trade_execution_params(
     liquidation_fee_rate: float = 0.001,
     safety_buffer_pct: float = 0.15,
     leverage_cap: float = 20.0,
+    max_expected_funding_loss: float = 0.0,
 ) -> dict | None:
     """
     [TASK B-1-6] Hàm glue NỐI 3 module đã có (B-1-2 classify_trade_mode,
@@ -100,6 +118,7 @@ def resolve_trade_execution_params(
         p_chop_i=p_chop_i,
         fade_enabled=fade_enabled,
         fade_regime_gate_threshold=fade_regime_gate_threshold,
+        n_states=n_states,
     )
 
     # 2. Nếu mode == "none": return None ngay lập tức
@@ -131,6 +150,7 @@ def resolve_trade_execution_params(
         leverage_cap=leverage_cap,
         fee_rate=fee_rate,
         liquidation_fee_rate=liquidation_fee_rate,
+        max_expected_funding_loss=max_expected_funding_loss,
     )
 
     if (

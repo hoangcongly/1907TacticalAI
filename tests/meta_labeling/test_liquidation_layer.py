@@ -133,3 +133,85 @@ def test_compute_liquidation_loss_margin_only():
     loss = compute_liquidation_loss(notional, lev)
     assert abs(loss - (-100.0)) < 1e-6, f"Lỗi tính toán: nhận {loss}, kỳ vọng -100.0"
     print("✅ [QĐ #7] compute_liquidation_loss trả về -(margin) thuần, phí xử lý tại pnl.py!")
+
+
+def test_compute_liquidation_price_bidirectional_funding():
+    """
+    [ADVISORY NOTE DIRECTIVE v11.9 — BI-DIRECTIONAL FUNDING DYNAMIC EROSION]:
+    Kiểm chứng chính xác 2 chiều ảnh hưởng của Funding Fee lên Giá Thanh Lý:
+    1. Trường hợp TRẢ PHÍ (funding_accrued_pct > 0, ví dụ Long khi Funding Dương):
+       -> Allowance nhỏ đi -> P_liq dịch GẦN Entry hơn (Dễ cháy hơn).
+    2. Trường hợp NHẬN PHÍ REBATE (funding_accrued_pct < 0, ví dụ Short khi Funding Dương):
+       -> Allowance lớn lên (- (-)) -> P_liq bị đẩy XA Entry hơn (Khó cháy hơn).
+    """
+    entry = 100.0
+    lev = 5.0
+    maint = 0.005
+    fee = 0.0004
+    liq_fee = 0.005
+
+    # Base liquidation price khi funding = 0.0
+    p_liq_base_long = compute_liquidation_price(entry, side=1, leverage=lev, maintenance_margin_rate=maint, fee_rate=fee, liquidation_fee_rate=liq_fee, funding_accrued_pct=0.0)
+    p_liq_base_short = compute_liquidation_price(entry, side=-1, leverage=lev, maintenance_margin_rate=maint, fee_rate=fee, liquidation_fee_rate=liq_fee, funding_accrued_pct=0.0)
+
+    # 1. TRƯỜNG HỢP TRẢ PHÍ (paying fee, funding_accrued_pct = 0.02 = +2%)
+    p_liq_pay_long = compute_liquidation_price(entry, side=1, leverage=lev, maintenance_margin_rate=maint, fee_rate=fee, liquidation_fee_rate=liq_fee, funding_accrued_pct=0.02)
+    p_liq_pay_short = compute_liquidation_price(entry, side=-1, leverage=lev, maintenance_margin_rate=maint, fee_rate=fee, liquidation_fee_rate=liq_fee, funding_accrued_pct=0.02)
+    
+    # Cho Long: P_liq phải tăng (sát 100 hơn)
+    assert p_liq_pay_long > p_liq_base_long, f"Long trả funding phải sát Entry hơn: {p_liq_pay_long} vs {p_liq_base_long}"
+    assert abs((entry - p_liq_pay_long) - ((entry - p_liq_base_long) - 2.0)) < 1e-4
+    # Cho Short: P_liq phải giảm (sát 100 hơn)
+    assert p_liq_pay_short < p_liq_base_short, f"Short trả funding phải sát Entry hơn: {p_liq_pay_short} vs {p_liq_base_short}"
+    assert abs((p_liq_pay_short - entry) - ((p_liq_base_short - entry) - 2.0)) < 1e-4
+
+    # 2. TRƯỜNG HỢP NHẬN PHÍ (receiving rebate, funding_accrued_pct = -0.01 = -1%)
+    p_liq_rebate_long = compute_liquidation_price(entry, side=1, leverage=lev, maintenance_margin_rate=maint, fee_rate=fee, liquidation_fee_rate=liq_fee, funding_accrued_pct=-0.01)
+    p_liq_rebate_short = compute_liquidation_price(entry, side=-1, leverage=lev, maintenance_margin_rate=maint, fee_rate=fee, liquidation_fee_rate=liq_fee, funding_accrued_pct=-0.01)
+    
+    # Cho Long: P_liq phải giảm (xa 100 hơn)
+    assert p_liq_rebate_long < p_liq_base_long, f"Long nhận rebate phải xa Entry hơn: {p_liq_rebate_long} vs {p_liq_base_long}"
+    assert abs((entry - p_liq_rebate_long) - ((entry - p_liq_base_long) + 1.0)) < 1e-4
+    # Cho Short: P_liq phải tăng (xa 100 hơn)
+    assert p_liq_rebate_short > p_liq_base_short, f"Short nhận rebate phải xa Entry hơn: {p_liq_rebate_short} vs {p_liq_base_short}"
+    assert abs((p_liq_rebate_short - entry) - ((p_liq_base_short - entry) + 1.0)) < 1e-4
+
+    print("✅ [BI-DIRECTIONAL FUNDING Directives] Khẳng định hoàn hảo 2 chiều Funding Fee lên Giá Thanh Lý PASSED!")
+
+
+def test_resolve_max_safe_leverage_funding_erosion():
+    """
+    [TDD VERIFICATION - VÁ LỖ HỔNG 6: FUNDING EROSION IN L_MAX]:
+    Kiểm chứng max_expected_funding_loss thu hẹp an toàn đòn bẩy tối đa L_max.
+    Đồng thời kiểm chứng các hải quan bọc thép chặn đứng input rác.
+    """
+    l_max_base = resolve_max_safe_leverage(
+        entry_price=100.0, side=1, sl_initial=95.0, maintenance_margin_rate=0.005, max_expected_funding_loss=0.0
+    )
+    l_max_with_erosion = resolve_max_safe_leverage(
+        entry_price=100.0, side=1, sl_initial=95.0, maintenance_margin_rate=0.005, max_expected_funding_loss=0.01
+    )
+
+    assert l_max_with_erosion < l_max_base, (
+        f"L_max khi có khấu hao funding ({l_max_with_erosion:.2f}) phải nhỏ hơn L_max gốc ({l_max_base:.2f})!"
+    )
+
+    # Kiểm tra guard [0.0, 0.5)
+    try:
+        resolve_max_safe_leverage(100.0, 1, 95.0, 0.005, max_expected_funding_loss=-0.01)
+        assert False, "Không chặn funding loss âm"
+    except ValueError:
+        pass
+
+    try:
+        resolve_max_safe_leverage(100.0, 1, 95.0, 0.005, max_expected_funding_loss=0.6)
+        assert False, "Không chặn funding loss quá lớn >= 0.5"
+    except ValueError:
+        pass
+
+    print(
+        f"✅ [VÁ LỖ HỔNG 6] L_max Base: {l_max_base:.2f}x | "
+        f"L_max With Funding Erosion (1%): {l_max_with_erosion:.2f}x PASSED!"
+    )
+
+

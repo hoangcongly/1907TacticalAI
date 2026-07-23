@@ -57,22 +57,40 @@ def test_pnl_leverage_does_not_affect_normal_exit():
     print("✅ [QĐ #7] Leverage không ảnh hưởng PnL Normal PASSED!")
 
 
-def test_pnl_liquidation_does_not_double_count_funding():
+def test_pnl_liquidation_accounts_for_bidirectional_funding():
     """
-    [Issue #4 / QĐ #7] Kiểm chứng nhánh Liquidation KHÔNG trừ thêm funding_accrued_usd
-    để chống lỗi Đếm Kép (Double-Count) tiền Funding Fee đã bị trừ vào Ký quỹ trước khi thanh lý.
+    [ADVISORY DIRECTIVE v11.9 — BI-DIRECTIONAL FUNDING ACCOUNTING FOR LIQUIDATION]:
+    Khắc phục triệt để lỗi "từ chống đếm kép thành không đếm luôn" (Nghiêm trọng #5):
+    - Khẳng định nhánh Liquidation KHÔNG thu phí exit_fee (để tránh đếm kép với liquidation fee của sàn).
+    - Nhưng BẮT BUỘC hạch toán đầy đủ chi phí/thu nhập funding cộng dồn (funding_accrued_usd) phát sinh trong nhiều ngày trước khi cháy.
+    1. Trả phí (funding_accrued_usd > 0): lỗ ròng (Net PnL) âm sâu hơn.
+    2. Nhận rebate (funding_accrued_usd < 0): lỗ ròng giảm bớt (- (-)).
     """
-    # Lệnh có funding_accrued_usd = 15.0 USD
-    res_with_funding = compute_realized_pnl(
-        entry_price=100.0, exit_price=90.0, side=1, size_notional=1000.0, leverage=10.0,
-        exit_reason="LIQUIDATION", funding_accrued_usd=15.0
-    )
-    res_no_funding = compute_realized_pnl(
+    # Base: không có funding
+    res_base = compute_realized_pnl(
         entry_price=100.0, exit_price=90.0, side=1, size_notional=1000.0, leverage=10.0,
         exit_reason="LIQUIDATION", funding_accrued_usd=0.0
     )
-    assert res_with_funding["net_pnl"] == res_no_funding["net_pnl"], (
-        f"Lỗi Đếm Kép! Funding fee đã bị trừ lần hai vào nhánh Liquidation: {res_with_funding['net_pnl']} vs {res_no_funding['net_pnl']}"
+    assert abs(res_base["gross_pnl"] - (-100.0)) < 1e-6
+    assert abs(res_base["net_pnl"] - (-100.5)) < 1e-6  # -100 margin - 0.5 fee_entry
+    assert abs(res_base["fee_paid"] - 0.5) < 1e-6      # Chỉ thu fee_entry, không thu fee_exit
+
+    # 1. TRƯỜNG HỢP TRẢ PHÍ (paying funding, funding_accrued_usd = 15.0 USD)
+    res_pay = compute_realized_pnl(
+        entry_price=100.0, exit_price=90.0, side=1, size_notional=1000.0, leverage=10.0,
+        exit_reason="LIQUIDATION", funding_accrued_usd=15.0
     )
-    print("✅ [Issue #4 / QĐ #7] Chống Đếm Kép Funding Fee nhánh Liquidation PASSED!")
+    assert abs(res_pay["net_pnl"] - (-100.5 - 15.0)) < 1e-6, f"Sai Net PnL khi trả funding: {res_pay['net_pnl']}"
+    assert abs(res_pay["fee_paid"] - 0.5) < 1e-6
+
+    # 2. TRƯỜNG HỢP NHẬN REBATE (receiving funding rebate, funding_accrued_usd = -15.0 USD)
+    res_rebate = compute_realized_pnl(
+        entry_price=100.0, exit_price=90.0, side=1, size_notional=1000.0, leverage=10.0,
+        exit_reason="LIQUIDATION", funding_accrued_usd=-15.0
+    )
+    assert abs(res_rebate["net_pnl"] - (-100.5 - (-15.0))) < 1e-6, f"Sai Net PnL khi nhận rebate: {res_rebate['net_pnl']}"
+    assert abs(res_rebate["fee_paid"] - 0.5) < 1e-6
+
+    print("✅ [BI-DIRECTIONAL FUNDING Directives] Hạch toán chính xác 2 chiều Funding cho lệnh Thanh lý PASSED!")
+
 

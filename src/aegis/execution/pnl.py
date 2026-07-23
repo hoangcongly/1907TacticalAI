@@ -53,12 +53,14 @@ def compute_realized_pnl(
     if exit_reason == "LIQUIDATION":
         # [STREAMING_CHUNK: PNL_LIQUIDATION_BRANCH]
         # compute_liquidation_loss trả về -(margin) thuần (QĐ #7).
-        # Lượng Initial Margin mất trắng này đã bao hàm toàn bộ tiền Funding bị bào mòn trước đó.
         gross_pnl = compute_liquidation_loss(size_notional, leverage)
         
-        # Nhánh Thanh lý chỉ khấu trừ phí mở lệnh, KHÔNG trừ funding_accrued_usd
-        # để chống lỗi Đếm Kép (Double-Count) Funding Fee (Issue #4 / QĐ #7).
-        net_pnl = gross_pnl - fee_entry_cost
+        # [ADVISORY DIRECTIVE v11.9] Nhánh Thanh lý khấu trừ phí mở lệnh và phí funding cộng dồn (funding_accrued_usd)
+        # phát sinh trong suốt quá trình giữ lệnh trước khi cháy.
+        # + Nếu funding_accrued_usd > 0 (trả phí): trừ đi làm tăng lỗ tổng (Net PnL âm hơn).
+        # + Nếu funding_accrued_usd < 0 (nhận rebate): trừ số âm (- (-)) thành cộng, làm giảm lỗ tổng.
+        # KHÔNG thu phí exit_fee để tránh đếm kép với liquidation clearance fee của sàn.
+        net_pnl = gross_pnl - fee_entry_cost - funding_accrued_usd
         
         # Lợi suất (chưa đòn bẩy) dùng cho Kelly
         realized_return = net_pnl / size_notional

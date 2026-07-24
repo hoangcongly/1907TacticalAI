@@ -149,3 +149,25 @@ flowchart TD
     TailEvent --> NextTick
     BadTick --> NextTick
 ```
+
+## TASK A-1-3: detect_bad_tick_cross_venue (Điều kiện 4 + fallback)
+
+File [src/aegis/data/outlier_detection.py](file:///c:/1907TacticalAI/src/aegis/data/outlier_detection.py)
+
+Đây là chức năng kiểm định chéo đa sàn (Cross-Venue Parity), được kích hoạt như một Điều kiện 4 để lọc nhiễu vi cấu trúc chớp nhoáng của một sàn đơn lẻ mà không làm mất Tail Event (Systemic Shock).
+
+### 1. Hàm `detect_bad_tick_cross_venue` (Xác thực với sàn đối chứng)
+
+Hàm nhận vào mảng `timestamps` (của sàn chính) và `ref_timestamps`, `ref_prices`, `robust_sigmas_ref` (của sàn phụ), quét tìm biên độ biến động sàn phụ trong cửa sổ $\pm 500\text{ms}$.
+
+#### A. Kiến trúc Tối ưu Hiệu năng $O(N + M)$ bằng Two-Pointers
+Thay vì dùng vòng lặp Binary Search (`np.searchsorted`) tốn $O(N \log M)$, hệ thống lợi dụng tính chất tăng đơn điệu của tick data để đẩy 3 con trỏ (`lo_ptr`, `hi_ptr`, `anchor_ptr`) trượt về phía trước. Điều này đảm bảo tốc độ ở mức micro-giây trong Numba JIT.
+
+#### B. Khắc phục Lỗi Kỹ thuật Đồng bộ (Basis Mismatch)
+Hai nâng cấp toán học quan trọng đã được áp dụng, tránh dùng thước đo sàn A phán xét sàn B:
+1. **$\sigma_{\text{ref}}$ Độc Lập:** Khung biến động chuẩn ($2\sigma$) được tham chiếu tới `robust_sigmas_ref`, tức Sigma tính từ chuỗi giá trị của CHÍNH SÀN PHỤ, không lạm dụng $\sigma$ sàn chính.
+2. **Anchor Price Sàn Phụ:** Biến động sàn phụ `max_move_ref` được tính bằng khoảng cách từ các mức giá trong cửa sổ tới **$P^{\text{ref}}(t_{\text{anchor}})$** (giá trị nền ngay trước $t_i$ của sàn phụ), thay vì so sánh tuyệt đối với $P_{i-1}$ của sàn chính (loại trừ hoàn toàn nhiễu do Basis).
+
+#### C. Chính Sách Fallback An Toàn (Mất Feed Sàn Phụ)
+Hàm mặc định khởi tạo `condition4_satisfied = np.zeros(n, dtype=np.bool_)` (tức là False).
+Khi mất tín hiệu hoặc thiếu dữ liệu sàn phụ để đối chiếu, hệ thống từ chối xác nhận tick này là Bad Tick. Quyết định "thiên về không lọc" này đảm bảo không bao giờ vô tình loại bỏ một Tail Event thực sự chỉ vì sàn phụ bị đứt kết nối.

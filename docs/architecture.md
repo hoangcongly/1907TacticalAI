@@ -162,11 +162,22 @@ Một tick tại chỉ số $i$ chỉ bị phân loại là **Bad Tick** khi và
 1. **Lạch cực đoan (Extreme Deviation Check)**: $|P_i - P_{i-1}| > 5 \times \hat{\sigma}\_{\text{MAD}, i}$.
 2. **Khối lượng không đột biến (Volume Consistency Check)**: $V\_i < 2 \times \text{median}(V\_{i-100:i-1})$.
 3. **Đảo chiều chớp nhoáng (Micro-Reversal Check)**: $|P_{i+1} - P_{i-1}| < 0.3 \times |P_i - P_{i-1}|$.
-4. **Kiểm tra chéo đa sàn (Cross-Venue Parity Check)**: Giá tại sàn đối chứng $P^{\text{ref}}$ trong khoảng thời gian $[t\_i - 500\text{ms}, t\_i + 500\text{ms}]$ không ghi nhận biến động vượt $2 \times \hat{\sigma}\_{\text{MAD}, i}$:
+4. **Kiểm tra chéo đa sàn (Cross-Venue Parity Check)**: Giá tại sàn đối chứng $P^{\text{ref}}$ trong khoảng thời gian $[t\_i - 500\text{ms}, t\_i + 500\text{ms}]$ không ghi nhận biến động vượt $2 \times \hat{\sigma}\_{\text{MAD}, i}^{\text{ref}}$:
 
 $$
-\max_{t \in [t_i - 500\text{ms}, t_i + 500\text{ms}]} |P^{\text{ref}}(t) - P_{i-1}| < 2 \times \hat{\sigma}_{\text{MAD}, i}
+\max_{t \in [t_i - 500\text{ms}, t_i + 500\text{ms}]} |P^{\text{ref}}(t) - P^{\text{ref}}(t_{\text{anchor}})| < 2 \times \hat{\sigma}_{\text{MAD}, i}^{\text{ref}}
 $$
+
+*(Lưu ý Kỹ Thuật 1: $P^{\text{ref}}(t_{\text{anchor}})$ là mức giá nền của sàn đối chứng ngay sát trước thời điểm $t_i$. Không dùng $P_{i-1}$ của sàn chính để làm mốc so sánh vì hai sàn có basis lệch nhau. Việc so sánh tuyệt đối sẽ làm sai lệch đo lường biến động chéo).*
+
+*(Lưu ý Kỹ Thuật 2: $\hat{\sigma}_{\text{MAD}, i}^{\text{ref}}$ bắt buộc phải được tính toán độc lập từ chuỗi giá lịch sử của chính sàn đối chứng $P^{\text{ref}}$ bằng cùng cửa sổ $W=100$. Không dùng chung $\sigma$ của sàn chính để tránh false positive/negative do khác biệt về thanh khoản).*
+
+> **Chính Sách Fallback Dữ Liệu Thiếu (Mất Feed Sàn Phụ):**
+> Khi hệ thống không nhận được feed từ sàn phụ hoặc chưa đủ lịch sử $W=100$ để tính $\sigma_{\text{ref}}$, chính sách mặc định là **Fallback False** (tức là coi Điều kiện 4 KHÔNG thỏa mãn $\implies$ Tick này **KHÔNG** bị lọc bỏ). Quyết định này tuân thủ nguyên tắc cốt lõi: khi không chắc chắn, ưu tiên bảo toàn Dữ liệu / Tail Event thật, thiên về không lọc mất data hơn là lọc nhầm.
+
+> **Ghi chú Thiết Kế Chủ Đích (A.0 vs K.2):** Việc Điều kiện 4 (A.0) dùng ngưỡng thấp $2\sigma$ trong khi Module K.2 dùng ngưỡng cực cao $7\sigma$ là một sự tách bạch có chủ đích. 
+> - **Tại A.0 (Quyết định cứng - Lọc data):** Nếu lọc mất một Tail Event thật (False Negative) thì hệ thống Trend-following mất tín hiệu quan trọng nhất. Do đó, A.0 dùng ngưỡng $2\sigma$ thấp để dễ dàng "xác nhận real" từ sàn phụ, ưu tiên giữ lại các biến động lớn.
+> - **Tại K.2 (Cờ mềm - Hạ độ tin cậy):** Hậu quả của việc đánh cờ sai là rất thấp, nhưng ta muốn tránh báo động giả liên tục. Việc gắn cờ chỉ kích hoạt khi mức độ mất đồng bộ thực sự vĩ đại ($7\sigma$).
 
 *(Ghi chú Tail Event: Nếu điều kiện 1 thỏa mãn nhưng $V\_i \ge 2 \times \text{median}(V\_{i-100:i-1})$, đây là dòng tiền thực tháo chạy hoặc đột phá thanh khoản $\implies$ Không lọc giá, giữ nguyên $P_i$ và gắn cờ `is_tail_event = True`).*
 

@@ -107,3 +107,62 @@ def detect_bad_tick_core(prices: np.ndarray, volumes: np.ndarray, robust_sigmas:
                 is_tail_event[i] = True
 
     return is_bad_tick, is_tail_event
+
+@njit(nopython=True)
+def detect_bad_tick_cross_venue(
+    timestamps: np.ndarray,
+    ref_timestamps: np.ndarray,
+    ref_prices: np.ndarray,
+    robust_sigmas_ref: np.ndarray,
+    window_ms: int = 500,
+    eta_confirm: float = 2.0
+) -> np.ndarray:
+    """
+    [TASK A-1-3] Điều kiện 4: Kiểm tra Cross-Venue Parity.
+    Trả về mảng boolean (True = xác nhận là Bad Tick, False = KHÔNG phải Bad Tick).
+    Khi thiếu feed sàn phụ -> fallback False (KHÔNG lọc, ưu tiên giữ Tail Event).
+    """
+    n = len(timestamps)
+    m = len(ref_timestamps)
+    
+    # Mặc định False: Khi mất feed hoặc thiếu dữ liệu sàn phụ, ta Fallback về việc
+    # KHÔNG coi nó là Bad Tick (để bảo toàn Tail Event thật, thiên về không lọc mất data).
+    condition4_satisfied = np.zeros(n, dtype=np.bool_)
+
+    lo_ptr = 0
+    hi_ptr = 0
+    anchor_ptr = 0
+
+    for i in range(n):
+        t_i = timestamps[i]
+        t_lo = t_i - window_ms
+        t_hi = t_i + window_ms
+
+        while lo_ptr < m and ref_timestamps[lo_ptr] < t_lo:
+            lo_ptr += 1
+        while hi_ptr < m and ref_timestamps[hi_ptr] <= t_hi:
+            hi_ptr += 1
+        while anchor_ptr < m and ref_timestamps[anchor_ptr] <= t_i:
+            anchor_ptr += 1
+        anchor_idx = anchor_ptr - 1
+
+        if lo_ptr >= hi_ptr or anchor_idx < 0:
+            continue  # không đủ dữ liệu sàn phụ -> giữ mặc định False
+
+        sigma_ref = robust_sigmas_ref[anchor_idx]
+        if sigma_ref <= 0.0 or np.isnan(sigma_ref):
+            continue  # sigma suy biến -> không đủ tin cậy để bác bỏ -> giữ mặc định False
+
+        ref_anchor_price = ref_prices[anchor_idx]  # baseline của CHÍNH sàn phụ
+        max_move_ref = 0.0
+        for k in range(lo_ptr, hi_ptr):
+            move = np.abs(ref_prices[k] - ref_anchor_price)
+            if move > max_move_ref:
+                max_move_ref = move
+
+        # True (Bad Tick) nếu độ biến động sàn phụ NHỎ HƠN ngưỡng (tức là sàn phụ đứng yên).
+        # False (Not Bad Tick) nếu sàn phụ CŨNG biến động mạnh (xác nhận Tail Event).
+        condition4_satisfied[i] = max_move_ref < eta_confirm * sigma_ref
+
+    return condition4_satisfied
+

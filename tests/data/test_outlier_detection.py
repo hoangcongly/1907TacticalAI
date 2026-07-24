@@ -115,3 +115,54 @@ def test_detect_bad_tick_core_with_tail_events():
     
     assert is_bad[idx_norm] == False, "Scenario C không phải Bad Tick vì giá trụ lại được (Không Reversal)"
     assert is_tail[idx_norm] == False, "Scenario C không phải Tail Event"
+
+from aegis.data.outlier_detection import detect_bad_tick_cross_venue
+
+def test_detect_bad_tick_cross_venue():
+    """
+    [TASK A-1-3] Kiểm thử thuật toán Cross-Venue Parity.
+    """
+    n = 5
+    timestamps = np.array([1000, 2000, 3000, 4000, 5000], dtype=np.int64)
+    
+    # Sàn phụ có dữ liệu xung quanh các timestamps
+    m = 7
+    ref_timestamps = np.array([500, 1500, 2500, 3200, 3800, 4500, 5500], dtype=np.int64)
+    ref_prices = np.array([100.0, 101.0, 100.5, 120.0, 101.0, 102.0, 100.0])
+    robust_sigmas_ref = np.full(m, 2.0)
+    
+    # t_i = 3000 (timestamps[2]). Cửa sổ +/- 500ms -> [2500, 3500].
+    # Các tick sàn phụ trong khoảng này: index 2 (2500, p=100.5) và index 3 (3200, p=120.0).
+    # Anchor point (ngay trước hoặc tại 3000): index 2 (2500). Giá anchor = 100.5, sigma = 2.0.
+    # Trong cửa sổ [2500, 3500], max_move là abs(120.0 - 100.5) = 19.5.
+    # Ngưỡng eta * sigma = 2.0 * 2.0 = 4.0.
+    # 19.5 KHÔNG nhỏ hơn 4.0 -> condition4_satisfied = False (Không phải Bad Tick, xác nhận Tail Event).
+    
+    res = detect_bad_tick_cross_venue(
+        timestamps, ref_timestamps, ref_prices, robust_sigmas_ref,
+        window_ms=500, eta_confirm=2.0
+    )
+    
+    assert res[2] == False, "Sàn phụ giật mạnh (19.5 > 4.0) -> phải trả về False (Xác nhận sự kiện thật)"
+    
+    # t_i = 4000 (timestamps[3]). Cửa sổ [3500, 4500].
+    # Tick phụ trong khoảng: index 4 (3800, p=101.0), index 5 (4500, p=102.0).
+    # Anchor: index 4 (3800). Giá anchor = 101.0.
+    # max_move = abs(102.0 - 101.0) = 1.0.
+    # Ngưỡng 4.0. 1.0 < 4.0 -> condition4_satisfied = True (Xác nhận Bad Tick).
+    
+    assert res[3] == True, "Sàn phụ đứng yên (1.0 < 4.0) -> phải trả về True (Xác nhận Bad Tick)"
+    
+def test_detect_bad_tick_cross_venue_missing_data():
+    """Kiểm tra fallback khi thiếu dữ liệu sàn phụ."""
+    timestamps = np.array([1000, 2000, 3000], dtype=np.int64)
+    # Cố tình để mảng rỗng
+    ref_timestamps = np.array([], dtype=np.int64)
+    ref_prices = np.array([])
+    robust_sigmas_ref = np.array([])
+    
+    res = detect_bad_tick_cross_venue(timestamps, ref_timestamps, ref_prices, robust_sigmas_ref)
+    
+    # Fallback mặc định là False (thiên về giữ Tail Event)
+    assert not res.any(), "Khi thiếu dữ liệu sàn phụ, tất cả phải Fallback về False"
+

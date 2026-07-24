@@ -2,6 +2,7 @@
 **Dự án:** Aegis Trading System — Institutional Trend-Following Platform  
 **Được thực hiện bởi:** Antigravity AI & Trưởng nhóm Định lượng (Hoàng Công Lý)  
 **Phạm vi hiện tại (Đã hoàn thiện & kiểm định TDD):**  
+- [src/aegis/data/outlier_detection.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/data/outlier_detection.py) (Tính MAD 5σ & Lọc nhiễu vi cấu trúc `detect_bad_tick_core` / Task A-1-1 & A-1-2)
 - [src/aegis/core/schemas.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/core/schemas.py) (Kiểm duyệt dữ liệu & Hợp đồng dòng chảy SHA-256 / Task B-1-10 `TradeRecord TypedDict`)  
 - [src/aegis/meta_labeling/sizing/trade_mode.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/meta_labeling/sizing/trade_mode.py) (Định tuyến chế độ giao dịch & Khóa cổng `Regime Gate` / Task B-1-2)  
 - [src/aegis/labeling/trailing_exit.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/labeling/trailing_exit.py) (Rào cản cắt lỗ đối xứng, Trailing Exit v3 Liquidation Aware, Cắt dữ liệu trước khi tính Pre-Slice Zero-Leakage & Nhánh Liquidation PnL / Task B-1-3, B-1-4, B-1-5)  
@@ -27,10 +28,14 @@ Trong các định chế tài chính quant trading hàng đầu thế giới (nh
 ### Sơ Đồ Kiến Trúc Tổng Thể Hệ Thống (`Master System Architecture Pipeline v11.9`)
 ```mermaid
 flowchart TD
+    subgraph TrackA["TIỀN XỬ LÝ VI CẤU TRÚC (Track A)"]
+        RawTick["Raw OHLCV Market Data"] --> OutlierFilter["Outlier Detection & Tail Events\n(MAD 5σ / Task A-1-1 & A-1-2)"]
+    end
+
     subgraph ModuleJ["HỆ ĐIỀU HÀNH SINH TỒN & GIÁM SÁT NGOẠI LỆ (MODULE J — CIRCUIT BREAKER [PLANNED / ROADMAP STAGE])"]
         subgraph Pillar1["Trụ Cột 1: Data Gatekeeper (schemas.py & Task B-1-10)"]
-            RawTick["Raw OHLCV Market Data"] --> Hash["SHA-256 Manifest Hash Seal"]
-            RawTick --> SchemaIn["Pandera: SignalBarSchema Checks"]
+            OutlierFilter --> Hash["SHA-256 Manifest Hash Seal"]
+            OutlierFilter --> SchemaIn["Pandera: SignalBarSchema Checks"]
             SchemaIn --> Sim["Module B/G: Trade Simulation (RAM)"]
             Sim --> TDict["Task B-1-10: TradeRecord TypedDict Guard"]
             TDict --> TSchema["Pandera: TradeRecordSchema & Lineage Check"]

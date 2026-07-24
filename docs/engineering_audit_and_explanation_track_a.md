@@ -5,6 +5,7 @@
 **Phạm vi hiện tại (Đã hoàn thiện & kiểm định TDD):**  
 - [src/aegis/core/trial_classes.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/core/trial_classes.py) (Phân loại cấu hình thử nghiệm / Task A-0-2 `TrialClass Enum`)
 - [src/aegis/core/experiment_tracker.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/core/experiment_tracker.py) (Hệ thống theo dõi thí nghiệm JSONL & SHA-256 / Task A-0-1 `ExperimentTracker Singleton`)
+- [src/aegis/data/outlier_detection.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/data/outlier_detection.py) (Tính MAD 5σ & Lọc nhiễu vi cấu trúc `detect_bad_tick_core` / Task A-1-1 & A-1-2)
 
 ---
 
@@ -92,7 +93,7 @@ Trong quá trình rà soát toàn bộ dự án (`src/aegis/`), 5 lỗi tiềm �
 
 ---
 
-## PHẦN IV: GIẢI PHẪU CHI TIẾT TASK A-1-1 — LỌC NHIỄU VI CẤU TRÚC (`Tick-Level Outlier Filter`)
+## PHẦN IV: GIẢI PHẪU CHI TIẾT TASK A-1-1 & A-1-2 — LỌC NHIỄU VI CẤU TRÚC (`Tick-Level Outlier Filter`)
 
 ### 1. Hàm `compute_rolling_mad` (Bảo vệ dữ liệu gốc)
 - **Vị trí Module:** `src/aegis/data/outlier_detection.py` (Mới được khởi tạo).
@@ -131,3 +132,24 @@ flowchart TD
   - **ĐK 2 (Khối lượng tĩnh):** Lượng volume tại tick đó không đột biến (nhỏ hơn 2 lần trung vị quá khứ). Nếu volume tăng vọt $> 2\times$ trung vị, hệ thống hiểu đây là dòng tiền quét lệnh (Sweeping Market Order), nên sẽ gán cờ `is_tail_event = True` và **KHÔNG** xóa tick này.
   - **ĐK 3 (Vi Đảo Chiều - Micro Reversal):** Bắt buộc giá tick liền sau ($P_{i+1}$) phải giật lùi về (độ lệch $< 0.3 \times$ độ giật ban đầu). Nếu giá trụ vững ở mốc mới, đó là sự điều chỉnh vi mô hợp lệ chứ không phải nhiễu.
 - **Độ trễ 1-tick (1-Tick Latency):** Vì ĐK 3 bắt buộc phải dùng $P_{i+1}$, module này chủ động lùi vòng lặp kết thúc ở `n-2` để chờ thông tin từ tương lai gần nhất. Sự đánh đổi 1-tick latency ở mức vi cấu trúc là cần thiết để phân loại đúng đắn.
+
+### 5. Sơ Đồ Luồng Thuật Toán `detect_bad_tick_core` (Task A-1-2)
+
+```mermaid
+flowchart TD
+    Start["Nhận Tick i"] --> CheckSigma{"Sigma_i Hợp Lệ?\n(Không NaN/Zero)"}
+    CheckSigma -- Yes --> Cond1{"ĐK 1: Extreme Deviation?\n|P_i - P_i-1| > 5 * Sigma"}
+    CheckSigma -- No --> NextTick["Bỏ qua Tick i"]
+    
+    Cond1 -- Yes --> Cond2{"ĐK 2: Volume tĩnh?\nV_i < 2 * Median_V"}
+    Cond1 -- No --> NextTick
+    
+    Cond2 -- Yes --> Cond3{"ĐK 3: Micro-Reversal?\n|P_i+1 - P_i-1| < 0.3 * Diff"}
+    Cond2 -- No --> TailEvent["Cắm cờ is_tail_event = True\n(Dòng tiền thật)"]
+    
+    Cond3 -- Yes --> BadTick["Cắm cờ is_bad_tick = True\n(Nhiễu chớp nhoáng)"]
+    Cond3 -- No --> NextTick
+    
+    TailEvent --> NextTick
+    BadTick --> NextTick
+```

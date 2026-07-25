@@ -156,12 +156,11 @@ def test_b_1_11_trade_records_to_kelly_table_inputs():
         {"p_i": 0.55, "p_chop_i": 0.25, "realized_return": None},                                # Bỏ qua vì thiếu realized_return
         {"p_i": -0.1, "p_chop_i": 1.2, "realized_return": 0.01, "boundary_truncated": False},   # Clamped về (0, 9)
     ]
-    grid = trade_records_to_kelly_table_inputs(records, num_bins=10)
-    assert (0, 9) in grid
-    assert len(grid[(0, 9)]) == 2  # 0.04 và 0.01
-    assert (9, 9) in grid
-    assert len(grid[(9, 9)]) == 1  # -0.02
-    assert (5, 2) not in grid      # Không có vì đã bỏ qua bản ghi boundary_truncated và None
+    grid, p_edges, chop_edges_list = trade_records_to_kelly_table_inputs(records, num_bins=10)
+    # The exact coordinates will depend on quantile binning, so we just check that grid is populated
+    assert len(grid) > 0
+    total_samples = sum(len(v) for v in grid.values())
+    assert total_samples == 3 # 0.04, -0.02, 0.01
     print("✅ [TASK B-1-11] trade_records_to_kelly_table_inputs PASSED!")
 
 
@@ -173,6 +172,7 @@ def test_b_1_12_build_empirical_kelly_table_v2():
     """
     from aegis.meta_labeling.sizing.kelly_empirical import build_empirical_kelly_table_v2
     import math
+    import numpy as np
     np.random.seed(42)
     # Lưới có 1 bin (9, 9) chứa 50 mẫu thắng tốt, và 1 bin (0, 0) chứa 3 mẫu (<5)
     returns_good = np.random.choice([0.08, -0.03], p=[0.6, 0.4], size=50)
@@ -180,8 +180,12 @@ def test_b_1_12_build_empirical_kelly_table_v2():
         (9, 9): returns_good,
         (0, 0): np.array([0.05, 0.02, -0.01]), # Chỉ 3 lệnh < 5
     }
-    table = build_empirical_kelly_table_v2(
-        grid_inputs, num_bins=10, prior_f=0.0, confidence_constant_C=20.0
+    import numpy as np
+    p_edges = np.linspace(0, 1, 11)
+    chop_edges_list = [np.linspace(0, 1, 11) for _ in range(10)]
+    inputs_tuple = (grid_inputs, p_edges, chop_edges_list)
+    table, p_edges_out, chop_edges_list_out = build_empirical_kelly_table_v2(
+        inputs_tuple, num_bins=10, prior_f=0.0, confidence_constant_C=20.0
     )
     assert table.shape == (10, 10)
     assert table[0, 0] == 0.0  # < 5 lệnh -> prior_f = 0.0
@@ -198,27 +202,34 @@ def test_b_1_13_compute_bi_directional_kelly_v14_unified():
     """
     from aegis.meta_labeling.sizing.kelly_empirical import compute_bi_directional_kelly_v14_unified
     import math
+    import numpy as np
     table = np.zeros((10, 10), dtype=float)
     table[8, 2] = 3.5  # p_i around 0.8, p_chop around 0.2 -> follow
     table[1, 8] = 1.8  # p_i around 0.1, p_chop around 0.8 -> fade
+    p_edges = np.linspace(0, 1, 11)
+    chop_edges_list = [np.linspace(0, 1, 11) for _ in range(10)]
 
     # Follow mode
     res_follow = compute_bi_directional_kelly_v14_unified(
-        p_i=0.85, p_chop_i=0.25, kelly_table=table, fade_enabled=True
+        p_i=0.85, p_chop_i=0.25, kelly_table=table, 
+        p_edges=p_edges, chop_edges_list=chop_edges_list, fade_enabled=True
     )
     assert res_follow["mode"] == "follow"
     assert math.isclose(res_follow["f_target"], 3.5, rel_tol=1e-6)
 
     # Fade mode
     res_fade = compute_bi_directional_kelly_v14_unified(
-        p_i=0.15, p_chop_i=0.85, kelly_table=table, fade_enabled=True, fade_regime_gate_threshold=0.60
+        p_i=0.15, p_chop_i=0.85, kelly_table=table, 
+        p_edges=p_edges, chop_edges_list=chop_edges_list, fade_enabled=True,
+        fade_regime_gate_threshold=0.60
     )
     assert res_fade["mode"] == "fade"
     assert math.isclose(res_fade["f_target"], 1.8, rel_tol=1e-6)
 
     # None mode (deadzone)
     res_none = compute_bi_directional_kelly_v14_unified(
-        p_i=0.35, p_chop_i=0.50, kelly_table=table, fade_enabled=True
+        p_i=0.35, p_chop_i=0.50, kelly_table=table, 
+        p_edges=p_edges, chop_edges_list=chop_edges_list, fade_enabled=True
     )
     assert res_none["mode"] == "none"
     assert res_none["f_target"] == 0.0

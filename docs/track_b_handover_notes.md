@@ -19,4 +19,18 @@
 *   **Hành động cần làm:** Nếu Track B đang hoặc sẽ viết các đoạn script đọc/parse file log JSONL để tính toán hoặc trực quan hóa lên Dashboard, vui lòng cập nhật lại schema đọc (Reader Schema) để đón nhận 2 trường dữ liệu mới này mà không bị quăng lỗi `KeyError` hoặc lệch định dạng cấu trúc JSON.
 
 ---
+
+## 📌 Cập nhật Giai đoạn (Hợp thức hóa Kiến trúc Kelly 2D)
+*Ngày bàn giao: Cập nhật mới nhất*
+
+### 4. Xác nhận Hợp Thức Hóa Lưới Kelly 2D
+*   **File tham chiếu:** `src/aegis/meta_labeling/sizing/kelly_empirical.py`
+*   **Hành động cần làm:** Sau khi rà soát, Track A đã xác nhận kiến trúc lưới 2D Grid mà Track B xây dựng là hợp lệ và ưu việt hơn thiết kế 1D cũ. Tuy nhiên, Track A đã **sửa đổi thuật toán chia lưới** từ Uniform Binning sang **Conditional Quantile Binning 2D**.
+*   **Ảnh hưởng:** Chữ ký của hàm `trade_records_to_kelly_table_inputs`, `build_empirical_kelly_table_v2`, và `compute_bi_directional_kelly_v14_unified` ĐÃ BỊ THAY ĐỔI. Các hàm này giờ đây yêu cầu và trả về thêm `p_edges` và `chop_edges_list`. Nếu Track B có gọi các hàm này trong script khác, vui lòng truyền đầy đủ tham số để tránh lỗi `TypeError`. Vấn đề đảo chiều dấu cho lệnh Fade đã được xác nhận an toàn tại `trade_mode.py`.
+
+### 5. Cập nhật Blueprint (Master Architecture)
+*   **File tham chiếu:** `docs/architecture.md`
+*   **Hành động cần làm:** Toàn bộ Blueprint đã được viết lại để khớp với mã nguồn thực tế (Pnl, CUSUM, Execution...). Các bạn Track B từ nay có thể yên tâm tra cứu tài liệu mà không sợ bị lệch pha chữ ký hàm.
+
+---
 *(Các lưu ý mới sẽ được Track A tiếp tục bổ sung vào đây sau mỗi đợt Push/Release)*

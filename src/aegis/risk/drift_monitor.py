@@ -37,9 +37,12 @@ def refresh_cusum_thresholds(
     Trả về dictionary thông tin chuẩn hóa và tùy chọn lưu ra file JSON
     (chuẩn hóa không gian tên: `artifacts/price_cusum_thresholds.json`).
     """
+    prices_np = np.asarray(prices, dtype=np.float64)
+    atr_series_np = np.asarray(atr_series, dtype=np.float64)
+
     thresholds = compute_dynamic_cusum_thresholds(
-        prices=prices,
-        atr_series=atr_series,
+        prices=prices_np,
+        atr_series=atr_series_np,
         base_multiplier=base_multiplier,
         anchor_span=anchor_span,
         min_rel_threshold=min_rel_threshold,

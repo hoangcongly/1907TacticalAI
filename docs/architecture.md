@@ -1178,7 +1178,15 @@ $$
 import numpy as np
 from scipy.optimize import brentq
 
-def solve_empirical_kelly_fraction(returns_sample: np.ndarray, f_max: float = 1.0) -> float:
+def build_empirical_kelly_table_v2(
+    inputs: Union[Tuple[Dict[Tuple[int, int], np.ndarray], np.ndarray, List[np.ndarray]], List[Dict[str, Any]]],
+    num_bins: int = 10,
+    f_max: float = 20.0,
+    prior_f: float = 0.0,
+    confidence_constant_C: float = 20.0,
+    n_bootstraps: int = 500,
+    lower_percentile: float = 25.0,
+) -> Tuple[np.ndarray, np.ndarray, List[np.ndarray]]:
     """
     Giải f* tối đa hóa E[log(1 + f*r)] trên phân phối thực nghiệm returns_sample
     (return% thực tế từ compute_realized_pnl qua Trailing-Exit).
@@ -1224,7 +1232,11 @@ def classify_trade_mode(p_i: float, p_chop_i: float, fade_enabled: bool,
 ```python
 import numpy as np
 
-def trade_records_to_kelly_table_inputs(trade_records: list) -> tuple:
+def trade_records_to_kelly_table_inputs(
+    records: List[Dict[str, Any]],
+    num_bins: int = 10,
+) -> Tuple[Dict[Tuple[int, int], np.ndarray], np.ndarray, List[np.ndarray]]:
+    # Dùng Conditional Quantile Binning 2D để xếp hạng records vào lưới 10x10
     """
     BƯỚC GLUE-CODE CHUẨN (v11.7 Patch B.3): chuyển đổi danh sách bản ghi OOS sạch (clean list[dict]
     tuân thủ TRADE_RECORD_SCHEMA) sang 3 mảng NumPy rời rạc cho build_empirical_kelly_tables_v2.
@@ -1295,9 +1307,13 @@ def lookup_empirical_kelly(p_i: float, kelly_table: list) -> float:
 import numpy as np
 
 def compute_bi_directional_kelly_v14_unified(
-    p_raw: np.ndarray, p_chop: np.ndarray,
-    kelly_table_follow: list, kelly_table_fade: list,
-    fade_enabled: bool, fade_regime_gate_threshold: float = 0.60,
+    p_i: float,
+    p_chop_i: float,
+    kelly_table: np.ndarray,
+    p_edges: np.ndarray,
+    chop_edges_list: List[np.ndarray],
+    fade_enabled: bool,
+    fade_regime_gate_threshold: float = 0.60,
     lambda_follow: float = 0.35, lambda_fade: float = 0.20,
     p_epsilon: float = 1e-3
 ) -> np.ndarray:
@@ -1642,7 +1658,18 @@ def simulate_limit_fill_with_queue(price_path, volume_path, estimated_queue_ahea
             return {"filled": True, "fill_bar": k, "fill_price": price_path[k]}
     return {"filled": False, "fill_bar": None, "fill_price": None}
 
-def compute_realized_pnl(side, size_notional, fill_price_entry, fill_price_exit, fee_entry_rate, fee_exit_rate, funding_accrued=0.0):
+def compute_realized_pnl(
+    entry_price: float,
+    exit_price: float,
+    side: int,
+    size_notional: float,
+    leverage: float,
+    exit_reason: str,
+    fee_entry_rate: float,
+    fee_exit_rate: float,
+    funding_accrued_usd: float = 0.0,
+    is_notional_in_usd: bool = True
+) -> dict:
     raw_pnl = side * (fill_price_exit - fill_price_entry) * size_notional
     fee_cost = (fee_entry_rate + fee_exit_rate) * size_notional
     return raw_pnl - fee_cost - funding_accrued
@@ -1768,7 +1795,18 @@ def evaluate_prediction_error_cusum_tier(break_events_timestamps: list, current_
     elif len(breaks_60d) >= 1: return "TIER_1"
     return "TIER_0"
 
-def refresh_cusum_thresholds(oos_brier_scores: np.ndarray) -> dict:
+def refresh_cusum_thresholds(
+    prices: Union[list[float], np.ndarray],
+    atr_series: Union[list[float], np.ndarray],
+    base_multiplier: float = 2.5,
+    anchor_span: int = 50,
+    min_rel_threshold: float = 1e-4,
+    max_rel_threshold: float = 0.05,
+    artifact_output_path: Optional[Union[str, Path]] = None,
+) -> dict:
+    # Tính ngưỡng CUSUM giá định kỳ.
+    
+def monitor_brier_score_cusum_drift(oos_brier_scores: np.ndarray) -> dict:
     e_bar_oos = float(np.mean(oos_brier_scores))
     sigma_brier_oos = float(np.std(oos_brier_scores))
     h_brier = 2.0 * sigma_brier_oos

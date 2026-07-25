@@ -254,86 +254,101 @@ def compute_regime_weighted_bayesian_kelly(
 def trade_records_to_kelly_table_inputs(
     records: List[Dict[str, Any]],
     num_bins: int = 10,
-) -> Dict[Tuple[int, int], np.ndarray]:
+) -> Tuple[Dict[Tuple[int, int], np.ndarray], np.ndarray, List[np.ndarray]]:
     """
     [TASK B-1-11] Ánh xạ danh sách bản ghi giao dịch (TradeRecord dicts)
-    vào lưới 2D coordinate (idx_p, idx_chop) để dựng bảng Kelly.
-
-    Quy tắc & Kiểm duyệt:
-    - Lọc bỏ các bản ghi thiếu 'realized_return' hoặc có giá trị NaN/Inf.
-    - Lọc bỏ các bản ghi bị cắt cụt sát biên fold ('boundary_truncated' == True)
-      để chống Kelly Pollution (theo chuẩn Data Contracts v11.9).
-    - Kiểm tra và clamp p_i, p_chop_i chặt chẽ trong đoạn [0.0, 1.0]:
-        min(int(math.floor(clamped_p * num_bins)), num_bins - 1)
-      để ngăn lỗi out-of-bounds index khi p = 1.0.
-    - Không biến đổi hay mutate input (Pure function).
+    vào lưới 2D coordinate (idx_p, idx_chop) sử dụng Conditional Quantile Binning.
+    
+    Giải quyết vấn đề Đói Mẫu (Data Starvation) của 2D Grid bằng cách:
+    1. Chia p_i thành num_bins buckets có số mẫu bằng nhau (Quantile).
+    2. Trong mỗi bucket của p_i, chia p_chop_i thành num_bins buckets (Conditional Quantile).
+    
+    Trả về: (grid_returns, p_edges, chop_edges_list)
     """
     if not isinstance(num_bins, int) or num_bins <= 0:
         raise ValueError(f"Lỗi B-1-11: num_bins phải là số nguyên dương, nhận {num_bins}")
 
-    grid_returns: Dict[Tuple[int, int], List[float]] = {}
-
+    valid_records = []
     for r in records:
-        if not isinstance(r, dict):
+        if not isinstance(r, dict) or r.get("boundary_truncated", False):
             continue
-        # Bỏ qua nếu là bản ghi bị cắt cụt sát biên fold (bảo vệ khỏi Kelly Pollution)
-        if bool(r.get("boundary_truncated", False)):
-            continue
-
         ret = r.get("realized_return")
-        if ret is None or not isinstance(ret, (int, float)) or math.isnan(ret) or math.isinf(ret):
-            continue
-
         p_i = r.get("p_i")
         p_chop_i = r.get("p_chop_i")
-        if p_i is None or not isinstance(p_i, (int, float)) or math.isnan(p_i) or math.isinf(p_i):
+        
+        if (ret is not None and p_i is not None and p_chop_i is not None and
+            math.isfinite(ret) and math.isfinite(p_i) and math.isfinite(p_chop_i)):
+            valid_records.append({
+                "ret": float(ret),
+                "p_i": min(max(float(p_i), 0.0), 1.0),
+                "p_chop_i": min(max(float(p_chop_i), 0.0), 1.0)
+            })
+
+    grid_returns: Dict[Tuple[int, int], List[float]] = {}
+    
+    if not valid_records:
+        # Fallback to uniform if no data
+        p_edges = np.linspace(0, 1, num_bins + 1)
+        chop_edges_list = [np.linspace(0, 1, num_bins + 1) for _ in range(num_bins)]
+        return {}, p_edges, chop_edges_list
+
+    # 1. Marginal Quantile for p_i
+    all_p = np.array([r["p_i"] for r in valid_records])
+    p_edges = np.quantile(all_p, np.linspace(0, 1, num_bins + 1))
+    p_edges[0], p_edges[-1] = -np.inf, np.inf # To catch all out of bounds during inference
+    
+    idx_p_array = np.searchsorted(p_edges, all_p, side='right') - 1
+    idx_p_array = np.clip(idx_p_array, 0, num_bins - 1)
+    
+    chop_edges_list = []
+    for i in range(num_bins):
+        mask_i = (idx_p_array == i)
+        records_i = [r for idx, r in enumerate(valid_records) if mask_i[idx]]
+        
+        if not records_i:
+            chop_edges = np.linspace(0, 1, num_bins + 1)
+            chop_edges[0], chop_edges[-1] = -np.inf, np.inf
+            chop_edges_list.append(chop_edges)
             continue
-        if p_chop_i is None or not isinstance(p_chop_i, (int, float)) or math.isnan(p_chop_i) or math.isinf(p_chop_i):
-            continue
-
-        clamped_p = min(max(float(p_i), 0.0), 1.0)
-        clamped_chop = min(max(float(p_chop_i), 0.0), 1.0)
-
-        idx_p = min(int(math.floor(clamped_p * num_bins)), num_bins - 1)
-        idx_chop = min(int(math.floor(clamped_chop * num_bins)), num_bins - 1)
-
-        coord = (idx_p, idx_chop)
-        if coord not in grid_returns:
-            grid_returns[coord] = []
-        grid_returns[coord].append(float(ret))
+            
+        all_chop_i = np.array([r["p_chop_i"] for r in records_i])
+        chop_edges = np.quantile(all_chop_i, np.linspace(0, 1, num_bins + 1))
+        chop_edges[0], chop_edges[-1] = -np.inf, np.inf
+        chop_edges_list.append(chop_edges)
+        
+        idx_chop_array = np.searchsorted(chop_edges, all_chop_i, side='right') - 1
+        idx_chop_array = np.clip(idx_chop_array, 0, num_bins - 1)
+        
+        for idx_j, r in zip(idx_chop_array, records_i):
+            coord = (i, idx_j)
+            if coord not in grid_returns:
+                grid_returns[coord] = []
+            grid_returns[coord].append(r["ret"])
 
     result: Dict[Tuple[int, int], np.ndarray] = {}
     for coord, ret_list in grid_returns.items():
         result[coord] = np.array(ret_list, dtype=float)
 
-    return result
+    return result, p_edges, chop_edges_list
 
 
 # ============================================================================
 # [TASK B-1-12] BUILD EMPIRICAL KELLY TABLE V2 WITH BAYESIAN PENALTY
 # ============================================================================
 def build_empirical_kelly_table_v2(
-    inputs: Union[Dict[Tuple[int, int], np.ndarray], List[Dict[str, Any]]],
+    inputs: Union[Tuple[Dict[Tuple[int, int], np.ndarray], np.ndarray, List[np.ndarray]], List[Dict[str, Any]]],
     num_bins: int = 10,
     f_max: float = DEFAULT_F_MAX,
     prior_f: float = 0.0,
     confidence_constant_C: float = 20.0,
     n_bootstraps: int = 500,
     lower_percentile: float = 25.0,
-) -> np.ndarray:
+) -> Tuple[np.ndarray, np.ndarray, List[np.ndarray]]:
     """
     [TASK B-1-12] Dựng ma trận Kelly 2D (shape: num_bins x num_bins) từ đầu ra B-1-11
     hoặc trực tiếp từ danh sách TradeRecord dicts.
-
-    [CRUCIAL PENALTY LOGIC — BAYESIAN SHRINKAGE]:
-    Duyệt qua tất cả các ô (idx_p, idx_chop):
-    - Nếu số lượng mẫu hữu hạn trong ô len(returns) < 5:
-        Gán f = prior_f (mặc định 0.0).
-    - Ngược lại (len(returns) >= 5):
-        1. Tính f_cons bằng solve_empirical_kelly_fraction_with_confidence(lower_percentile=25.0).f_star_conservative
-        2. Áp dụng Bayesian Shrinkage theo quy mô mẫu N:
-           w = N / (N + C) (với C = confidence_constant_C, mặc định 20.0)
-           f_bayesian = w * f_cons + (1.0 - w) * prior_f
+    
+    Trả về Tuple: (kelly_table_2d, p_edges, chop_edges_list)
     """
     if not isinstance(num_bins, int) or num_bins <= 0:
         raise ValueError(f"Lỗi B-1-12: num_bins phải là số nguyên dương, nhận {num_bins}")
@@ -345,11 +360,11 @@ def build_empirical_kelly_table_v2(
         raise ValueError(f"Lỗi B-1-12: confidence_constant_C không hợp lệ, nhận {confidence_constant_C}")
 
     if isinstance(inputs, list):
-        bin_inputs = trade_records_to_kelly_table_inputs(inputs, num_bins=num_bins)
-    elif isinstance(inputs, dict):
-        bin_inputs = inputs
+        bin_inputs, p_edges, chop_edges_list = trade_records_to_kelly_table_inputs(inputs, num_bins=num_bins)
+    elif isinstance(inputs, tuple) and len(inputs) == 3:
+        bin_inputs, p_edges, chop_edges_list = inputs
     else:
-        raise ValueError(f"Lỗi B-1-12: inputs phải là Dict hoặc List[Dict], nhận {type(inputs)}")
+        raise ValueError(f"Lỗi B-1-12: inputs phải là Tuple (từ B-1-11) hoặc List[Dict], nhận {type(inputs)}")
 
     kelly_table = np.zeros((num_bins, num_bins), dtype=float)
 
@@ -378,7 +393,7 @@ def build_empirical_kelly_table_v2(
 
             kelly_table[idx_p, idx_chop] = max(0.0, float(f_target))
 
-    return kelly_table
+    return kelly_table, p_edges, chop_edges_list
 
 
 # ============================================================================
@@ -388,21 +403,20 @@ def compute_bi_directional_kelly_v14_unified(
     p_i: float,
     p_chop_i: float,
     kelly_table: np.ndarray,
+    p_edges: np.ndarray,
+    chop_edges_list: List[np.ndarray],
     fade_enabled: bool,
     fade_regime_gate_threshold: float = 0.60,
 ) -> dict:
     """
     [TASK B-1-13] Hàm suy luận O(1) thống nhất cho Sizing (Inference Layer).
 
-    Input: p_i, p_chop_i, kelly_table 2D, fade_enabled, fade_regime_gate_threshold.
+    Input: p_i, p_chop_i, kelly_table 2D (cùng p_edges, chop_edges_list), fade_enabled.
     Quy trình:
-    1. Kiểm tra nghiêm ngặt input (p_i, p_chop_i trong [0, 1], kelly_table là ma trận 2D vuông).
-       Nếu NaN/Inf hoặc sai định dạng -> raise ValueError.
-    2. Gọi classify_trade_mode(p_i, p_chop_i, fade_enabled, fade_regime_gate_threshold).
-    3. Nếu mode == 'none', trả về {'f_target': 0.0, 'mode': 'none'} ngay lập tức.
-    4. Nếu mode thuộc ('follow', 'fade'), tra cứu f_target trên kelly_table
-       với cùng logic index mapping (clamping + math.floor) như B-1-11.
-    5. Trả về {'f_target': float(f_target), 'mode': mode}.
+    1. Kiểm tra nghiêm ngặt input.
+    2. Gọi classify_trade_mode. Nếu 'none', trả về 0.0.
+    3. Tra cứu f_target sử dụng Conditional Quantile edges (np.searchsorted).
+    4. Trả về {'f_target': float(f_target), 'mode': mode}. Dấu âm của Fade được xử lý ở tầng Trade Mode.
     """
     from aegis.meta_labeling.sizing.trade_mode import classify_trade_mode
 
@@ -425,11 +439,15 @@ def compute_bi_directional_kelly_v14_unified(
         return {"f_target": 0.0, "mode": "none"}
 
     num_bins = kelly_table.shape[0]
-    clamped_p = min(max(float(p_i), 0.0), 1.0)
-    clamped_chop = min(max(float(p_chop_i), 0.0), 1.0)
-
-    idx_p = min(int(math.floor(clamped_p * num_bins)), num_bins - 1)
-    idx_chop = min(int(math.floor(clamped_chop * num_bins)), num_bins - 1)
+    
+    # 1. Tìm idx_p dựa trên p_edges
+    idx_p = int(np.searchsorted(p_edges, float(p_i), side='right')) - 1
+    idx_p = max(0, min(idx_p, num_bins - 1))
+    
+    # 2. Tìm idx_chop dựa trên chop_edges tương ứng với idx_p
+    chop_edges = chop_edges_list[idx_p]
+    idx_chop = int(np.searchsorted(chop_edges, float(p_chop_i), side='right')) - 1
+    idx_chop = max(0, min(idx_chop, num_bins - 1))
 
     f_target = float(kelly_table[idx_p, idx_chop])
     return {"f_target": max(0.0, f_target), "mode": mode}

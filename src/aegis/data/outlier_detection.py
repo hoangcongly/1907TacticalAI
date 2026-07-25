@@ -108,7 +108,7 @@ def detect_bad_tick_core(prices: np.ndarray, volumes: np.ndarray, robust_sigmas:
 
     return is_bad_tick, is_tail_event
 
-@njit(nopython=True)
+@njit
 def detect_bad_tick_cross_venue(
     timestamps: np.ndarray,
     ref_timestamps: np.ndarray,

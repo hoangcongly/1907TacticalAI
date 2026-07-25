@@ -50,7 +50,7 @@ def test_compute_rolling_mad_synthetic():
     naive_std = np.std(dirty_prices)
     assert naive_std > 5.0, f"Chuỗi dirty_prices không bị nhiễu đúng cách (Naive Std: {naive_std})"
     
-    print(f"✅ [TASK A-1-1] Robust Sigma: {estimated_sigma_mean:.4f} (True: {true_sigma}) - Đánh bại Naive Std: {naive_std:.4f}")
+    print(f"[OK] [TASK A-1-1] Robust Sigma: {estimated_sigma_mean:.4f} (True: {true_sigma}) - Beat Naive Std: {naive_std:.4f}")
 
 def test_compute_rolling_mad_empty_or_short():
     """Kiểm tra phản ứng với mảng quá ngắn."""

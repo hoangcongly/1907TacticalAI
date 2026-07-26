@@ -120,6 +120,15 @@ class ExperimentTracker:
             pass
         return {}
 
+    @classmethod
+    def reset_instance(cls) -> None:
+        """
+        [ARMOR GUARD] Đặt lại Singleton cho môi trường kiểm thử hoặc thay đổi thư mục lưu log.
+        """
+        with cls._lock:
+            cls._instance = None
+            cls._initialized = False
+
     def log_trial(self, trial_class: TrialClass, params: Dict[str, Any], metrics: Dict[str, Any]) -> str:
         """
         Ghi lại một lần chạy thử nghiệm xuống file JSONL.
@@ -140,8 +149,11 @@ class ExperimentTracker:
         }
         
         with self._write_lock:
+            if self.log_file and os.path.dirname(self.log_file):
+                os.makedirs(os.path.dirname(self.log_file), exist_ok=True)
             with open(self.log_file, "a", encoding="utf-8") as f:
                 f.write(json.dumps(record, sort_keys=True, default=_json_default) + "\n")
                 
         return param_hash
+
 

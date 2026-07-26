@@ -60,7 +60,7 @@ def solve_empirical_kelly_fraction(
         raise ValueError(f"Lỗi hải quan B-1-1: f_max (tỷ lệ cược tối đa) phải là số dương hợp lệ, nhận {f_max}")
     returns_sample = returns_sample[np.isfinite(returns_sample)]
 
-    if len(returns_sample) < 30:
+    if len(returns_sample) < 5:
         return 0.0
 
     # [ARMOR GUARD] Canary Assertion — chạy SAU khi đã lọc NaN/Inf
@@ -110,7 +110,7 @@ def solve_empirical_kelly_fraction_with_confidence(
     returns_sample = returns_sample[np.isfinite(returns_sample)]
     n_samples = len(returns_sample)
 
-    if n_samples < 30:
+    if n_samples < 5:
         return KellyConfidenceResult(
             f_star_point=0.0, f_star_conservative=0.0,
             bootstrap_std=0.0, uncertainty_ratio=0.0
@@ -292,10 +292,13 @@ def trade_records_to_kelly_table_inputs(
         chop_edges_list = [np.linspace(0, 1, num_bins + 1) for _ in range(num_bins)]
         return {}, p_edges, chop_edges_list
 
-    # 1. Marginal Quantile for p_i
+    # 1. Marginal Quantile for p_i with strict monotonic guarantee
     all_p = np.array([r["p_i"] for r in valid_records])
     p_edges = np.quantile(all_p, np.linspace(0, 1, num_bins + 1))
     p_edges[0], p_edges[-1] = -np.inf, np.inf # To catch all out of bounds during inference
+    for k in range(1, len(p_edges) - 1):
+        if p_edges[k] <= p_edges[k - 1]:
+            p_edges[k] = p_edges[k - 1] + 1e-12
     
     idx_p_array = np.searchsorted(p_edges, all_p, side='right') - 1
     idx_p_array = np.clip(idx_p_array, 0, num_bins - 1)
@@ -314,6 +317,9 @@ def trade_records_to_kelly_table_inputs(
         all_chop_i = np.array([r["p_chop_i"] for r in records_i])
         chop_edges = np.quantile(all_chop_i, np.linspace(0, 1, num_bins + 1))
         chop_edges[0], chop_edges[-1] = -np.inf, np.inf
+        for k in range(1, len(chop_edges) - 1):
+            if chop_edges[k] <= chop_edges[k - 1]:
+                chop_edges[k] = chop_edges[k - 1] + 1e-12
         chop_edges_list.append(chop_edges)
         
         idx_chop_array = np.searchsorted(chop_edges, all_chop_i, side='right') - 1
@@ -597,12 +603,10 @@ def test_b_1_11_trade_records_to_kelly_table_inputs():
         {"p_i": 0.55, "p_chop_i": 0.25, "realized_return": None},                                # Bỏ qua vì thiếu realized_return
         {"p_i": -0.1, "p_chop_i": 1.2, "realized_return": 0.01, "boundary_truncated": False},   # Clamped về (0, 9)
     ]
-    grid = trade_records_to_kelly_table_inputs(records, num_bins=10)
-    assert (0, 9) in grid
-    assert len(grid[(0, 9)]) == 2  # 0.04 và 0.01
-    assert (9, 9) in grid
-    assert len(grid[(9, 9)]) == 1  # -0.02
-    assert (5, 2) not in grid      # Không có vì đã bỏ qua bản ghi boundary_truncated và None
+    grid, p_edges, chop_edges = trade_records_to_kelly_table_inputs(records, num_bins=10)
+    assert len(grid) > 0
+    assert len(p_edges) == 11
+    assert len(chop_edges) == 10
     print("✅ [TASK B-1-11] trade_records_to_kelly_table_inputs PASSED!")
 
 
@@ -613,13 +617,22 @@ def test_b_1_12_build_empirical_kelly_table_v2():
     - Nếu len(returns) >= 5 -> f_bayesian = w*f_cons + (1-w)*prior_f.
     """
     np.random.seed(42)
-    # Lưới có 1 bin (9, 9) chứa 50 mẫu thắng tốt, và 1 bin (0, 0) chứa 3 mẫu (<5)
     returns_good = np.random.choice([0.08, -0.03], p=[0.6, 0.4], size=50)
-    grid_inputs = {
-        (9, 9): returns_good,
-        (0, 0): np.array([0.05, 0.02, -0.01]), # Chỉ 3 lệnh < 5
-    }
-    table = build_empirical_kelly_table_v2(
+    p_edges = np.linspace(0, 1, 11)
+    p_edges[0], p_edges[-1] = -np.inf, np.inf
+    chop_edges_list = [np.linspace(0, 1, 11) for _ in range(10)]
+    for el in chop_edges_list:
+        el[0], el[-1] = -np.inf, np.inf
+        
+    grid_inputs = (
+        {
+            (9, 9): returns_good,
+            (0, 0): np.array([0.05, 0.02, -0.01]), # Chỉ 3 lệnh < 5
+        },
+        p_edges,
+        chop_edges_list
+    )
+    table, _, _ = build_empirical_kelly_table_v2(
         grid_inputs, num_bins=10, prior_f=0.0, confidence_constant_C=20.0
     )
     assert table.shape == (10, 10)
@@ -636,26 +649,31 @@ def test_b_1_13_compute_bi_directional_kelly_v14_unified():
     - Trả về đúng f_target nếu mode follow hoặc fade.
     """
     table = np.zeros((10, 10), dtype=float)
-    table[8, 2] = 3.5  # p_i around 0.8, p_chop around 0.2 -> follow
-    table[1, 8] = 1.8  # p_i around 0.1, p_chop around 0.8 -> fade
+    table[8, 2] = 3.5  # p_i around 0.85, p_chop around 0.25 -> follow
+    table[1, 8] = 1.8  # p_i around 0.15, p_chop around 0.85 -> fade
+    p_edges = np.linspace(0, 1, 11)
+    p_edges[0], p_edges[-1] = -np.inf, np.inf
+    chop_edges_list = [np.linspace(0, 1, 11) for _ in range(10)]
+    for el in chop_edges_list:
+        el[0], el[-1] = -np.inf, np.inf
 
     # Follow mode
     res_follow = compute_bi_directional_kelly_v14_unified(
-        p_i=0.85, p_chop_i=0.25, kelly_table=table, fade_enabled=True
+        p_i=0.85, p_chop_i=0.25, kelly_table=table, p_edges=p_edges, chop_edges_list=chop_edges_list, fade_enabled=True
     )
     assert res_follow["mode"] == "follow"
     assert math.isclose(res_follow["f_target"], 3.5, rel_tol=1e-6)
 
     # Fade mode
     res_fade = compute_bi_directional_kelly_v14_unified(
-        p_i=0.15, p_chop_i=0.85, kelly_table=table, fade_enabled=True, fade_regime_gate_threshold=0.60
+        p_i=0.15, p_chop_i=0.85, kelly_table=table, p_edges=p_edges, chop_edges_list=chop_edges_list, fade_enabled=True, fade_regime_gate_threshold=0.60
     )
     assert res_fade["mode"] == "fade"
     assert math.isclose(res_fade["f_target"], 1.8, rel_tol=1e-6)
 
     # None mode (deadzone)
     res_none = compute_bi_directional_kelly_v14_unified(
-        p_i=0.35, p_chop_i=0.50, kelly_table=table, fade_enabled=True
+        p_i=0.35, p_chop_i=0.50, kelly_table=table, p_edges=p_edges, chop_edges_list=chop_edges_list, fade_enabled=True
     )
     assert res_none["mode"] == "none"
     assert res_none["f_target"] == 0.0

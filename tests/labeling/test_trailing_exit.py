@@ -156,12 +156,9 @@ def test_b_1_4_regime_aware_trailing_exit_symmetry():
         res_fl_no_flip["reason"] == "TIME_STOP"
     ), f"Follow false-positive test FAILED: {res_fl_no_flip}"
 
-    # 5. [ARMOR-PLATED FAULT-INJECTION] Kiểm thử bẻ gãy mảng rỗng (Empty array crash check)
-    try:
-        compute_regime_aware_trailing_exit_v3_liquidation_aware(100.0, 1, "follow", [], [], [], [], 95.0)
-        assert False, "Lỗi rò rỉ: Mảng rỗng lọt qua mà không ném lỗi ValueError!"
-    except ValueError as e:
-        assert "Mảng future_highs rỗng" in str(e)
+    # 5. [ARMOR-PLATED FAULT-INJECTION] Kiểm thử mảng rỗng cận biên fold (Empty array -> v11.9 boundary truncated)
+    res_empty = compute_regime_aware_trailing_exit_v3_liquidation_aware(100.0, 1, "follow", [], [], [], [], 95.0)
+    assert res_empty is not None and res_empty.get("boundary_truncated") is True and res_empty.get("reason") == "TIME_STOP", f"Boundary truncated test FAILED: {res_empty}"
 
     # 6. [ARMOR-PLATED FAULT-INJECTION] Kiểm thử bẻ gãy độ dài mảng lệch nhau (Mismatched arrays check)
     try:

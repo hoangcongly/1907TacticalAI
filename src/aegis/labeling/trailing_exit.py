@@ -220,8 +220,18 @@ def compute_regime_aware_trailing_exit_v3_liquidation_aware(
     safe_atr = np.maximum(atr, safe_atr_floor)
 
     n_bars = len(highs)
-    if n_bars == 0:
-        raise ValueError("Lỗi B-1-5 (v3): Mảng future_highs rỗng (0 nến tương lai)!")
+    effective_t_max = (
+        min(t_max_live, max_lookforward_override)
+        if max_lookforward_override is not None
+        else t_max_live
+    )
+
+    # [FINDING F & DATA CONTRACT v11.9] Zero-length slice or immediate boundary:
+    # Nếu n_bars == 0 hoặc effective_t_max <= 0 (như lệnh mở ngay sát biên Fold OOS),
+    # trả về ngay bản ghi TIME_STOP bị cắt cụt bởi biên fold (boundary_truncated = True)
+    # mà không cho phép phát sinh crash ValueError.
+    if n_bars == 0 or effective_t_max <= 0:
+        return {"exit_idx": 0, "reason": "TIME_STOP", "boundary_truncated": True}
 
     if len(lows) != n_bars or len(atr) != n_bars or len(p_trend) != n_bars:
         raise ValueError(
@@ -247,23 +257,6 @@ def compute_regime_aware_trailing_exit_v3_liquidation_aware(
         raise ValueError(
             "Lỗi B-1-4: Phát hiện nến dị thường có High < Low trong mảng tương lai!"
         )
-
-    effective_t_max = (
-        min(t_max_live, max_lookforward_override)
-        if max_lookforward_override is not None
-        else t_max_live
-    )
-    if effective_t_max <= 0:
-        raise ValueError(
-            f"Lỗi B-1-5 (v3): effective_t_max ({effective_t_max}) phải > 0!"
-        )
-
-    # [FINDING F & DATA CONTRACT v11.9] Zero-length slice or immediate boundary:
-    # Nếu n_bars == 0 hoặc effective_t_max <= 0, trả về bản ghi TIME_STOP bị cắt cụt bởi biên fold
-    # (boundary_truncated = True) để giữ lệnh trong thống kê OOS tổng (Sharpe/DSR/PBO),
-    # đồng thời cho phép filter_boundary_truncated_for_kelly_table loại khỏi bảng Kelly.
-    if n_bars == 0 or effective_t_max <= 0:
-        return {"exit_idx": 0, "reason": "TIME_STOP", "boundary_truncated": True}
 
     threshold = (
         p_trend_exit_threshold_follow

@@ -54,5 +54,117 @@
 *   **Hành động cần làm:** Đã dỡ bỏ rào cản ném `ValueError` ngoại lệ đối với các lệnh tiến hành sát ranh giới cuối cùng của Fold thử nghiệm (nơi mảng `future_highs` bị cắt rỗng do ranh giới Pre-Slice Zero-Leakage). Theo đúng **Data Contract v11.9**, các sự kiện cạn kiệt chân trời thời gian này trả về ngay bản ghi TIME_STOP mang cờ `boundary_truncated = True`. Điều này bảo toàn chuỗi PnL liên tục cho hệ thống chấm điểm OOS PBO/DSR bên Track B mà không làm gián đoạn luồng thực thi.
 
 ---
-*(Các lưu ý mới sẽ được Track A tiếp tục bổ sung vào đây sau mỗi đợt Push/Release)*
+---
+*(Cac luu y moi se duoc Track A tiep tuc bo sung vao day sau moi dot Push/Release)*
+
+
+---
+
+## CANH BAO KHAN CAP: 4 LO HONG TIEM AN DA DUOC VAC BINH (Bug Patch Round 2)
+*Ngay ban giao: 26/07/2026*
+
+> [!CAUTION]
+> Phan nay mo ta 4 loi da duoc phat hien va sua trong phien kiem toan tiep theo (26/07/2026).
+> Track B can doc ky va cap nhat bat ky code nao phu thuoc vao cac interface duoi day.
+
+---
+
+### Bug Fix #1 — Xoa Import Kep & Import Thua (`kelly_empirical.py`)
+**File tham chieu:** `src/aegis/meta_labeling/sizing/kelly_empirical.py`
+**Dong da sua:** 5-6
+
+**Van de da sua:**
+- Import kep `brentq` hai lan lien tiep (dong 5 va dong 6) gay nhap nhem khi bao tri.
+- `minimize_scalar` duoc import nhung khong duoc su dung o bat ky dau trong toan bo file.
+
+**Hanh dong can lam:** Khong co breaking change nao voi Track B. Tuy nhien, neu bat ky script nao cua Track B dang import
+`minimize_scalar` gian tiep tu `kelly_empirical.py` (vi du `from aegis.meta_labeling.sizing.kelly_empirical import minimize_scalar`),
+hay xoa dong do va import truc tiep tu `scipy.optimize` thay the.
+
+---
+
+### Bug Fix #2 — Double-Counting Mau Soft Mode Gay Sai Lech Bayesian Kelly (`kelly_empirical.py`)
+**File tham chieu:** `src/aegis/meta_labeling/sizing/kelly_empirical.py`
+**Ham bi anh huong:** `build_regime_returns_dict(..., assignment_mode='soft')`
+**Dong da sua:** 183-186
+
+> [!WARNING]
+> Day la loi toan hoc nghiem trong nhat trong dot kiem toan nay. Toan bo he thong dinh gia von Bayesian
+> dua tren ket qua cua ham nay co the bi sai lech neu goi theo soft mode.
+
+**Van de da sua:**
+Khi `p_trend_val == 0.5` (thi truong luong lu hoan toan), logic cu `if ... if ...` (hai menh de if rieng biet)
+khien mot lenh bi chen vao **ca hai** `trending_list` va `choppy_list` cung mot luc. Ket qua:
+
+| Tac dong | Mo ta |
+|----------|-------|
+| `n_samples` bi phong ao | Ca hai bucket bao cao nhieu mau hon thuc te |
+| Trong so Bayesian `w = N/(N+C)` bi boc pham sai | Tin tuong "gia tao" vao du lieu thi truong dong |
+| `f_bayesian` cuoi cung bi lenh khoi pham | Phep tron `f = sum(prob * f_bayesian)` cho ket qua sai |
+
+**Hanh dong can lam:** Neu Track B co bat ky script rieng nao goi `build_regime_returns_dict` voi `assignment_mode='soft'`,
+ket qua tu phien chay truoc co the bi sai lech. Nen chay lai toan bo qua trinh xay dung bang Kelly tren du lieu huan luyen
+moi nhat de dam bao ket qua f_bayesian hoi tu chinh xac.
+
+**Hanh vi moi (chinh xac):** Khi `p_trend_val == 0.5`, lenh duoc phan loai vao `trending_list`
+(theo quy tac da so >= 0.5). Khong bao gio con tinh trang mot lenh bi dem 2 lan.
+
+---
+
+### Bug Fix #3 — `CircuitBreaker.peak_equity` Khoi Tao Bang 0 Gay Vo Hieu Bao Ve Drawdown Sau Restart
+**File tham chieu:** `src/aegis/risk/circuit_breaker.py`
+**Dong da sua:** 25-36 (`__init__`)
+
+> [!WARNING]
+> BREAKING CHANGE: Chu ky `CircuitBreaker(...)` da duoc them tham so `initial_equity: float = 0.0`.
+> Gia tri mac dinh = 0.0 nen tuong thich nguoc (backward compatible) nhung nen cap nhat chu dong.
+
+**Van de da sua:**
+Truoc day `peak_equity = 0.0` khong co cach nao cung cap von ban dau thuc te khi khoi tao.
+Khi bot restart giua phien giao dich (crash/reboot) voi `current_equity` = 8,000 (dang lo tu dinh 10,000),
+`peak_equity` se reset ve 8,000 thay vi giu nguyen 10,000 → toan bo co che drawdown protection
+(3 tier thresholds 5%/10%/15%) **bi vo hieu hoa hoan toan** vi co so tinh drawdown bi sai.
+
+**Hanh dong can lam cho Track B:**
+- Khi khoi tao `CircuitBreaker` sau moi lan restart/reboot bot, **bat buoc truyen `initial_equity`
+  bang gia tri equity hien tai doc tu database/state persistence**:
+  ```python
+  # TRUOC (sai - mat bao ve sau restart):
+  cb = CircuitBreaker(tier1_threshold=0.05, ...)
+
+  # SAU (dung - bao ve drawdown chinh xac sau restart):
+  cb = CircuitBreaker(initial_equity=account.current_equity, tier1_threshold=0.05, ...)
+  ```
+- Neu Track B dang luu trang thai `CircuitBreaker` qua JSON/pickle, hay dam bao `peak_equity`
+  cung duoc serialize va truyen lai vao `initial_equity` khi deserialize.
+
+---
+
+### Bug Fix #4 — Tick Gia NaN Lot Qua `detect_bad_tick_core` Nhu Good Tick (`outlier_detection.py`)
+**File tham chieu:** `src/aegis/data/outlier_detection.py`
+**Ham bi anh huong:** `detect_bad_tick_core`
+**Dong da sua:** 83-92
+
+> [!CAUTION]
+> Day la loi causal pipeline nghiem trong. Tick NaN lot qua pipeline tin hieu nhu Good Tick se gay
+> tinh toan chac chan sai lech tai tat ca cac module o ha luu: HMM, CUSUM, Kalman Filter.
+
+**Van de da sua:**
+Khi `prices[i]` hoac `prices[i-1]` la `NaN`:
+- `diff_price = NaN - float = NaN`
+- `NaN > 5.0 * sigma = False` (NumPy quy tac)
+- Ket qua: `is_bad_tick[i]` = False — tick NaN LOT QUA nhu Good Tick
+
+Hau qua ha luu: TickLevelKalmanReplacer van xu ly dung (vi `np.isnan` check trong Numba engine),
+nhung `is_bad_tick` array tra ve cho cac module khac (HMM emission, signal bar builder) se bao cao
+tick NaN la Good Tick, gay nhiem loai tin hieu tai tap hop du lieu OOS.
+
+**Hanh vi moi (chinh xac):** Neu `prices[i]` hoac `prices[i-1]` la `NaN`,
+`is_bad_tick[i]` = **True** ngay lap tuc ma khong can kiem tra Dieu Kien 1/2/3.
+
+**Hanh dong can lam:** Khong co breaking change voi interface nao cua Track B.
+Tuy nhien, ket qua `is_bad_tick` array tu `detect_bad_tick_core` tu nay se phan loai
+tick NaN la `True` thay vi `False` nhu truoc. Neu Track B co bat ky su dung nao
+gia dinh tick NaN la Good Tick, can cap nhat logic xu ly tuong ung.
+
 

@@ -23,6 +23,7 @@ class CircuitBreakerState:
 
 class CircuitBreaker:
     def __init__(self, 
+                 initial_equity: float = 0.0,  # [BUG FIX #3] Khoi tao peak_equity dung voi von thuc te
                  tier1_threshold: float = 0.05, 
                  tier2_threshold: float = 0.10, 
                  tier3_threshold: float = 0.15,
@@ -32,9 +33,14 @@ class CircuitBreaker:
         self.t3 = tier3_threshold
         self.freeze_duration_ms = freeze_duration_ms
         
-        self.peak_equity = 0.0
+        # [BUG FIX #3] peak_equity phai duoc khoi tao bang von ban dau thuc te (initial_equity),
+        # KHONG phai 0.0. Neu de 0.0, khi bot restart giua chung voi current_equity < peak_cu,
+        # peak_equity se reset ve gia tri thap hon thuc te, lam vo hieu toan bo co che drawdown
+        # protection cua 3-Tier Circuit Breaker trong toan bo phien tiep theo.
+        self.peak_equity = max(0.0, float(initial_equity))
         self.is_dead = False # Bị Kill Switch vĩnh viễn
         self.frozen_until_ms = 0
+
         
     def update_equity(self, current_equity: float, current_time_ms: int) -> CircuitBreakerState:
         """

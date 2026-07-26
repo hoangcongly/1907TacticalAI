@@ -2,8 +2,7 @@
 
 import math
 import numpy as np
-from scipy.optimize import minimize_scalar, brentq  # type: ignore
-from scipy.optimize import brentq
+from scipy.optimize import brentq  # type: ignore
 from typing import NamedTuple, Dict, Tuple, Any, Union, List, Literal
 
 
@@ -179,10 +178,14 @@ def build_regime_returns_dict(
             else:
                 choppy_list.append(float(ret))
         else:
-            # Soft mode: xác suất cao hơn được ưu tiên đưa vào mẫu tương ứng để duy trì phân phối liên tục
+            # [BUG FIX #2 - SOFT MODE DOUBLE-COUNTING]
+            # Phan loai doc quyen 1-1 theo phan vi 50% de loai tru hoan toan
+            # tinh trang mot lenh bi dem 2 lan vao ca hai bucket trending va choppy
+            # khi p_trend_val chinh xac bang 0.5 (thi truong luong lu).
+            # Phong phap: Phan loai theo phan vi da so (Majority Class Assignment).
             if p_trend_val >= 0.5:
                 trending_list.append(float(ret))
-            if (1.0 - p_trend_val) >= 0.5:
+            else:
                 choppy_list.append(float(ret))
 
     return {

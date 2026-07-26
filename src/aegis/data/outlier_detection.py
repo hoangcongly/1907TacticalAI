@@ -83,7 +83,17 @@ def detect_bad_tick_core(prices: np.ndarray, volumes: np.ndarray, robust_sigmas:
         sigma = robust_sigmas[i]
         if np.isnan(sigma) or sigma == 0:
             continue
-            
+
+        # [BUG FIX #4 - NAN PRICE GUARD]
+        # Neu gia quan sat tai tick i hoac tick truoc (i-1) la NaN, tinh diff_price = NaN.
+        # Tat ca phep so sanh NaN > x deu tra ve False trong NumPy, khien tick NaN
+        # tham lam luot qua dieu kien 1 ma khong bi danh dau is_bad_tick.
+        # He qua: tick NaN lot vao pipeline tin hieu nhu mot Good Tick.
+        # Fix: Phan loai truc tiep NaN tick la bad_tick va bo qua cac dieu kien tiep theo.
+        if np.isnan(prices[i]) or np.isnan(prices[i-1]):
+            is_bad_tick[i] = True
+            continue
+
         diff_price = np.abs(prices[i] - prices[i-1])
         
         # ĐK1: Extreme Deviation Check

@@ -54,7 +54,7 @@ def solve_empirical_kelly_fraction(
     - returns_sample: BẮT BUỘC phải là Lợi suất Cơ sở Chưa đòn bẩy (Unleveraged Return).
     """
     # [ARMOR GUARD] Lọc NaN/Inf TRƯỚC khi chạy Canary Assertion
-    import math
+    # NOTE: math da duoc import o module level, khong can import lai o day.
     if not isinstance(f_max, (int, float)) or math.isnan(f_max) or math.isinf(f_max) or f_max <= 0:
         raise ValueError(f"Lỗi hải quan B-1-1: f_max (tỷ lệ cược tối đa) phải là số dương hợp lệ, nhận {f_max}")
     returns_sample = returns_sample[np.isfinite(returns_sample)]
@@ -62,11 +62,16 @@ def solve_empirical_kelly_fraction(
     if len(returns_sample) < 5:
         return 0.0
 
-    # [ARMOR GUARD] Canary Assertion — chạy SAU khi đã lọc NaN/Inf
-    assert np.all(returns_sample >= -1.0), (
-        "Canary Error: Phát hiện return < -100% sau khi đã lọc NaN/Inf. "
-        "PnL thanh lý đã làm rò rỉ dữ liệu hoặc sai số học!"
-    )
+    # [ARMOR GUARD] Canary Check — chạy SAU khi đã lọc NaN/Inf
+    # QUAN TRONG: Dung if/raise thay vi bare assert.
+    # Khi Python chay voi flag -O hoac -OO (optimize mode), TẤT CA bare assert
+    # bi vo hieu hoa hoan toan → Canary im lang bi bo qua, return < -100% lot vao
+    # brentq gap division-by-zero hoac ket qua f* vo nghia ma khong co canh bao.
+    if not np.all(returns_sample >= -1.0):
+        raise ValueError(
+            "Canary Error: Phat hien return < -100% sau khi da loc NaN/Inf. "
+            "PnL thanh ly da lam ro ri du lieu hoac sai so hoc!"
+        )
 
     # [DYNAMIC LEVERAGE CAP] Giới hạn đòn bẩy động dựa trên lệnh lỗ nặng nhất.
     min_return = np.min(returns_sample)
@@ -534,13 +539,13 @@ def test_kelly_canary_and_nan_safety():
         bad_sample = np.array([0.5, -1.05, 0.2] * 15)  # 45 phần tử
         solve_empirical_kelly_fraction(bad_sample)
         assert False, "Lỗi rò rỉ: Return < -100% không bị Canary bắt!"
-    except AssertionError as e:
+    except ValueError as e:
         assert "Canary Error" in str(e)
 
     ok_sample = np.array([0.5, -1.0, 0.2] * 15)
     solve_empirical_kelly_fraction(ok_sample)
 
-    print("✅ [FINDING C] Canary Assertion Order (NaN-safe) PASSED!")
+    print("[FINDING C] Canary Guard Order (NaN-safe, ValueError-based) PASSED!")
 
 
 def test_kelly_dynamic_cap_with_liquidation():

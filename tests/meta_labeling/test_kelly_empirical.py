@@ -71,24 +71,28 @@ def test_b_1_1_kelly_classical_coin_toss():
 
 def test_kelly_canary_and_nan_safety():
     """
-    [FINDING C] Kiểm tra thứ tự: Canary assertion chạy SAU khi lọc NaN/Inf.
-    Mẫu chứa NaN hợp lệ (artifact dữ liệu) KHÔNG được gây false-positive.
+    [FINDING C] Kiem tra thu tu: Canary guard chay SAU khi loc NaN/Inf.
+    Mau chua NaN hop le (artifact du lieu) KHONG duoc gay false-positive.
+    
+    [BUG FIX - CODE SMELL #2]: Canary da doi tu bare `assert` sang `if/raise ValueError`
+    de guard hoat dong ngay ca khi Python chay voi flag -O/-OO (optimize mode).
+    Test nay bat ValueError thay vi AssertionError.
     """
-    sample_with_nan = np.array([0.05, 0.03, -0.02, np.nan, 0.01] * 10)  # 50 phần tử, 40 hữu hạn
+    sample_with_nan = np.array([0.05, 0.03, -0.02, np.nan, 0.01] * 10)  # 50 phan tu, 40 huu han
     result = solve_empirical_kelly_fraction(sample_with_nan)
-    assert result >= 0.0, f"f* phải >= 0 khi mẫu có kỳ vọng dương, nhận {result}"
+    assert result >= 0.0, f"f* phai >= 0 khi mau co ky vong duong, nhan {result}"
 
     try:
-        bad_sample = np.array([0.5, -1.05, 0.2] * 15)  # 45 phần tử
+        bad_sample = np.array([0.5, -1.05, 0.2] * 15)  # 45 phan tu
         solve_empirical_kelly_fraction(bad_sample)
-        assert False, "Lỗi rò rỉ: Return < -100% không bị Canary bắt!"
-    except AssertionError as e:
+        assert False, "Loi ro ri: Return < -100% khong bi Canary bat!"
+    except ValueError as e:
         assert "Canary Error" in str(e)
 
     ok_sample = np.array([0.5, -1.0, 0.2] * 15)
     solve_empirical_kelly_fraction(ok_sample)
 
-    print("✅ [FINDING C] Canary Assertion Order (NaN-safe) PASSED!")
+    print("[FINDING C] Canary Guard Order (NaN-safe, ValueError-based) PASSED!")
 
 
 def test_kelly_dynamic_cap_with_liquidation():

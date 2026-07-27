@@ -8,6 +8,7 @@
 - [src/aegis/data/outlier_detection.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/data/outlier_detection.py) (Tính MAD 5σ & Lọc nhiễu vi cấu trúc `detect_bad_tick_core` / Task A-1-1 & A-1-2)
 - [src/aegis/data/cleaning/tick_kalman_replacer.py](file:///c:/1907TacticalAI/src/aegis/data/cleaning/tick_kalman_replacer.py) (Bộ lọc Kalman vi cấu trúc 2 trạng thái [P_t, \nu_t] & Giao thức Predict-Only thế chỗ Bad Tick / Task A-1-4)
 - [src/aegis/data/cleaning/outlier_filter.py](file:///c:/1907TacticalAI/src/aegis/data/cleaning/outlier_filter.py) (Bộ lọc Outlier 4 Điều Kiện đồng thời & Pipeline Tích Hợp `clean_tick_stream` / Task A-1-5)
+- [src/aegis/data/bars/pit_threshold.py](file:///c:/1907TacticalAI/src/aegis/data/bars/pit_threshold.py) (Tính ngưỡng Dollar Volume Bars PIT-Safe & Ánh xạ ASOF Backward O(N) / Task A-2-1 & A-2-2)
 
 
 ---
@@ -375,3 +376,62 @@ flowchart TD
 ### C. Ghi Chú Đuôi Cho Thành Viên Track B (Track B Handover & Integration Alert)
 - **Chuẩn Giao Tiếp:** Lớp `CleanedTickStreamResult` xuất mảng cờ `is_tail_event` và chuỗi `clean_prices`. Thành viên phụ trách Module xây dựng nến (Task B-1-1 / `build_signal_bars`) cần dùng trực tiếp trường `clean_prices` làm thuộc tính đầu vào để gộp Dollar Volume Bars, đồng thời truyền tiếp cờ `is_tail_event` sang cột thứ 12 của Hợp đồng `SIGNAL_BAR_SCHEMA`.
 - **An Toàn Không Gây Drift:** Toàn bộ thông số đã được gia cố kiểu float64 chuỗi contiguous và bọc thép ghi log đầy đủ thông qua `ExperimentTracker` với `TrialClass.MODEL_FITTING`.
+
+---
+
+## TASK A-2-1 & A-2-2: Chuẩn Bị Ngưỡng Gộp Nến Dollar Volume Bars (PIT-Safe Threshold & ASOF Backward Mapping)
+
+File: [src/aegis/data/bars/pit_threshold.py](file:///c:/1907TacticalAI/src/aegis/data/bars/pit_threshold.py)
+
+Sau khi dòng thác dữ liệu giao dịch tick thô được lọc rác và làm mịn qua bộ đôi Outlier Detection & Kalman Replacer (Task A-1-5), hệ thống chuyển sang giai đoạn **Xây Dựng Nến Tín Hiệu Định Lượng (Module A-2 / Dollar Volume Bars)**. Để nến tín hiệu có hàm lượng thông tin cân bằng theo định lý Subordination của Hăng-ti (AFML), thay vì gộp nến theo chu kỳ đồng hồ tự ý (mọc nến rỗng lúc nửa đêm và ngập nến lúc giờ thiêng), Aegis tạo nến mới mỗi khi tổng khối lượng tiền giao dịch cộng dồn đạt tới một ngưỡng mục tiêu $\theta_{\text{PIT}}$.
+
+### A. Sơ Đồ Kiến Trúc Lọc Nhân Quả & Ánh Xạ O(N) Bọc Thép
+
+```mermaid
+flowchart TD
+    subgraph Daily_Input ["Dữ Liệu Khối Lượng Tiền Tệ Hàng Ngày (df_daily)"]
+        Vol["Col: daily_dollar_volume (float64)"]
+        Dt["Col: date / timestamp_ms (knowledge_time)"]
+    end
+
+    subgraph Causal_Engine ["Task A-2-1: compute_pit_safe_daily_threshold (Point-in-Time Safe Engine)"]
+        PreNull["Armor Guard #1: .fill_nan(None).forward_fill()\nTrám gap ngày lễ / dữ liệu rỗng trước trượt"]
+        Shift["Armor Guard #2: .shift(1)\n(Cực kỳ quan trọng: TUYỆT ĐỐI KHÔNG DÙNG volume\nngày hôm nay T hoặc ngày mai T+1)"]
+        Roll[".rolling_mean(window_size=21) / target_freq\n(Tính ngưỡng trung bình 21 ngày trước đó chia cho 50 nến/ngày)"]
+        PostGuard["Armor Guard #3: Post-Warmup Assertion\nAssert 100% không NaN/Null & >0 kể từ index >= window"]
+    end
+
+    subgraph Tick_Mapping ["Task A-2-2 (Section 1.1.2): map_daily_threshold_to_ticks"]
+        InTicks["Ticks Feed (timestamp_ms)"]
+        DateConv["Quy đổi Epoch Day:\ndate_epoch_day = timestamp_ms // 86_400_000"]
+        AsofJoin["Thuật Toán: join_asof(..., strategy='backward')\nĐộ phức tạp tuyến tính O(N)\n(Cơ chế Zero-Order Hold giữ ngưỡng gần nhất)"]
+        Contig["Xuất mảng np.ascontiguousarray(theta, dtype=float64)"]
+    end
+
+    Vol & Dt --> PreNull --> Shift --> Roll --> PostGuard
+    PostGuard -->|theta_pit daily| AsofJoin
+    InTicks --> DateConv --> AsofJoin --> Contig
+
+    style Shift fill:#8B0000,color:#FFF,stroke:#FF0000
+    style PostGuard fill:#4B0082,color:#FFF,stroke:#7F00FF
+    style AsofJoin fill:#006400,color:#FFF,stroke:#32CD32
+    style Contig fill:#008080,color:#FFF,stroke:#00FFFF
+```
+
+### B. Phác Họa Giải Phẫu Line-by-Line & Lý Tranh Toán Học
+1. **Triệt Tiêu Hoàn Toàn Look-Ahead Bias (Động Trái Cuội Nhân Quả .shift(1)):**
+   - Trong giao dịch theo vĩ mô và định lượng, một trong những "lỗ hổng tử huyệt" vô danh nhất là việc dùng tổng khối lượng toàn bộ của ngày hiện tại ($T$) để làm mẫu số quy định độ rộng của nến ngay từ phút opening (09:00 SA) của ngày $T$. Khi lùi test (backtest), mô hình ngầm biết trước ngày hôm đó giao dịch khủng hay yếu, gây ra hiện tượng Overfit ảo tưởng.
+   - Để bọc thép tuyệt đối yêu cầu `"không dùng volume hôm nay/tương lai"`, lệnh `.shift(1)` buộc hàm số tại dòng thời gian ngày $T$ chỉ được quyền ngóng về phía các ngày đã khép sổ trinh nguyên trong quá khứ ($T-21$ đến $T-1$).
+2. **Kiểm Định Vùng Quá Độ (Warm-up Window) & Armor Guard Chống NaN:**
+   - 21 dòng đầu tiên ($0 \le k \le 20$) chịu ảnh hưởng của bộ nhúng trượt 21 ngày nên chấp nhận null.
+   - Kể từ ngày thứ 22 (dòng có index $\ge 21$), mã nguồn ngầm tích hợp màng kiểm toán: nếu tìm thấy BẤT KỲ một giá trị Null/NaN hoặc số vô cực ($\text{Inf}$), hoặc số âm ($\le 0$), lập tức từ chối xuất giao thức và ném lỗi `ValueError([ARMOR GUARD]...)`. Thư viện Polars được ép chuyển đổi `np.nan` floating thành `Null` để lệnh `.forward_fill()` trượt nhẹ ngoạn mục qua các chuỗi ngày nghỉ hoặc đứt mạch mà không hỏng hóc.
+3. **Ánh Xạ Tinh Tụy O(N) theo Phong Cách ASOF Backward:**
+   - Thay vì duyệt vòng lặp `for tick in ticks` cực kì cồng kềnh $O(N \times M)$, `map_daily_threshold_to_ticks` chuyển hoán đồng bộ Unix timestamp ra số nguyên kỷ nguyên `date_epoch_day`.
+   - Lệnh `join_asof(strategy="backward")` đóng vai trò như mạch chốt mẫu không bậc (Zero-Order Hold): mỗi giao dịch khớp lệnh tick trong ngần giây phút sẽ ngả quyền trông trỗi về ngưỡng PIT hợp lệ ngay sau lưng nó, bảo đảm tốc độ thần tốc và khả năng mở rộng hàng trăm nghìn giao dịch trong tơ lát.
+
+---
+
+### C. Ghi Chú Đuôi Cho Thành Viên Track B (Track B Handover & Integration Alert)
+- **Chuẩn Giao Tiếp:** Lớp `map_daily_threshold_to_ticks` trả về trực tiếp mảng 1D `numpy.ndarray` dạng `c_contiguous` chuẩn kiểu `np.float64`. Mảng này có độ dài tuyệt đối $N$ khớp theo từng nến tick nhập vào từ `clean_tick_stream`.
+- **Thực Hiện Tạo Nến Dollar Volume (Task B-1-1 / `generate_dollar_volume_bars_v11`):** Các lập trình viên Track B cần gạt nhặt tích luỹ từng đơn vị giao dịch mới $\Delta \text{DV}_i = \text{clean\_prices}[i] \times \text{volumes}[i]$. Ngay khi tích luỹ vượt qua ngưỡng hiện hữu $\sum \Delta \text{DV}_k \ge \text{theta\_array}[i]$, cho đóng lại nến cũ và định dạng sang quy trình Triple-Barrier.
+- **Bảo Vệ Đích Danh (No-drift Verification):** Không được phép thay thế hàm hay sửa đổi cự ly dịch `window=21` hoặc `shift(1)`, toàn bộ hệ số đã lưu thắt trong sổ `ExperimentTracker` với chữ ký hash riêng biệt mang tính khống chế định chế.

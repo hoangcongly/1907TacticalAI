@@ -1,4 +1,4 @@
-"""Module A: Tien xu ly du lieu vi cau truc, Loc nhieu, The cho Bad Tick, va Clean Tick Stream Pipeline (Giai doan 0 - Tasks A-1-1 den A-1-5)."""
+"""Module A: Tien xu ly du lieu vi cau truc, Loc nhieu, The cho Bad Tick, va Nguong Dollar Volume Bars (Tasks A-1 den A-2)."""
 
 from aegis.data.outlier_detection import (
     compute_rolling_mad,
@@ -15,6 +15,10 @@ from aegis.data.cleaning.outlier_filter import (
     filter_outliers_4_conditions,
     clean_tick_stream,
 )
+from aegis.data.bars.pit_threshold import (
+    compute_pit_safe_daily_threshold,
+    map_daily_threshold_to_ticks,
+)
 
 __all__ = [
     "compute_rolling_mad",
@@ -26,4 +30,6 @@ __all__ = [
     "CleanedTickStreamResult",
     "filter_outliers_4_conditions",
     "clean_tick_stream",
+    "compute_pit_safe_daily_threshold",
+    "map_daily_threshold_to_ticks",
 ]

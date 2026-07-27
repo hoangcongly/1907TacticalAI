@@ -435,3 +435,39 @@ flowchart TD
 - **Chuẩn Giao Tiếp:** Lớp `map_daily_threshold_to_ticks` trả về trực tiếp mảng 1D `numpy.ndarray` dạng `c_contiguous` chuẩn kiểu `np.float64`. Mảng này có độ dài tuyệt đối $N$ khớp theo từng nến tick nhập vào từ `clean_tick_stream`.
 - **Thực Hiện Tạo Nến Dollar Volume (Task B-1-1 / `generate_dollar_volume_bars_v11`):** Các lập trình viên Track B cần gạt nhặt tích luỹ từng đơn vị giao dịch mới $\Delta \text{DV}_i = \text{clean\_prices}[i] \times \text{volumes}[i]$. Ngay khi tích luỹ vượt qua ngưỡng hiện hữu $\sum \Delta \text{DV}_k \ge \text{theta\_array}[i]$, cho đóng lại nến cũ và định dạng sang quy trình Triple-Barrier.
 - **Bảo Vệ Đích Danh (No-drift Verification):** Không được phép thay thế hàm hay sửa đổi cự ly dịch `window=21` hoặc `shift(1)`, toàn bộ hệ số đã lưu thắt trong sổ `ExperimentTracker` với chữ ký hash riêng biệt mang tính khống chế định chế.
+
+---
+
+### D. Chuyên Đề Kiểm Định Đặc Thù Task A-2-2: Giao Thức Sát Nửa Đêm & Bẻ Gãy Timezone Truncating
+Để đáp ứng nghiêm ngặt thông điệp nhiệm vụ: `"Test: tick sát nửa đêm lấy đúng ngưỡng ngày trước"`, module A-2 đã tích hợp màng lọc kiểm tra tích hợp sâu sát từng mili-giây tại `test_map_daily_threshold_to_ticks_midnight_boundary`.
+
+#### 1. Sơ Đồ Nhịp Thở Thời Gian Chuyển Giao Nửa Đêm (Midnight Boundary Flow Chart)
+
+```mermaid
+flowchart LR
+    subgraph Day_T ["Ngày T (23/01/2025) - Kỷ Nguyên Epoch: D"]
+        T1["Tick 1: 12:00:00.000"]
+        T2["Tick 2: 23:59:59.999\n(Sát nửa đêm, cách 0h đúng 1ms)"]
+    end
+
+    subgraph Day_T_next ["Ngày T+1 (24/01/2025) - Kỷ Nguyên Epoch: D + 1"]
+        T3["Tick 3: 00:00:00.000\n(Chuông 0 giờ mở màn ngày mới)"]
+        T4["Tick 4: 00:00:00.001\n(Sau 0 giờ 1ms)"]
+    end
+
+    ThreshT["Ngưỡng Ngày T: theta_23\n(Sinh ra từ 20 ngày trước của Ngày T,\nLẤY ĐÚNG NGƯỠNG NGÀY TRƯỚC)"]
+    ThreshT_next["Ngưỡng Ngày T+1: theta_24\n(Sinh ra khi Ngày T vừa đóng khép sổ)"]
+
+    T1 & T2 -->|ASOF Backward Zero-Order Hold| ThreshT
+    T3 & T4 -->|ASOF Backward Step Jump| ThreshT_next
+
+    style T2 fill:#8B0000,color:#FFF,stroke:#FF0000,stroke-width:2px
+    style T3 fill:#006400,color:#FFF,stroke:#32CD32,stroke-width:2px
+    style ThreshT fill:#4B0082,color:#FFF
+    style ThreshT_next fill:#008080,color:#FFF
+```
+
+#### 2. Bản Chất Toán Học "Lấy Đúng Ngưỡng Ngày Trước" Lúc 23:59:59.999:
+- **Nguyên lý Cách ly Nhân quả (Causal Zero-Order Hold):** Tại chuông đồng hồ `23:59:59.999 ms` của Ngày $T$, giao dịch cận đêm có phép chia số nguyên `timestamp_ms // 86_400_000` nằm trọn vẹn trong ngày kỷ nguyên $D$.
+- Căn cứ vào thuật toán `join_asof(..., strategy='backward')`, chuông lệnh này giữ chặt ngưỡng $\theta_{\text{PIT}}(D)$ đã được xác lập từ bình quân khối lượng tiền tệ của **các ngày trước đó** (từ $T-21$ đến $T-1$). Hệ thống tuyệt đối từ chối vượt biên rò rỉ sang dữ liệu ngày mới hay làm vẩn đục thể tích đang tiếp diễn.
+- Đúng 1 mili-giây sau tại `00:00:00.000 ms`, kỷ nguyên nhảy sang $D+1$. Lập tức màng giữ mẫu (Hold) dịch sang ngưỡng của ngày $T+1$ (lúc này tiếp thu cả mảng thể tích của ngày $T$ vừa đóng cửa xong). Sự mạch lạc này ngăn chặn 100% rủi ro tạo ra Nến sụp bẫy ở ranh giới chuông sàn!

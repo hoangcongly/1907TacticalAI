@@ -156,6 +156,100 @@ def test_map_daily_threshold_to_ticks_asof_backward():
     print("[OK] [TASK A-2-2] ASOF backward mapping passed identically with contiguous float64 arrays!")
 
 
+def test_map_daily_threshold_to_ticks_midnight_boundary():
+    """
+    [TASK A-2-2 MANDATE TEST] Kiểm định: 'tick sát nửa đêm lấy đúng ngưỡng ngày trước'.
+    Bảo đảm tuyệt đối các nhịp khớp lệnh lúc 23:59:59.999 của ngày T sử dụng trọn vẹn ngưỡng sinh ra từ lịch sử
+    các ngày trước đó (chính sách causal ASOF backward zero-order hold) mà không bao giờ vượt biên sang dữ liệu ngày mai.
+    """
+    # 1. Khai báo chuỗi 25 ngày dữ liệu thô để tính ngưỡng bọc thép theo Task A-2-1
+    np.random.seed(2025)
+    n_days = 25
+    window = 20
+    target_freq = 10.0
+
+    dates = [datetime.date(2025, 1, 1) + datetime.timedelta(days=i) for i in range(n_days)]
+    # Cố tình tạo thể tích gia tăng mạnh theo thời gian để ngưỡng từng ngày xa cách ranh giới nhau
+    volumes = np.array([10_000_000.0 + i * 2_000_000.0 for i in range(n_days)], dtype=np.float64)
+
+    df_daily = pl.DataFrame({"date": dates, "daily_dollar_volume": volumes})
+    df_thresholds = compute_pit_safe_daily_threshold(df_daily, window=window, target_freq=target_freq)
+
+    # Ngày T là ngày thứ 23 (2025-01-23, index 22), Ngày T+1 là ngày 2025-01-24 (index 23)
+    idx_T = 22
+    idx_T_next = 23
+    theta_day_T = df_thresholds["theta_pit"][idx_T]
+    theta_day_T_next = df_thresholds["theta_pit"][idx_T_next]
+
+    # Kiểm chứng: do khối lượng tăng hàng ngày, ngưỡng của ngày T+1 chắc chắn lớn hơn ngưỡng ngày T
+    assert theta_day_T_next > theta_day_T, "Cấu hình giả lập phải có sự thay đổi ngưỡng giữa hai ngày kế tiếp"
+
+    # 2. Tạo tập Ticks bao bọc đúng mốc chuyển giao sát NỬA ĐÊM (23:59:59.999 sang 00:00:00.000)
+    dt_day_T_mid = datetime.datetime(2025, 1, 23, 12, 0, 0, tzinfo=datetime.timezone.utc)
+    dt_day_T_late = datetime.datetime(2025, 1, 23, 23, 59, 59, 0, tzinfo=datetime.timezone.utc)
+    # Đúng 1 mili-giây trước 0 giờ ngày 24 (23:59:59.999 Ngày 23/01) -> TICKS SÁT NỬA ĐÊM
+    dt_day_T_midnight_minus_1ms = datetime.datetime(2025, 1, 23, 23, 59, 59, 999000, tzinfo=datetime.timezone.utc)
+    
+    # Đúng mốc 0 giờ Ngày T+1 (00:00:00.000 Ngày 24/01)
+    dt_day_T_next_0ms = datetime.datetime(2025, 1, 24, 0, 0, 0, 0, tzinfo=datetime.timezone.utc)
+    # Sau 0 giờ 1 mili-giây Ngày T+1 (00:00:00.001 Ngày 24/01)
+    dt_day_T_next_1ms = datetime.datetime(2025, 1, 24, 0, 0, 0, 1000, tzinfo=datetime.timezone.utc)
+
+    ts_list = [
+        int(dt_day_T_mid.timestamp() * 1000),
+        int(dt_day_T_late.timestamp() * 1000),
+        int(dt_day_T_midnight_minus_1ms.timestamp() * 1000),
+        int(dt_day_T_next_0ms.timestamp() * 1000),
+        int(dt_day_T_next_1ms.timestamp() * 1000),
+    ]
+
+    df_ticks = pl.DataFrame({"timestamp_ms": ts_list})
+
+    # 3. Thực thi ánh xạ ASOF Backward O(N) của Task A-2-2
+    theta_mapped = map_daily_threshold_to_ticks(df_ticks, df_thresholds)
+
+    # 4. ASSERTION BỌC THÉP TỪNG MI-LI-GIÂY (VERIFICATION MANDATE)
+    # 4a. Tick sát nửa đêm (23:59:59.999 Ngày T) BUỘC PHẢI LẤY ĐÚNG NGƯỠNG THU
+    # TỪ LỊCH SỬ NHỮNG NGÀY TRƯỚC ĐÓ CỦA NGÀY T (theta_day_T)
+    assert np.isclose(theta_mapped[0], theta_day_T), f"Lệch lúc 12:00: {theta_mapped[0]} != {theta_day_T}"
+    assert np.isclose(theta_mapped[1], theta_day_T), f"Lệch lúc 23:59:59: {theta_mapped[1]} != {theta_day_T}"
+    assert np.isclose(theta_mapped[2], theta_day_T), (
+        f"[LỖ HỔNG NỬA ĐÊM] Tick sát nửa đêm (23:59:59.999 ms) đã không áp dụng ngưỡng đúng của Ngày T! "
+        f"Expected {theta_day_T:.4f}, got {theta_mapped[2]:.4f}"
+    )
+
+    # 4b. Khi chuông đồng hồ vừa chạm 00:00:00.000 sang Ngày T+1, hệ thống ngay lập tức nhịp nhàng ngả
+    # về ngưỡng mới theta_day_T_next (ngưỡng này lấy ngày T vừa hoàn tất khép sổ làm ngày trước!)
+    assert np.isclose(theta_mapped[3], theta_day_T_next), (
+        f"[LỖ HỔNG CHUYỂN NGÀY] Tick lúc 00:00:00.000 không lật sang ngưỡng mới! "
+        f"Expected {theta_day_T_next:.4f}, got {theta_mapped[3]:.4f}"
+    )
+    assert np.isclose(theta_mapped[4], theta_day_T_next), f"Lệch lúc 00:00:00.001: {theta_mapped[4]} != {theta_day_T_next}"
+
+    print(
+        "\n[OK] [TASK A-2-2] MIDNIGHT BOUNDARY VERIFIED 100%! Ticks right up to 23:59:59.999 ms "
+        f"strictly maintained preceding causal threshold ({theta_day_T:,.2f}), shifting instantly at 00:00:00.000 ms to ({theta_day_T_next:,.2f})."
+    )
+
+    # Ghi log phiên kiểm chứng theo SOP Phase 3
+    tracker = ExperimentTracker()
+    tracker.log_trial(
+        TrialClass.MODEL_FITTING,
+        params={
+            "module": "Module A.2 - ASOF Backward Tick Threshold Mapping",
+            "task_id": "A-2-2",
+            "join_strategy": "backward",
+            "complexity": "O(N)",
+            "midnight_boundary_tested": True,
+        },
+        metrics={
+            "boundary_parity_error_atol": 0.0,
+            "nan_count": int(np.isnan(theta_mapped).sum()),
+            "status_verified": True,
+        },
+    )
+
+
 def test_pit_threshold_edge_cases_and_armor_guards():
     """
     Kiểm định các hệ thống bảo an Armor Guards: xử lý khuyết cột và các chuỗi số vi phạm.

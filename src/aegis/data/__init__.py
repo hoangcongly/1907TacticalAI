@@ -19,6 +19,9 @@ from aegis.data.bars.pit_threshold import (
     compute_pit_safe_daily_threshold,
     map_daily_threshold_to_ticks,
 )
+from aegis.data.bars.dollar_volume_bars import (
+    compute_median_ticks_to_fill_per_tick,
+)
 
 __all__ = [
     "compute_rolling_mad",
@@ -32,4 +35,5 @@ __all__ = [
     "clean_tick_stream",
     "compute_pit_safe_daily_threshold",
     "map_daily_threshold_to_ticks",
+    "compute_median_ticks_to_fill_per_tick",
 ]

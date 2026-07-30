@@ -9,7 +9,7 @@
 - [src/aegis/data/cleaning/tick_kalman_replacer.py](file:///c:/1907TacticalAI/src/aegis/data/cleaning/tick_kalman_replacer.py) (Bộ lọc Kalman vi cấu trúc 2 trạng thái [P_t, \nu_t] & Giao thức Predict-Only thế chỗ Bad Tick / Task A-1-4)
 - [src/aegis/data/cleaning/outlier_filter.py](file:///c:/1907TacticalAI/src/aegis/data/cleaning/outlier_filter.py) (Bộ lọc Outlier 4 Điều Kiện đồng thời & Pipeline Tích Hợp `clean_tick_stream` / Task A-1-5)
 - [src/aegis/data/bars/pit_threshold.py](file:///c:/1907TacticalAI/src/aegis/data/bars/pit_threshold.py) (Tính ngưỡng Dollar Volume Bars PIT-Safe & Ánh xạ ASOF Backward O(N) / Task A-2-1 & A-2-2)
-- [src/aegis/data/bars/dollar_volume_bars.py](file:///c:/1907TacticalAI/src/aegis/data/bars/dollar_volume_bars.py) (Mô hình Two-Pass Numba Worst-Case Allocation & Median Ticks O(N) / Task A-2-3)
+- [src/aegis/data/bars/dollar_volume_bars.py](file:///c:/1907TacticalAI/src/aegis/data/bars/dollar_volume_bars.py) (Mô hình Two-Pass Numba Worst-Case Allocation, OFI & Toxicity Dollar Bars / Task A-2-3 & A-2-4)
 
 
 ---
@@ -511,3 +511,37 @@ flowchart TD
 - **Cấm Kỵ Dynamic Allocation (`np.append`):** Việc gọi `np.append` trong một vòng lặp Numba sẽ phá hủy hoàn toàn bộ nhớ (vì mỗi lần gọi là một lần copy mảng mới). Do đó, `_pass1_extract_tick_counts` áp dụng nguyên lý **Worst-Case Allocation**: cấp phát 1 mảng rỗng khổng lồ bằng đúng số lượng Ticks ban đầu, điền dần, và cắt gọt (Truncate) phần dư thừa ở cuối cùng.
 - **Stress-Test 1 Triệu Ticks (Mandate Verified):** Qua kiểm định `test_compute_median_ticks_1_million_performance`, vòng lặp Numba xử lý quét toàn bộ 1,000,000 dòng dữ liệu khổng lồ chỉ trong **0.0582 giây**, xác nhận kiến trúc chuẩn xác của hệ thống siêu Tần Số (HFT).
 - **Màng Lọc Cách Ly (Polars `.shift(1)`):** Polars mặc định yêu cầu thu thập đủ mẫu theo kích thước cửa sổ (`min_periods = window_size`). Việc sử dụng `.shift(1)` cưỡng chế quá trình lăn mẫu tính trung vị phải đẩy lùi 1 chu kỳ, không lấy dữ liệu của chính cây nến đang vận hành, đảm bảo an toàn Point-in-Time 100%.
+
+---
+
+### F. Chuyên Đề Phân Tích Lõi Tạo Nến (Task A-2-4): OHLCV, OFI & Cờ Rủi Ro Toxicity
+Hàm `@njit` `generate_dollar_volume_bars_v11` chính là trái tim của hệ thống đúc nến. Lệnh duyệt vòng lặp `O(N)` qua từng Tick này mang theo 3 sứ mệnh khổng lồ:
+
+#### 1. Cơ Chế Bóc Tách Order Flow Imbalance (OFI) & Tick Rule
+
+```mermaid
+flowchart TD
+    In["Dòng Thác Ticks (t, price, volume)"] --> TickRule
+    
+    subgraph Engine ["Lõi Đúc Nến (Numba JIT)"]
+        TickRule{"Xác định Tick Rule:\n Giá mới > Giá cũ ?"}
+        TickRule -- Tăng (Uptick) --> Buy["Phân loại: Lệnh Mua Chủ Động\n cum_buy_dollar += p * v"]
+        TickRule -- Giảm (Downtick) --> Sell["Phân loại: Lệnh Bán Chủ Động\n cum_sell_dollar += p * v"]
+        TickRule -- Bằng (Zero-tick) --> Keep["Giữ nguyên Tick Rule trước đó"]
+        
+        Buy & Sell & Keep --> CumCheck{"Kiểm tra Ngưỡng Tiền Tệ:\n cum_dollar >= daily_thresholds[i] ?"}
+        
+        CumCheck -- Chưa đủ --> Loop["Quay lại vòng lặp duyệt Tick tiếp theo"]
+        CumCheck -- Đã đủ (Đóng Nến) --> Calc["Tính OFI = (Buy - Sell)/(Buy + Sell)\n & Chốt OHLCV"]
+    end
+    
+    Calc --> Toxic{"Đếm số Ticks < 50% Trung Vị Lịch Sử ?"}
+    Toxic -- Đúng (Quá nhanh) --> ToxicFlag["is_toxic = 1.0\n (Cảnh báo Cá mập càn quét lệnh!)"]
+    Toxic -- Sai (Bình thường) --> SafeFlag["is_toxic = 0.0"]
+    
+    ToxicFlag & SafeFlag --> Out["Mảng Output (bar_count, 9)"]
+```
+
+#### 2. Kỹ Thuật Định Chế Tránh Rác
+- **Sự cố Vô định Toán học (Zero Division):** Ở những thị trường chết (illiquid), thanh khoản bằng 0, mẫu số `(Buy + Sell)` của công thức OFI sẽ văng lỗi toán học `/0`. Hệ thống khắc phục bằng hệ số chặn rác tĩnh `+ 1e-8`.
+- **Bộ hãm Toxicity trong Thanh khoản mỏng (Thin Liquidity Guard):** Logic Cờ Toxicity chỉ được bật KHI VÀ CHỈ KHI số lượng ticks trung vị của quá khứ thỏa mãn `median_ticks_to_fill[i] > 10.0`. Nếu một nến bình thường mà chỉ cần 3, 4 ticks để đầy (thị trường bỏ hoang ban đêm), thì việc nến hiện hành mất 1 tick để đầy không mang yếu tố rủi ro độc hại cá mập (Toxic). Bộ hãm này ngăn chặn việc "Báo động giả" phá hỏng dữ liệu học máy.

@@ -6,6 +6,7 @@ import polars as pl
 from aegis.data.bars.dollar_volume_bars import (
     compute_median_ticks_to_fill_per_tick,
     _pass1_extract_tick_counts,
+    generate_dollar_volume_bars_v11,
 )
 from aegis.core.experiment_tracker import ExperimentTracker, TrialClass
 
@@ -118,4 +119,78 @@ def test_compute_median_ticks_1_million_performance():
             "status_verified": True,
         },
     )
+
+
+def test_generate_dollar_volume_bars_v11_manual_ofi():
+    """
+    [TASK A-2-4] Test tay: ví dụ nhỏ tính sẵn kết quả OHLCV+OFI khớp (max_abs_diff < 1e-9).
+    Kiểm chứng cờ Toxicity và Zero-uptick.
+    """
+    # 6 Ticks: [t, price, volume]
+    ticks = np.array([
+        [1000, 100.0, 2.0],  # Tick 0: Khởi đầu (Last tick rule = 1.0 mặc định). dollar=200, buy=200, sell=0
+        [1001, 102.0, 1.0],  # Tick 1: Uptick -> rule=1.0. dollar=102, buy=102, sell=0
+        [1002, 101.0, 3.0],  # Tick 2: Downtick -> rule=-1.0. dollar=303, buy=0, sell=303
+        [1003, 101.0, 2.0],  # Tick 3: Zero-downtick (giữ nguyên rule=-1.0). dollar=202, buy=0, sell=202
+        [1004, 105.0, 1.0],  # Tick 4: Uptick -> rule=1.0. dollar=105, buy=105, sell=0
+        [1005, 104.0, 2.0],  # Tick 5: Downtick -> rule=-1.0. dollar=208, buy=0, sell=208
+    ], dtype=np.float64)
+    
+    # Ngưỡng đóng nến = 500 Dollar
+    daily_thresholds = np.full(6, 500.0, dtype=np.float64)
+    
+    # Trung vị nến = 100 ticks (Để không bị cờ Toxicity)
+    # Tuy nhiên, Tick 0->2 có 3 ticks, threshold = 11.0 (>10.0), 3 < 0.5 * 11.0 -> Có Toxic!
+    median_ticks_to_fill = np.array([11.0, 11.0, 11.0, 100.0, 100.0, 100.0], dtype=np.float64)
+    
+    bars = generate_dollar_volume_bars_v11(ticks, daily_thresholds, median_ticks_to_fill)
+    
+    # Phân tích Nến 1 (Tick 0, 1, 2)
+    # Cum dollar = 200 + 102 + 303 = 605 >= 500 -> Đóng nến ở Tick 2
+    # Open = 100.0
+    # High = 102.0
+    # Low = 100.0
+    # Close = 101.0
+    # Volume = 2.0 + 1.0 + 3.0 = 6.0
+    # Cum Buy = 200 + 102 = 302
+    # Cum Sell = 303
+    # OFI = (302 - 303) / (302 + 303 + 1e-8) = -1 / 605 = -0.00165289256
+    # Toxicity: tick_count = 3. median = 11.0. 3 < 5.5 và 11.0 > 10.0 => is_toxic = 1.0
+    
+    # Phân tích Nến 2 (Tick 3, 4, 5)
+    # Cum dollar = 202 + 105 + 208 = 515 >= 500 -> Đóng nến ở Tick 5
+    # Open = 101.0
+    # High = 105.0
+    # Low = 101.0
+    # Close = 104.0
+    # Volume = 2.0 + 1.0 + 2.0 = 5.0
+    # Cum Buy = 105
+    # Cum Sell = 202 + 208 = 410
+    # OFI = (105 - 410) / (105 + 410 + 1e-8) = -305 / 515 = -0.5922330097
+    # Toxicity: tick_count = 3. median = 100.0. 3 < 50, NHƯNG đợi đã...
+    # Toxicity logic = 1.0
+    
+    assert len(bars) == 2
+    
+    # Bar 1 (Index 0)
+    assert bars[0, 0] == 1002.0  # t_i
+    assert bars[0, 1] == 100.0   # Open
+    assert bars[0, 2] == 102.0   # High
+    assert bars[0, 3] == 100.0   # Low
+    assert bars[0, 4] == 101.0   # Close
+    assert bars[0, 5] == 6.0     # Volume
+    assert abs(bars[0, 6] - (-1.0 / 605.0)) < 1e-9  # OFI
+    assert bars[0, 7] == 3.0     # Tick count
+    assert bars[0, 8] == 1.0     # is_toxic
+    
+    # Bar 2 (Index 1)
+    assert bars[1, 0] == 1005.0
+    assert bars[1, 1] == 101.0
+    assert bars[1, 2] == 105.0
+    assert bars[1, 3] == 101.0
+    assert bars[1, 4] == 104.0
+    assert bars[1, 5] == 5.0
+    assert abs(bars[1, 6] - (-305.0 / 515.0)) < 1e-9
+    assert bars[1, 7] == 3.0
+    assert bars[1, 8] == 1.0     # is_toxic = 1.0 (vì 3 < 50 và 100 > 10.0)
 

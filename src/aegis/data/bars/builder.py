@@ -6,7 +6,7 @@ Tích hợp toàn bộ Data Cleaning (A-1) và Dollar Volume Bars Generation (A-
 
 import numpy as np
 import polars as pl
-from typing import Optional
+
 
 from aegis.data.cleaning.outlier_filter import clean_tick_stream
 from aegis.data.bars.pit_threshold import (
@@ -24,7 +24,7 @@ def build_clean_dollar_bars(
     timestamps: np.ndarray,
     prices: np.ndarray,
     volumes: np.ndarray,
-    target_daily_volume: float = 1_000_000.0,
+    target_bars_per_day: int = 50,
     window_mad: int = 100,
     eta_confirm: float = 2.0,
     window_median_ticks: int = 100,
@@ -43,7 +43,9 @@ def build_clean_dollar_bars(
         timestamps: np.ndarray thời gian tick (ms).
         prices: np.ndarray giá nguyên bản.
         volumes: np.ndarray khối lượng giao dịch.
-        target_daily_volume: Ngưỡng khối lượng mục tiêu mỗi ngày (default: 1M$).
+        target_bars_per_day: Số lượng nến mục tiêu sinh ra mỗi ngày (default: 50).
+            Ý nghĩa: theta_pit = daily_dollar_volume / target_bars_per_day.
+            Không nhầm lẫn với ngưỡng đô-la tuyệt đối.
         window_mad: Cửa sổ tính toán nhiễu (MAD).
         eta_confirm: Hệ số Sigma xác nhận nhiễu (Kalman filter).
         window_median_ticks: Số lượng nến để tính trung vị Toxicity.
@@ -82,8 +84,9 @@ def build_clean_dollar_bars(
     )
     
     # Tính Threshold PIT-Safe
+    # target_bars_per_day = số nến mong muốn mỗi ngày → theta_pit = daily_vol / target_bars_per_day
     daily_threshold_base = compute_pit_safe_daily_threshold(
-        df_daily, window=window_mad, target_freq=target_daily_volume # Lợi dụng tham số target_daily_volume
+        df_daily, window=window_mad, target_freq=float(target_bars_per_day)
     )
     
     # 3. Map threshold back to each tick

@@ -19,10 +19,8 @@ from aegis.data.bars.pit_threshold import (
     compute_pit_safe_daily_threshold,
     map_daily_threshold_to_ticks,
 )
-from aegis.data.ingestion.binance_loader import (
-    download_binance_monthly_trades,
-    load_local_trades_to_polars,
-)
+# NOTE: aegis.data.ingestion.binance_loader chưa được triển khai.
+# Import sẽ được bổ sung khi module hoàn thiện (xem Task A-3-x).
 from aegis.data.bars.builder import build_clean_dollar_bars
 from aegis.data.bars.dollar_volume_bars import (
     compute_median_ticks_to_fill_per_tick,
@@ -30,20 +28,24 @@ from aegis.data.bars.dollar_volume_bars import (
 )
 
 __all__ = [
+    # outlier_detection
     "compute_rolling_mad",
     "detect_bad_tick_core",
     "detect_bad_tick_cross_venue",
+    # tick_kalman_replacer
     "TickLevelKalmanReplacer",
     "kalman_replacer_filter_series_numba",
     "ensure_pd_matrix_2x2_numba",
+    # outlier_filter
     "CleanedTickStreamResult",
     "filter_outliers_4_conditions",
     "clean_tick_stream",
+    # pit_threshold
     "compute_pit_safe_daily_threshold",
     "map_daily_threshold_to_ticks",
+    # dollar_volume_bars
     "compute_median_ticks_to_fill_per_tick",
     "generate_dollar_volume_bars_v11",
-    "download_binance_monthly_trades",
-    "load_local_trades_to_polars",
+    # builder (E2E Entrypoint)
     "build_clean_dollar_bars",
 ]

@@ -34,13 +34,13 @@ def test_build_clean_dollar_bars_e2e_schema_compliance():
         prices[i] = prices[499] - (i - 499) * 50.0
         
     # 2. Chạy qua Orchestrator
-    # Thu nhỏ cửa sổ lại để dễ test
+    # Thu nhỏ cửa sổ lại để dễ test: 200 nến/ngày → ngưỡng nhỏ → tạo ra nhiều nến
     df_bars = build_clean_dollar_bars(
         symbol="BTCUSDT",
         timestamps=timestamps,
         prices=prices,
         volumes=volumes,
-        target_daily_volume=100_000.0, # Ngưỡng nhỏ để tạo ra nhiều nến
+        target_bars_per_day=200,  # 200 nến/ngày → theta_pit nhỏ
         window_mad=20,
         eta_confirm=2.0,
         window_median_ticks=5

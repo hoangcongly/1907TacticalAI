@@ -94,31 +94,35 @@ def compute_median_ticks_to_fill_per_tick(
 def generate_dollar_volume_bars_v11(
     ticks: np.ndarray, 
     daily_thresholds: np.ndarray, 
-    median_ticks_to_fill: np.ndarray
+    median_ticks_to_fill: np.ndarray,
+    is_tail_event_ticks: np.ndarray
 ) -> np.ndarray:
     """
-    [TASK A-2-4] Thuật toán cốt lõi sinh Nến Dollar Volume theo chuẩn AFML v11.8.
+    [TASK A-2-4 & A-2-5] Thuật toán cốt lõi sinh Nến Dollar Volume theo chuẩn AFML v11.8.
     
-    Tính toán OHLCV đồng thời gán đặc trưng OFI (Order Flow Imbalance) và cờ Toxicity.
+    Tính toán OHLCV đồng thời gán đặc trưng OFI (Order Flow Imbalance), cờ Toxicity, 
+    và cờ Tail Event (Thiên nga đen).
     Áp dụng thuật toán Tick Rule để phân loại lệnh mua chủ động/bán chủ động.
     
     Args:
         ticks: np.ndarray chiều (N, 3+). Cột 0: t_i, Cột 1: p_i, Cột 2: v_i
         daily_thresholds: np.ndarray chiều (N,) chứa ngưỡng $ cho từng tick.
         median_ticks_to_fill: np.ndarray chiều (N,) chứa trung vị lịch sử để tính toxicity.
+        is_tail_event_ticks: np.ndarray chiều (N,) chứa cờ tail event (0.0 hoặc 1.0) từ Kalman.
         
     Returns:
-        np.ndarray chiều (bar_count, 9)
-        Format: [t_i, open, high, low, close, volume, ofi, tick_count, is_toxic]
+        np.ndarray chiều (bar_count, 10)
+        Format: [t_i, open, high, low, close, volume, ofi, tick_count, is_toxic, is_tail_event]
     """
     n_ticks = len(ticks)
-    bars = np.empty((n_ticks, 9), dtype=np.float64)
+    bars = np.empty((n_ticks, 10), dtype=np.float64)
     bar_count = 0
     cum_dollar = 0.0
     cum_volume = 0.0
     cum_buy_dollar = 0.0
     cum_sell_dollar = 0.0
     tick_count = 0
+    bar_is_tail = 0.0
     
     if n_ticks == 0:
         return bars[:0]
@@ -133,6 +137,10 @@ def generate_dollar_volume_bars_v11(
         p_i = ticks[i, 1]
         v_i = ticks[i, 2]
         
+        # Cập nhật cờ Tail Event cho Bar (toán tử OR)
+        if is_tail_event_ticks[i] > 0.5:
+            bar_is_tail = 1.0
+            
         # 1. Tick Rule Classification
         if i > 0:
             if p_i > ticks[i - 1, 1]: 
@@ -173,6 +181,7 @@ def generate_dollar_volume_bars_v11(
             bars[bar_count, 6] = ofi
             bars[bar_count, 7] = float(tick_count)
             bars[bar_count, 8] = is_toxic
+            bars[bar_count, 9] = bar_is_tail
             
             bar_count += 1
             
@@ -182,6 +191,7 @@ def generate_dollar_volume_bars_v11(
             cum_buy_dollar = 0.0
             cum_sell_dollar = 0.0
             tick_count = 0
+            bar_is_tail = 0.0
             
             # Khởi tạo nến mới (nếu chưa phải tick cuối)
             if i + 1 < n_ticks:

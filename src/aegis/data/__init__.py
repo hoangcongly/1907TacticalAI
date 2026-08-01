@@ -19,6 +19,11 @@ from aegis.data.bars.pit_threshold import (
     compute_pit_safe_daily_threshold,
     map_daily_threshold_to_ticks,
 )
+from aegis.data.ingestion.binance_loader import (
+    download_binance_monthly_trades,
+    load_local_trades_to_polars,
+)
+from aegis.data.bars.builder import build_clean_dollar_bars
 from aegis.data.bars.dollar_volume_bars import (
     compute_median_ticks_to_fill_per_tick,
     generate_dollar_volume_bars_v11,
@@ -38,4 +43,7 @@ __all__ = [
     "map_daily_threshold_to_ticks",
     "compute_median_ticks_to_fill_per_tick",
     "generate_dollar_volume_bars_v11",
+    "download_binance_monthly_trades",
+    "load_local_trades_to_polars",
+    "build_clean_dollar_bars",
 ]

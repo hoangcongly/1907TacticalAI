@@ -545,3 +545,65 @@ flowchart TD
 #### 2. Kỹ Thuật Định Chế Tránh Rác
 - **Sự cố Vô định Toán học (Zero Division):** Ở những thị trường chết (illiquid), thanh khoản bằng 0, mẫu số `(Buy + Sell)` của công thức OFI sẽ văng lỗi toán học `/0`. Hệ thống khắc phục bằng hệ số chặn rác tĩnh `+ 1e-8`.
 - **Bộ hãm Toxicity trong Thanh khoản mỏng (Thin Liquidity Guard):** Logic Cờ Toxicity chỉ được bật KHI VÀ CHỈ KHI số lượng ticks trung vị của quá khứ thỏa mãn `median_ticks_to_fill[i] > 10.0`. Nếu một nến bình thường mà chỉ cần 3, 4 ticks để đầy (thị trường bỏ hoang ban đêm), thì việc nến hiện hành mất 1 tick để đầy không mang yếu tố rủi ro độc hại cá mập (Toxic). Bộ hãm này ngăn chặn việc "Báo động giả" phá hỏng dữ liệu học máy.
+
+
+---
+
+## PHẦN X: TASK A-2-5 - END-TO-END ORCHESTRATOR & ĐÓNG GÓI CHUẨN SCHEMA
+
+**1. Mục đích & Vai trò**
+`build_clean_dollar_bars` là trái tim điều phối của toàn bộ Track A. Hàm này lắp ráp tất cả các "bánh răng cưa" (từ Task A-1 đến A-2) lại thành một chuỗi Dây Chuyền Sản Xuất nguyên khối. Đầu vào là dòng Tick thô từ Sàn giao dịch, đầu ra là Bảng Nến Sạch (Clean Dollar Volume Bars) tuân thủ 100% hợp đồng dữ liệu `SIGNAL_BAR_SCHEMA`.
+
+**2. Lưu đồ dòng chảy Dữ liệu (End-to-End Pipeline Data Flow)**
+
+```mermaid
+graph TD
+    subgraph Sàn Giao Dịch
+        A[Raw Ticks: t_i, p_i, v_i]
+    end
+
+    subgraph MODULE A-1: TICK CLEANING
+        B[Outlier Detection & Kalman Filter]
+        C((clean_tick_stream))
+        B -- Lọc nhiễu / Sập hầm --> C
+        C --> D[clean_prices]
+        C --> E[is_tail_event_ticks]
+    end
+
+    subgraph MODULE A-2: THRESHOLD & TOXICITY
+        F[Gom nhóm Volume theo Ngày]
+        G[compute_pit_safe_daily_threshold]
+        H[map_daily_threshold_to_ticks]
+        I[compute_median_ticks_to_fill_per_tick]
+        F -- target_daily_volume --> G
+        G -- backward_join --> H
+        H -- daily_thresholds --> I
+        I --> J[median_ticks_to_fill]
+    end
+
+    subgraph MODULE A-2: BAR GENERATION ENGINE
+        K[generate_dollar_volume_bars_v11 Numba]
+    end
+    
+    subgraph MODULE A-2: SCHEMA FORMATTER
+        L[Polars DataFrame Builder]
+    end
+
+    A --> B
+    D --> F
+    A --> F
+    
+    D --> K
+    A --> K
+    H --> K
+    J --> K
+    E -. Truyền cờ Thiên nga đen .-> K
+
+    K -- [bar_count, 10] --> L
+    L -- SIGNAL_BAR_SCHEMA --> M[Dataframe Track B]
+```
+
+**3. Cơ chế Khớp nối Cờ (Flag Merging)**
+Trong Task A-2-5, lõi Numba `generate_dollar_volume_bars_v11` đã được tinh chỉnh để hấp thụ mảng `is_tail_event_ticks` từ Module A-1.
+- Nếu **Bất kỳ Tick nào** bên trong cấu trúc của một Cây Nến dính cờ `is_tail_event == True`, toàn bộ Cây Nến đó sẽ bị đánh dấu `is_tail_event = True` thông qua toán tử tích lũy OR.
+- Cột `insufficient_history` được tự động bật `True` cho `window_median_ticks` nến đầu tiên, báo hiệu cho AI ở Track B biết đây là giai đoạn hệ thống đang khởi động (Warm-up), không nên sử dụng tín hiệu ở vùng này.

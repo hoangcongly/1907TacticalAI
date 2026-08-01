@@ -143,7 +143,12 @@ def test_generate_dollar_volume_bars_v11_manual_ofi():
     # Tuy nhiên, Tick 0->2 có 3 ticks, threshold = 11.0 (>10.0), 3 < 0.5 * 11.0 -> Có Toxic!
     median_ticks_to_fill = np.array([11.0, 11.0, 11.0, 100.0, 100.0, 100.0], dtype=np.float64)
     
-    bars = generate_dollar_volume_bars_v11(ticks, daily_thresholds, median_ticks_to_fill)
+    # Mô phỏng Tick 4 bị cờ Tail Event (Thiên nga đen)
+    is_tail_event_ticks = np.array([0.0, 0.0, 0.0, 0.0, 1.0, 0.0], dtype=np.float64)
+    
+    bars = generate_dollar_volume_bars_v11(
+        ticks, daily_thresholds, median_ticks_to_fill, is_tail_event_ticks
+    )
     
     # Phân tích Nến 1 (Tick 0, 1, 2)
     # Cum dollar = 200 + 102 + 303 = 605 >= 500 -> Đóng nến ở Tick 2
@@ -156,6 +161,7 @@ def test_generate_dollar_volume_bars_v11_manual_ofi():
     # Cum Sell = 303
     # OFI = (302 - 303) / (302 + 303 + 1e-8) = -1 / 605 = -0.00165289256
     # Toxicity: tick_count = 3. median = 11.0. 3 < 5.5 và 11.0 > 10.0 => is_toxic = 1.0
+    # Tail Event: Các tick 0,1,2 đều là 0.0 => is_tail = 0.0
     
     # Phân tích Nến 2 (Tick 3, 4, 5)
     # Cum dollar = 202 + 105 + 208 = 515 >= 500 -> Đóng nến ở Tick 5
@@ -169,6 +175,7 @@ def test_generate_dollar_volume_bars_v11_manual_ofi():
     # OFI = (105 - 410) / (105 + 410 + 1e-8) = -305 / 515 = -0.5922330097
     # Toxicity: tick_count = 3. median = 100.0. 3 < 50, NHƯNG đợi đã...
     # Toxicity logic = 1.0
+    # Tail Event: Tick 4 có is_tail = 1.0 => is_tail = 1.0
     
     assert len(bars) == 2
     
@@ -182,6 +189,7 @@ def test_generate_dollar_volume_bars_v11_manual_ofi():
     assert abs(bars[0, 6] - (-1.0 / 605.0)) < 1e-9  # OFI
     assert bars[0, 7] == 3.0     # Tick count
     assert bars[0, 8] == 1.0     # is_toxic
+    assert bars[0, 9] == 0.0     # is_tail_event
     
     # Bar 2 (Index 1)
     assert bars[1, 0] == 1005.0
@@ -193,4 +201,5 @@ def test_generate_dollar_volume_bars_v11_manual_ofi():
     assert abs(bars[1, 6] - (-305.0 / 515.0)) < 1e-9
     assert bars[1, 7] == 3.0
     assert bars[1, 8] == 1.0     # is_toxic = 1.0 (vì 3 < 50 và 100 > 10.0)
+    assert bars[1, 9] == 1.0     # is_tail_event (Do ảnh hưởng từ Tick 4)
 

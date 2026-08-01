@@ -15,6 +15,7 @@ from aegis.data.cleaning.outlier_filter import (
     filter_outliers_4_conditions,
     clean_tick_stream,
 )
+from aegis.data.cleaning.gap_handling import kalman_predict_only_n_steps
 from aegis.data.bars.pit_threshold import (
     compute_pit_safe_daily_threshold,
     map_daily_threshold_to_ticks,
@@ -40,6 +41,8 @@ __all__ = [
     "CleanedTickStreamResult",
     "filter_outliers_4_conditions",
     "clean_tick_stream",
+    # gap_handling
+    "kalman_predict_only_n_steps",
     # pit_threshold
     "compute_pit_safe_daily_threshold",
     "map_daily_threshold_to_ticks",

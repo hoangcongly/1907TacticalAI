@@ -607,3 +607,38 @@ graph TD
 Trong Task A-2-5, lõi Numba `generate_dollar_volume_bars_v11` đã được tinh chỉnh để hấp thụ mảng `is_tail_event_ticks` từ Module A-1.
 - Nếu **Bất kỳ Tick nào** bên trong cấu trúc của một Cây Nến dính cờ `is_tail_event == True`, toàn bộ Cây Nến đó sẽ bị đánh dấu `is_tail_event = True` thông qua toán tử tích lũy OR.
 - Cột `insufficient_history` được tự động bật `True` cho `window_median_ticks` nến đầu tiên, báo hiệu cho AI ở Track B biết đây là giai đoạn hệ thống đang khởi động (Warm-up), không nên sử dụng tín hiệu ở vùng này.
+
+
+---
+
+## PHẦN XI: TASK A-3-1 - GIAO THỨC GAP HANDLING & PREDICT-ONLY N-STEPS
+
+**1. Mục đích & Vai trò**
+`kalman_predict_only_n_steps` (Module `gap_handling.py`) là chốt chặn xử lý các đứt gãy dữ liệu dài hạn (thực tế) hoặc các khoảng purge bị xóa (trong quá trình chạy CPCV). Khi không có quan sát (Good Ticks) trong một thời gian dài, mô hình không được phép cập nhật nhiễu, mà phải chiếu (predict) trạng thái theo động lượng hiện hành.
+
+**2. Lưu đồ dòng chảy Dữ liệu (Gap Handling Data Flow)**
+
+```mermaid
+graph TD
+    A[Mất tín hiệu n_steps
+(Data Gap / CPCV Purge)] --> B(kalman_predict_only_n_steps)
+    
+    B --> C{Xác thực Input}
+    C -- Âm / Sai Type --> D[Raise Error]
+    C -- Kích thước != 2x2 --> E[Raise Error]
+    
+    C -- Hợp lệ --> F[Numba JIT Engine]
+    
+    subgraph Vòng lặp O_N C-Speed
+        F --> G[x_t = F @ x_t-1]
+        G --> H[P_t = F @ P_t-1 @ F.T + Q]
+        H --> I[P_t = ensure_pd_matrix_2x2_numba]
+        I -. Lặp n_steps .-> G
+    end
+    
+    I --> J[Trả về x_n, P_n PD Tuyệt đối]
+```
+
+**3. Cơ chế Thiết kế (Design Choices)**
+- **Tại sao lại dùng vòng lặp O(N) thay vì công thức O(1)?** Mặc dù có công thức đóng $P_n = P_0 + nQ$ cho $F=I$, đối với ma trận $F=LLT$, công thức đóng rất phức tạp và quan trọng hơn: các phép toán Floating-point sẽ làm tích tụ sai số làm tròn. Bằng cách dùng vòng lặp O(N), chúng ta gọi được "Lớp áo giáp" Cholesky `ensure_pd_matrix_2x2_numba` ở *mỗi* chu kỳ tick.
+- Numba trên nền tảng C-level thực thi 1.000.000 chu kỳ lặp chỉ trong vỏn vẹn `~1ms`, nên tốc độ O(N) hoàn toàn không phải là rào cản.

@@ -99,21 +99,37 @@ def test_fit_sum_of_exponentials_reject():
 
 def test_select_ffd_production_engine():
     """
-    [TASK A-4-3] Test `select_ffd_production_engine` fallback behavior.
+    [TASK A-4-4] Test `select_ffd_production_engine` ép cả 2 nhánh accept/reject.
+    Sử dụng mock để ép chính xác flow, tránh phụ thuộc vào curve_fit ngẫu nhiên.
     """
-    from aegis.features.fractional_diff import select_ffd_production_engine, compute_ffd_weights
-    
-    weights = compute_ffd_weights(0.5, tau=1e-3)
-    
-    # Test fallback khi epsilon bị vượt qua (thông qua mảng quá ngắn và nhiễu)
-    engine_config = select_ffd_production_engine(weights, M_prony=2) # M nhỏ sẽ dễ bị reject
-    
-    # Tùy thuộc vào curve_fit, nếu reject nó sẽ trả về 'windowed'
-    assert engine_config["engine_type"] in ["sum_of_exp", "windowed"]
-    
-    if engine_config["engine_type"] == "windowed":
-        assert "weights" in engine_config
-        assert "reason" in engine_config["validation"]
-    else:
-        assert "c" in engine_config
-        assert "rho" in engine_config
+    from aegis.features.fractional_diff import select_ffd_production_engine
+    from unittest.mock import patch
+    import numpy as np
+
+    weights = np.array([1.0, -0.5, -0.125, -0.0625])
+
+    # Nhánh 1: Ép ACCEPT (approved = True)
+    with patch('aegis.features.fractional_diff.fit_sum_of_exponentials_v2') as mock_fit:
+        # Giả lập trả về: c, rho, err_abs, err_rel, approved
+        mock_fit.return_value = (np.array([0.5, 0.5]), np.array([0.8, -0.8]), 1e-5, 1e-6, True)
+        
+        config_accept = select_ffd_production_engine(weights, M_prony=2)
+        assert config_accept["engine_type"] == "sum_of_exp"
+        assert config_accept["c"] == [0.5, 0.5]
+        assert config_accept["rho"] == [0.8, -0.8]
+        assert config_accept["validation"]["approx_error_abs"] == 1e-5
+        assert config_accept["validation"]["weighted_rel_error"] == 1e-6
+
+    # Nhánh 2: Ép REJECT (approved = False)
+    with patch('aegis.features.fractional_diff.fit_sum_of_exponentials_v2') as mock_fit:
+        # Giả lập trả về approved = False
+        mock_fit.return_value = (np.array([1.0, 1.0]), np.array([0.1, 0.1]), 0.5, 0.2, False)
+        
+        config_reject = select_ffd_production_engine(weights, M_prony=2)
+        assert config_reject["engine_type"] == "windowed"
+        assert "weights" in config_reject
+        # Với weights = [1.0, -0.5, -0.125, -0.0625], tất cả đều >= 1e-5 nên được giữ lại
+        np.testing.assert_array_almost_equal(config_reject["weights"], weights)
+        assert config_reject["validation"]["reason"] == "sum_of_exp REJECTED"
+        assert config_reject["validation"]["approx_error_abs"] == 0.5
+        assert config_reject["validation"]["weighted_rel_error"] == 0.2

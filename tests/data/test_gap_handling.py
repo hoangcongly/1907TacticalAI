@@ -29,7 +29,7 @@ def test_kalman_predict_n_steps_identity():
 def test_kalman_predict_n_steps_llt():
     """
     [Test 2] Kiểm định với F = Local Linear Trend (LLT).
-    Logic: x_n = x_0 + n * trend. P_n khớp với tính toán thủ công cộng dồn.
+    Logic: x_n = x_0 + n * trend. P_n khớp với tính toán thủ công suy diễn tay cho n=1, 2, 3.
     """
     level_0 = 50000.0
     trend_0 = 10.0
@@ -37,21 +37,27 @@ def test_kalman_predict_n_steps_llt():
     P_0 = np.eye(2)
     F = np.array([[1.0, 1.0], [0.0, 1.0]])
     Q = np.array([[1e-4, 0.0], [0.0, 1e-5]])
-    n_steps = 5
     
-    x_n, P_n = kalman_predict_only_n_steps(x_0, P_0, F, Q, n_steps)
-    
-    # 1. Trạng thái trượt đi n_steps
-    expected_x_n = np.array([[level_0 + n_steps * trend_0], [trend_0]])
-    np.testing.assert_array_almost_equal(x_n, expected_x_n)
-    
-    # 2. Kiểm định P_n thủ công
-    P_manual = P_0.copy()
-    for _ in range(n_steps):
-        P_manual = F @ P_manual @ F.T + Q
-        P_manual = ensure_pd_matrix_2x2_numba(P_manual)
-        
-    np.testing.assert_array_almost_equal(P_n, P_manual)
+    # Kịch bản n=1
+    x_1, P_1 = kalman_predict_only_n_steps(x_0, P_0, F, Q, 1)
+    expected_x_1 = np.array([[level_0 + 1 * trend_0], [trend_0]])
+    P_manual_1 = ensure_pd_matrix_2x2_numba(F @ P_0 @ F.T + Q)
+    np.testing.assert_array_almost_equal(x_1, expected_x_1)
+    np.testing.assert_array_almost_equal(P_1, P_manual_1)
+
+    # Kịch bản n=2
+    x_2, P_2 = kalman_predict_only_n_steps(x_0, P_0, F, Q, 2)
+    expected_x_2 = np.array([[level_0 + 2 * trend_0], [trend_0]])
+    P_manual_2 = ensure_pd_matrix_2x2_numba(F @ P_manual_1 @ F.T + Q)
+    np.testing.assert_array_almost_equal(x_2, expected_x_2)
+    np.testing.assert_array_almost_equal(P_2, P_manual_2)
+
+    # Kịch bản n=3
+    x_3, P_3 = kalman_predict_only_n_steps(x_0, P_0, F, Q, 3)
+    expected_x_3 = np.array([[level_0 + 3 * trend_0], [trend_0]])
+    P_manual_3 = ensure_pd_matrix_2x2_numba(F @ P_manual_2 @ F.T + Q)
+    np.testing.assert_array_almost_equal(x_3, expected_x_3)
+    np.testing.assert_array_almost_equal(P_3, P_manual_3)
 
 
 def test_kalman_predict_n_steps_armor_guard_and_performance():

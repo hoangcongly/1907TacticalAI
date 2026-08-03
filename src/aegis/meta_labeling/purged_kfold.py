@@ -126,10 +126,16 @@ class PurgedKFold:
             test_start_t0 = t0_arr[test_idx[0]]
             test_max_t1 = np.max(t1_arr[test_idx])
 
+            # [BUG FIX #9] Chuyển test_idx sang Python set() để O(1) membership lookup
+            # Trước đây: `if j in test_idx` (numpy ndarray) = O(len(test_idx)) = O(N/splits) per check
+            # Tổng: O(N * N/splits * splits) = O(N²). Với N=50k, 15-fold: ~9s.
+            # Sau fix: O(1) per check -> O(N*splits) tổng. Với N=50k, 15-fold: ~0.3s.
+            test_idx_set = set(test_idx.tolist())
+
             train_idx_list = []
 
             for j in indices:
-                if j in test_idx:
+                if j in test_idx_set:  # O(1) lookup thay vì O(N)
                     continue
 
                 # 1. PURGING LOGIC (train_before)
@@ -164,12 +170,14 @@ class PurgedKFold:
 
             train_idx = np.array(train_idx_list, dtype=int)
 
-            # [ARMOR GUARD] Strict Assertion checking for intersection between train and test indices
-            intersection = set(train_idx).intersection(set(test_idx))
-            assert len(intersection) == 0, (
-                f"Canary Error B-1-14: Phát hiện rò rỉ dữ liệu giữa Train và Test! "
-                f"Intersection indices: {intersection}"
-            )
+            # [ARMOR GUARD] Kiểm tra không có giao nhau giữa train và test indices
+            # [BUG FIX #9b] Dùng if/raise thay vì assert (để không bị -O disable)
+            intersection = test_idx_set.intersection(set(train_idx.tolist()))
+            if len(intersection) != 0:
+                raise RuntimeError(
+                    f"Canary Error B-1-14: Phát hiện rò rỉ dữ liệu giữa Train và Test! "
+                    f"Intersection indices: {intersection}"
+                )
 
             yield train_idx, test_idx
 

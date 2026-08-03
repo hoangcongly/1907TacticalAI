@@ -69,6 +69,11 @@ class CircuitBreaker:
             return CircuitBreakerState(CircuitBreakerTier.TIER_2_FLATTEN, 0.0, True, self.frozen_until_ms)
             
         if drawdown >= self.t1:
-            return CircuitBreakerState(CircuitBreakerTier.TIER_1_REDUCE, 0.5, is_frozen, self.frozen_until_ms)
+            # [BUG FIX #6] Khi is_frozen=True (vẫn trong thời gian đóng băng Tier 2),
+            # phải đặt max_position_multiplier=0.0 thay vì 0.5 — lệnh đóng băng ưu tiên cao hơn
+            # lệnh giảm vị thế. Trạng thái cũ (0.5 + is_frozen=True) là mâu thuẫn: consumer code
+            # nào kiểm tra multiplier mà không kiểm tra is_frozen sẽ cho phép giao dịch sai.
+            pos_multiplier = 0.0 if is_frozen else 0.5
+            return CircuitBreakerState(CircuitBreakerTier.TIER_1_REDUCE, pos_multiplier, is_frozen, self.frozen_until_ms)
             
         return CircuitBreakerState(CircuitBreakerTier.NORMAL, 1.0 if not is_frozen else 0.0, is_frozen, self.frozen_until_ms)

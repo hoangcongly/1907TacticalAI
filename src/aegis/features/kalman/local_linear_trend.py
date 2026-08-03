@@ -4,6 +4,27 @@ Triển khai thuần bằng Numpy để hỗ trợ Gap-handling predict-only (kh
 """
 import numpy as np
 
+
+def _ensure_symmetric_pd_2x2(mat: np.ndarray, min_jitter: float = 1e-12) -> np.ndarray:
+    """
+    [BUG FIX #2 - PHÒNG THỦ] Bảo vệ tính Positive Definite (PD) cho ma trận P 2x2.
+    Dùng Numpy thuần (không phải Numba) vì LocalLinearTrendKalman chạy trong Python OOP context.
+    Theo chuẩn SOP (giống TickLevelKalmanReplacer): Đối xứng hóa rồi kiểm tra jitter.
+    """
+    # 1. Đối xứng hóa chống lỗi floating-point tích lũy (P[0,1] vs P[1,0])
+    sym = 0.5 * (mat + mat.T)
+    # 2. Đảm bảo diagonal strictly positive
+    sym[0, 0] = max(sym[0, 0], min_jitter)
+    sym[1, 1] = max(sym[1, 1], min_jitter)
+    # 3. Kiểm tra định thức (PD ⇔ det > 0 và trace > 0)
+    det = sym[0, 0] * sym[1, 1] - sym[0, 1] * sym[0, 1]
+    if det <= min_jitter * min_jitter:
+        # Ridge jitter: tăng diagonal để cưỡng chế PD
+        jitter = abs(sym[0, 1]) + 1e-9
+        sym[0, 0] = max(sym[0, 0], jitter + 1e-9)
+        sym[1, 1] = max(sym[1, 1], jitter + 1e-9)
+    return sym
+
 class LocalLinearTrendKalman:
     def __init__(self, process_noise_level: float = 1e-4, process_noise_trend: float = 1e-5, observation_noise: float = 1e-2):
         """
@@ -68,6 +89,8 @@ class LocalLinearTrendKalman:
 
         self.x = x_pred + K * y
         self.P = (np.eye(2) - K @ self.H) @ P_pred
+        # [BUG FIX #2] Bảo vệ tính PD sau mỗi Update — floating-point tích lũy có thể làm mất PD
+        self.P = _ensure_symmetric_pd_2x2(self.P)
 
         return float(self.x[0, 0]), float(self.x[1, 0])
 

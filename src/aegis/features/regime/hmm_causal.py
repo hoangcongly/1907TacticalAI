@@ -13,9 +13,23 @@ class CausalHMM2State:
         means: [mu_0, mu_1]
         stds: [sigma_0, sigma_1]
         """
-        assert transition_matrix.shape == (2, 2)
-        assert len(means) == 2
-        assert len(stds) == 2
+        # [BUG FIX #3] Dùng if/raise thay vì assert (assert bị vô hiệu hóa bởi python -O trong production Docker)
+        if transition_matrix.shape != (2, 2):
+            raise ValueError(
+                f"[CausalHMM2State] transition_matrix phải có kích thước (2, 2), nhận {transition_matrix.shape}"
+            )
+        if len(means) != 2:
+            raise ValueError(
+                f"[CausalHMM2State] means phải có đúng 2 phần tử (2 trạng thái), nhận {len(means)}"
+            )
+        if len(stds) != 2:
+            raise ValueError(
+                f"[CausalHMM2State] stds phải có đúng 2 phần tử (2 trạng thái), nhận {len(stds)}"
+            )
+        if np.any(np.array(stds) <= 0):
+            raise ValueError(
+                f"[CausalHMM2State] Tất cả stds phải > 0 (phân phối Gaussian hợp lệ), nhận {stds}"
+            )
         
         self.A = transition_matrix
         self.means = means

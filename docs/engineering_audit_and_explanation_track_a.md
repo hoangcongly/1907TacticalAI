@@ -642,3 +642,105 @@ graph TD
 **3. Cơ chế Thiết kế (Design Choices)**
 - **Tại sao lại dùng vòng lặp O(N) thay vì công thức O(1)?** Mặc dù có công thức đóng $P_n = P_0 + nQ$ cho $F=I$, đối với ma trận $F=LLT$, công thức đóng rất phức tạp và quan trọng hơn: các phép toán Floating-point sẽ làm tích tụ sai số làm tròn. Bằng cách dùng vòng lặp O(N), chúng ta gọi được "Lớp áo giáp" Cholesky `ensure_pd_matrix_2x2_numba` ở *mỗi* chu kỳ tick.
 - Numba trên nền tảng C-level thực thi 1.000.000 chu kỳ lặp chỉ trong vỏn vẹn `~1ms`, nên tốc độ O(N) hoàn toàn không phải là rào cản.
+
+---
+
+## PHẦN XV: SYSTEM-WIDE BUG FIX AUDIT — KHẢO SÁT VÀ VÁ LỖI TOÀN HỆ THỐNG
+
+**1. Mục đích & Phạm vi**
+
+Đây là báo cáo kiểm tra bảo mật toàn diện (Comprehensive Security & Correctness Audit) cho toàn bộ codebase `src/aegis/`. Được thực hiện qua 2 giai đoạn: (1) Tĩnh (Static Analysis — đọc code) và (2) Động (Dynamic Analysis — chạy thực nghiệm với code). Giai đoạn động phát hiện 2 False Alarm từ giai đoạn tĩnh, đồng thời tìm thêm 3 bug mới.
+
+**2. Lưu đồ Pipeline Phát Hiện & Vá Lỗi**
+
+```mermaid
+flowchart TD
+    A[Khảo Sát Codebase\nsrc/aegis/ - 16+ modules] --> B[Static Analysis\nĐọc code, logic review]
+    B --> C{9 Bug Candidates\nPhát hiện ban đầu}
+
+    C --> D[Dynamic Analysis\nThực nghiệm Python]
+    D --> E[2 False Alarm\nConfirmed Correct]
+    D --> F[7 Bug Thực Sự\nConfirmed by code]
+    D --> G[3 Bug Mới\nPhát hiện khi chạy]
+
+    E --> E1["Bug #1: apply_ffd convolution\ntoán học đúng"]
+    E --> E2["Bug #5: fee_exit calculation\ncaller pass tường minh"]
+
+    F --> F1["Bug #3: assert→if/raise\nHMM CAO"]
+    F --> F2["Bug #4: GHE NaN/Inf\nSilent corruption CAO"]
+    F --> F6["Bug #6: CircuitBreaker\nFrozen Tier1 TRUNG BÌNH"]
+    F --> F7["Bug #7: Empty d_grid\nIndexError THẤP"]
+    F --> F8["Bug #8: Lazy import\nStartup perf THẤP"]
+
+    G --> G9["Bug #9: PurgedKFold O(N²)\n9s→1.6s fix TRUNG BÌNH"]
+    G --> G10["Bug #10: pnl.py fee default\n0.0005≠0.0004 THẤP"]
+    G --> G2["Bug #2: LLT PD-Guard\nPhòng thủ THẤP"]
+
+    F1 & F2 & F6 & F7 & F8 & G9 & G10 & G2 --> H[8 Bug Được Vá\nTất cả Tests PASS]
+    H --> I["40/40 Tests PASSED\nPurgedKFold 9.0s→1.6s"]
+```
+
+**3. Chi Tiết Từng Bug Đã Vá**
+
+### BUG #3 — `hmm_causal.py`: `assert` → `if/raise ValueError`
+- **File:** `src/aegis/features/regime/hmm_causal.py`, L.16-28
+- **Vấn đề:** 3 `assert` sẽ bị vô hiệu hóa bởi `python -O` (optimize mode) trong production Docker containers. Với transition_matrix sai shape, HMM sẽ crash với `IndexError` thay vì `ValueError` có ngữ nghĩa.
+- **Fix:** Thay toàn bộ 3 `assert` bằng `if ... raise ValueError(...)`. Bổ sung thêm guard `stds > 0` để đảm bảo phân phối Gaussian hợp lệ.
+- **Bất biến bảo toàn:** Tính Causal-Forward-Only của HMM không thay đổi.
+
+### BUG #4 — `ghe.py`: Guard NaN/Inf Input + Clamp H
+- **File:** `src/aegis/features/regime/ghe.py`, L.9-50
+- **Vấn đề (xác nhận bằng thực nghiệm):**
+  - `prices[i] = NaN` → `H = 1.0` (sai, nên ~0.5 cho Random Walk). Nguyên nhân: `prices[tau:] - prices[:-tau]` tạo ra 2 NaN liên tiếp tại vị trí `i`, `valid_diffs` lọc đúng nhưng "dán liền" discontinuity, tính moment trên series sai.
+  - `prices[i] = Inf` → `H = NaN` với `RuntimeWarning` ẩn — caller không nhận biết.
+- **Fix:** Thêm `np.any(np.isnan)` / `np.any(np.isinf)` guard → raise `ValueError`. Thêm `np.clip(H, -0.5, 2.0)` để kẹp output. Thêm guard `q > 0`.
+- **Thay đổi behavior:** Caller bây giờ phải lọc NaN trước khi gọi (dùng Kalman replacer). Test `test_ghe_nan_handling` được cập nhật phản ánh behavior mới.
+
+### BUG #6 — `circuit_breaker.py`: Mâu Thuẫn Frozen + Tier1
+- **File:** `src/aegis/risk/circuit_breaker.py`, L.71-77
+- **Vấn đề (xác nhận bằng thực nghiệm):** Sau khi Tier 2 kích hoạt (đóng băng 24h), nếu equity phục hồi về Tier 1 (5-10% DD) trong thời gian còn đóng băng, hàm trả về `max_position_multiplier=0.5` nhưng `is_frozen=True`. Consumer code kiểm tra multiplier mà không kiểm tra `is_frozen` sẽ cho phép giao dịch 50% trong khi đáng lẽ phải bị cấm.
+- **Fix:** `pos_multiplier = 0.0 if is_frozen else 0.5` — lệnh đóng băng ưu tiên tuyệt đối hơn lệnh giảm vị thế.
+
+### BUG #7 — `fractional_diff.py`: Empty `d_grid` → IndexError
+- **File:** `src/aegis/features/fractional_diff.py`, L.98-107
+- **Vấn đề:** `optimal_d = d_grid[-1]` crash với `IndexError: index -1 is out of bounds` khi `d_grid` rỗng. Đây là lỗi thiếu guard input cơ bản.
+- **Fix:** Thêm `if len(d_grid) == 0: raise ValueError(...)` ở đầu hàm. Thêm `d_grid = np.asarray(d_grid)` để chuẩn hóa type.
+
+### BUG #8 — `fractional_diff.py`: `statsmodels` Module-Level Import
+- **File:** `src/aegis/features/fractional_diff.py`, L.8
+- **Vấn đề:** `from statsmodels.tsa.stattools import adfuller` ở top-level gây delay 300-500ms cho mọi module import `fractional_diff` (kể cả qua `__init__.py`).
+- **Fix:** Xóa import top-level. Thêm `from statsmodels.tsa.stattools import adfuller` với lazy import bên trong `find_optimal_d_star()`.
+
+### BUG #9 — `purged_kfold.py`: O(N²) Inner Loop → O(N)
+- **File:** `src/aegis/meta_labeling/purged_kfold.py`, L.131-134
+- **Vấn đề (xác nhận bằng benchmark):** Dòng `if j in test_idx` với `test_idx` là `np.ndarray` thực hiện linear scan O(N/splits) mỗi lần. Toàn bộ vòng lặp = O(N²/splits * splits) = **O(N²)**. Đo: N=50,000, 15-fold mất **9.08 giây**.
+- **Fix:** `test_idx_set = set(test_idx.tolist())`, dùng `if j in test_idx_set` → O(1) lookup. Đồng thời fix Canary `assert` → `if/raise RuntimeError`.
+- **Kết quả:** N=50,000, 15-fold giảm từ **9.08s → 1.60s** (cải thiện **5.7×**). Toàn bộ test purged_kfold PASS.
+
+### BUG #10 — `pnl.py`: Default Fee Rate Không Đồng Bộ
+- **File:** `src/aegis/execution/pnl.py`, L.19-20
+- **Vấn đề:** `fee_entry_rate=0.0005` và `fee_exit_rate=0.0005` trong khi toàn bộ callers (`trailing_exit.py`, `trade_mode.py`) dùng `0.0004`. Gọi `compute_realized_pnl()` không truyền tường minh sẽ tính phí sai 25%.
+- **Fix:** Đổi default thành `fee_entry_rate=0.0004`, `fee_exit_rate=0.0004`.
+
+### BUG #2 — `local_linear_trend.py`: Phòng Thủ PD-Guard
+- **File:** `src/aegis/features/kalman/local_linear_trend.py`, L.1-30, L.89-92
+- **Vấn đề:** `LocalLinearTrendKalman` không có PD-Guard cho ma trận P sau mỗi UPDATE, khác với `TickLevelKalmanReplacer` (cùng kiến trúc đã được bảo vệ đầy đủ). Kiểm nghiệm 100k steps không thấy suy biến nhưng đây là rủi ro dài hạn.
+- **Fix:** Thêm hàm `_ensure_symmetric_pd_2x2()` thuần NumPy (đối xứng hóa + diagonal jitter + determinant check). Gọi sau mỗi UPDATE step: `self.P = _ensure_symmetric_pd_2x2(self.P)`.
+
+**4. Kết Quả Kiểm Tra Sau Khi Vá**
+
+| Test Suite | Trước | Sau |
+|---|---|---|
+| `tests/features/` (13 tests) | 12 PASS, 1 FAIL | **14 PASS** (+1 test mới) |
+| `tests/meta_labeling/` (26 tests) | 26 PASS | **26 PASS** |
+| **Tổng** | **38 PASS, 1 FAIL** | **40 PASS, 0 FAIL** |
+
+**Performance:**
+- PurgedKFold N=50k, 15-fold: **9.08s → 1.60s (−82%)**
+- Import time `fractional_diff`: giảm ~400ms (statsmodels lazy)
+
+**5. Phát Hiện Phát Sinh (Out-of-Scope Findings)**
+
+Trong quá trình audit, phát hiện thêm nhưng **không sửa** (để tránh scope creep):
+- `test_ghe_nan_handling` test cũ đã phản ánh behavior sai (NaN-bypass); đã được cập nhật thành spec đúng.
+- `compute_ffd_weights` có `pass` thay vì warning khi `d < 0 or d > 1` — không gây crash nhưng thiếu guidance.

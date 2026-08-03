@@ -16,8 +16,8 @@ def compute_realized_pnl(
     size_notional: float,
     leverage: float,
     exit_reason: Literal["SL", "TRAIL", "REGIME_FLIP", "TIME_STOP", "LIQUIDATION", "BOUNDARY_TRUNCATED"],
-    fee_entry_rate: float = 0.0005,
-    fee_exit_rate: float = 0.0005,
+    fee_entry_rate: float = 0.0004,   # [BUG FIX #10] Đồng bộ với callers: trailing_exit.py, trade_mode.py (0.0005 -> 0.0004)
+    fee_exit_rate: float = 0.0004,    # [BUG FIX #10] Biết Taker Fee tại hầu hết các sàn crypto là 0.04%
     funding_accrued_usd: float = 0.0,
     is_notional_in_usd: bool = True
 ) -> dict:

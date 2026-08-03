@@ -17,6 +17,7 @@ dependencies = [
     "numba>=0.58.0",
     "pyyaml>=6.0.1",
     "onnxruntime>=1.16.0",
+    "statsmodels>=0.14.0",
 ]
 
 [project.optional-dependencies]

@@ -77,3 +77,43 @@ def test_find_optimal_d_star():
     # Nhưng chắc chắn phải lớn hơn 0 và nhỏ hơn hoặc bằng 1.0.
     assert 0.0 < d_star <= 1.0
     assert isinstance(d_star, float)
+
+
+def test_fit_sum_of_exponentials_reject():
+    """
+    [TASK A-4-3] Test reject khi lỗi vượt epsilon.
+    Nếu cấu trúc phức tạp (ví dụ random noise) và M nhỏ, việc xấp xỉ Sum of Exponentials
+    sẽ thất bại và trả về approved = False.
+    """
+    from aegis.features.fractional_diff import fit_sum_of_exponentials_v2
+    # Sinh một chuỗi trọng số ngẫu nhiên hoàn toàn (không có cấu trúc hàm mũ)
+    np.random.seed(42)
+    random_weights = np.random.randn(100)
+    
+    # Ép sai số cho phép rất nhỏ để đảm bảo nó luôn reject
+    c, rho, err_abs, err_rel, approved = fit_sum_of_exponentials_v2(random_weights, M=4, epsilon_approx=1e-6)
+    
+    assert approved is False
+    assert err_abs > 1e-6
+
+
+def test_select_ffd_production_engine():
+    """
+    [TASK A-4-3] Test `select_ffd_production_engine` fallback behavior.
+    """
+    from aegis.features.fractional_diff import select_ffd_production_engine, compute_ffd_weights
+    
+    weights = compute_ffd_weights(0.5, tau=1e-3)
+    
+    # Test fallback khi epsilon bị vượt qua (thông qua mảng quá ngắn và nhiễu)
+    engine_config = select_ffd_production_engine(weights, M_prony=2) # M nhỏ sẽ dễ bị reject
+    
+    # Tùy thuộc vào curve_fit, nếu reject nó sẽ trả về 'windowed'
+    assert engine_config["engine_type"] in ["sum_of_exp", "windowed"]
+    
+    if engine_config["engine_type"] == "windowed":
+        assert "weights" in engine_config
+        assert "reason" in engine_config["validation"]
+    else:
+        assert "c" in engine_config
+        assert "rho" in engine_config

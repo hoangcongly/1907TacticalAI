@@ -153,3 +153,73 @@ def find_optimal_d_star(
     )
     
     return float(optimal_d)
+
+
+def fit_sum_of_exponentials_v2(weights: np.ndarray, M: int = 6, epsilon_approx: float = 1e-4):
+    """
+    [TASK A-4-3] Fit Sum of Exponentials (Prony Approximation) cho trọng số FFD.
+    SỬA LỖI v11.5: cho phép rho ÂM để tái tạo dấu đổi luân phiên của w_k ở vùng k nhỏ.
+    
+    Args:
+        weights (np.ndarray): Mảng trọng số gốc w_k(d).
+        M (int): Số lượng hàm mũ.
+        epsilon_approx (float): Ngưỡng sai số để approve thuật toán.
+        
+    Returns:
+        tuple: (c, rho, approx_error_abs, weighted_rel_error, approved)
+    """
+    from scipy.optimize import curve_fit  # Lazy import để tránh overhead
+
+    k = np.arange(len(weights))
+
+    def model(k, *params):
+        c = np.array(params[:M])
+        rho = np.array(params[M:])
+        # Use np.abs(rho) if k is fractional, but k is integer so rho**k is fine.
+        # But rho < 0 and k is float can cause NaN. 
+        # Actually k is np.arange (integers) so rho**k is valid for negative rho.
+        return np.sum(c[:, None] * (rho[:, None] ** k[None, :]), axis=0)
+
+    rho_init = np.concatenate([
+        np.linspace(0.5, 0.995, M - M // 2),
+        np.linspace(-0.5, -0.9, M // 2)
+    ])
+    c_init = np.ones(M) * (weights[0] / M)
+    p0 = np.concatenate([c_init, rho_init])
+    bounds = ([-np.inf] * M + [-0.9999] * M, [np.inf] * M + [0.9999] * M)
+
+    popt, _ = curve_fit(model, k, weights, p0=p0, bounds=bounds, maxfev=50000)
+    c, rho = popt[:M], popt[M:]
+    reconstructed = model(k, *popt)
+
+    approx_error_abs = float(np.max(np.abs(weights - reconstructed)))
+    # Tránh chia cho 0
+    denom = np.sum(weights ** 4)
+    weighted_rel_error = float(np.sum(((weights - reconstructed) * weights) ** 2) / denom) if denom > 0 else 0.0
+    
+    approved = approx_error_abs < epsilon_approx and weighted_rel_error < epsilon_approx
+    return c, rho, approx_error_abs, weighted_rel_error, approved
+
+
+def select_ffd_production_engine(ffd_weights_exact: np.ndarray, M_prony: int = 6) -> dict:
+    """
+    [TASK A-4-3] Windowed FFD (Phương án 1) là MẶC ĐỊNH production duy nhất. Sum-of-Exponentials
+    (Phương án 2) CHỈ được phép thay thế nếu approved=True TRÊN CHÍNH bộ trọng số d*
+    của cấu hình đã qua Module F.
+    """
+    c, rho, err_abs, err_rel, approved = fit_sum_of_exponentials_v2(ffd_weights_exact, M=M_prony)
+
+    if approved:
+        return {
+            "engine_type": "sum_of_exp", 
+            "c": c.tolist(), 
+            "rho": rho.tolist(),
+            "validation": {"approx_error_abs": err_abs, "weighted_rel_error": err_rel}
+        }
+    else:
+        w_star = ffd_weights_exact[np.abs(ffd_weights_exact) >= 1e-5]
+        return {
+            "engine_type": "windowed", 
+            "weights": w_star.tolist(),
+            "validation": {"approx_error_abs": err_abs, "weighted_rel_error": err_rel, "reason": "sum_of_exp REJECTED"}
+        }

@@ -11,6 +11,23 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install dependencies
-        run: pip install -e .[dev]
+        run: |
+          pip install -e .[dev]
+      - name: Run Lint
+        run: make lint
+      - name: Audit Module Status
+        run: python scripts/audit_module_status.py --check
+      - name: Check Skipped Tests
+        run: |
+          if grep -rn "mark.skip" tests/; then
+            echo "FAIL: còn test bị skip"
+            exit 1
+          fi
+      - name: Check Consolidated Tests
+        run: |
+          if find . -name "*consolidated*" | grep .; then
+            echo "FAIL: còn bản sao test"
+            exit 1
+          fi
       - name: Run Tests
-        run: pytest tests/ -v
+        run: pytest tests/ -q --strict-markers

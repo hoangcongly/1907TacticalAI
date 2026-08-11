@@ -76,3 +76,33 @@ microstructure_guards:
     origin: "v11.9 Liquidation Layer"
     rationale: "Đệm an toàn tối thiểu 15% giữa giá Cắt Lỗ (SL) và giá Thanh Lý cưỡng chế (Liquidation Price)."
 
+execution_costs:
+  maker_fee_rate:
+    value: 0.0001
+    unit: "ratio"
+    origin: "v11.9.1 Bug Fix #5"
+    rationale: "Phí mở/đóng lệnh (Maker Fee) chuẩn tại phần lớn các sàn giao dịch Crypto (0.01%)."
+
+  taker_fee_rate:
+    value: 0.0004
+    unit: "ratio"
+    origin: "v11.9.1 Bug Fix #5"
+    rationale: "Phí mở/đóng lệnh (Taker Fee) chuẩn tại phần lớn các sàn giao dịch Crypto (0.04%)."
+
+  liquidation_fee_rate:
+    value: 0.005
+    unit: "ratio"
+    origin: "v11.9.1 Bug Fix #5"
+    rationale: "Phí thanh lý cưỡng chế (Liquidation Clearance Fee) tiêu chuẩn, cao hơn nhiều lần so với Taker Fee (0.5%)."
+
+  spread_pct:
+    value: 0.0002
+    unit: "ratio"
+    origin: "v11.9.1 Bug Fix #7"
+    rationale: "Spread tối thiểu (0.02%) trên các tài sản Crypto."
+
+  slippage_penalty_factor:
+    value: 0.1
+    unit: "ratio"
+    origin: "v11.9.1 Bug Fix #7"
+    rationale: "Hệ số trượt giá dựa trên tỷ lệ size / volume."

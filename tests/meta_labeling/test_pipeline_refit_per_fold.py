@@ -17,12 +17,12 @@ class MockEstimator:
     def predict(self, X):
         return np.zeros(len(X))
 
-def test_pipeline_refit_per_fold_enforcement():
+def test_purged_kfold_index_generation_mock():
     """
-    [TDD VERIFICATION - REFIT PER FOLD ENFORCEMENT]:
-    Kiểm chứng bắt buộc kiến trúc: Mô hình (HMM, Kalman, FFD, ML)
-    phải được gọi hàm .fit() lại từ đầu (độc lập) trên mỗi fold của PurgedKFold,
-    không được phép fit 1 lần trên toàn bộ tập dữ liệu (gây rò rỉ tương lai).
+    [KHẮC PHỤC LỖ HỔNG #7 - MOCK GENERATOR VERIFICATION]:
+    Đổi tên test để phản ánh đúng thực tế: Test này không chạy pipeline thật, 
+    mà dùng MockEstimator để chứng minh thuật toán chia fold của PurgedKFold 
+    có khả năng ép buộc vòng lặp bên ngoài gọi hàm .fit() lại từ đầu (độc lập).
     """
     n_samples = 100
     X = pd.DataFrame({'feat': np.random.randn(n_samples)})

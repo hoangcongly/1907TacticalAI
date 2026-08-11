@@ -68,6 +68,9 @@ class CombinatorialPurgedKFold:
             t0 = np.arange(n_samples)
         else:
             t0 = np.asarray(pred_times)
+            # [KHẮC PHỤC LỖ HỔNG #6]: Kiểm tra tính đơn điệu tăng của thời gian
+            if not np.all(np.diff(t0) >= 0):
+                raise ValueError("Lỗi hải quan CPCV: mảng pred_times (t0) bắt buộc phải được sắp xếp tăng dần đơn điệu!")
 
         if eval_times is None:
             t1 = t0 + 1

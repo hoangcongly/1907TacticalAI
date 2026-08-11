@@ -104,8 +104,14 @@ def compute_deflated_sharpe_ratio(
     if variance_of_srs < 0.0:
         raise ValueError(f"Lỗi hải quan DSR: variance_of_srs không được âm, nhận {variance_of_srs}")
 
+    # Lấy số lượng trials thực tế đã chạy trên hệ thống
+    from aegis.core.experiment_tracker import ExperimentTracker
+    actual_trials = ExperimentTracker().get_total_trials()
+    # Nếu num_trials truyền vào lớn hơn số trials thực tế thì giữ num_trials lớn hơn
+    effective_num_trials = max(num_trials, actual_trials, 1)
+
     # Bước 1: Tính kỳ vọng SR tối đa (SR_0^*) từ N lần thử nghiệm
-    sr_expected_max = euler_mascheroni_approx_max_sr(sr_benchmark, num_trials, variance_of_srs)
+    sr_expected_max = euler_mascheroni_approx_max_sr(sr_benchmark, effective_num_trials, variance_of_srs)
 
     # Bước 2: Tính PSR với SR_benchmark = sr_expected_max
     dsr = compute_probabilistic_sharpe_ratio(
@@ -120,7 +126,7 @@ def compute_deflated_sharpe_ratio(
         "dsr": float(dsr),
         "sr_expected_max": float(sr_expected_max),
         "sr_estimated": float(sr_estimated),
-        "num_trials": int(num_trials),
+        "num_trials": int(effective_num_trials),
         "is_approved": bool(dsr >= approval_threshold)
     }
 

@@ -16,8 +16,10 @@ def compute_realized_pnl(
     size_notional: float,
     leverage: float,
     exit_reason: Literal["SL", "TRAIL", "REGIME_FLIP", "TIME_STOP", "LIQUIDATION", "BOUNDARY_TRUNCATED"],
-    fee_entry_rate: float = 0.0004,   # [BUG FIX #10] Đồng bộ với callers: trailing_exit.py, trade_mode.py (0.0005 -> 0.0004)
-    fee_exit_rate: float = 0.0004,    # [BUG FIX #10] Biết Taker Fee tại hầu hết các sàn crypto là 0.04%
+    entry_fill_type: Literal["maker", "taker"],
+    exit_fill_type: Literal["maker", "taker"],
+    maker_fee_rate: float = 0.0001,
+    taker_fee_rate: float = 0.0004,
     funding_accrued_usd: float = 0.0,
     is_notional_in_usd: bool = True
 ) -> dict:
@@ -37,12 +39,21 @@ def compute_realized_pnl(
     if math.isnan(entry_price) or math.isnan(exit_price):
         raise ValueError("Phát hiện giá rác NaN, dừng tính toán để bảo vệ PnL!")
 
-    if not isinstance(fee_entry_rate, (int, float)) or math.isnan(fee_entry_rate) or math.isinf(fee_entry_rate) or fee_entry_rate < 0:
-        raise ValueError(f"Lỗi hải quan: fee_entry_rate phải >= 0, nhận {fee_entry_rate}")
-    if not isinstance(fee_exit_rate, (int, float)) or math.isnan(fee_exit_rate) or math.isinf(fee_exit_rate) or fee_exit_rate < 0:
-        raise ValueError(f"Lỗi hải quan: fee_exit_rate phải >= 0, nhận {fee_exit_rate}")
+    if entry_fill_type not in ("maker", "taker"):
+        raise ValueError(f"entry_fill_type phải là 'maker' hoặc 'taker', nhận {entry_fill_type}")
+    if exit_fill_type not in ("maker", "taker"):
+        raise ValueError(f"exit_fill_type phải là 'maker' hoặc 'taker', nhận {exit_fill_type}")
+
+    if not isinstance(maker_fee_rate, (int, float)) or math.isnan(maker_fee_rate) or math.isinf(maker_fee_rate) or maker_fee_rate < 0:
+        raise ValueError(f"Lỗi hải quan: maker_fee_rate phải >= 0, nhận {maker_fee_rate}")
+    if not isinstance(taker_fee_rate, (int, float)) or math.isnan(taker_fee_rate) or math.isinf(taker_fee_rate) or taker_fee_rate < 0:
+        raise ValueError(f"Lỗi hải quan: taker_fee_rate phải >= 0, nhận {taker_fee_rate}")
     if not isinstance(funding_accrued_usd, (int, float)) or math.isnan(funding_accrued_usd) or math.isinf(funding_accrued_usd):
         raise ValueError(f"Lỗi hải quan: funding_accrued_usd không hợp lệ, nhận {funding_accrued_usd}")
+
+    # Resolve fee rates based on fill types
+    fee_entry_rate = maker_fee_rate if entry_fill_type == "maker" else taker_fee_rate
+    fee_exit_rate = maker_fee_rate if exit_fill_type == "maker" else taker_fee_rate
 
     # Phí vào lệnh luôn tính (chung cho cả 2 nhánh)
     fee_entry_cost = size_notional * fee_entry_rate
@@ -55,15 +66,18 @@ def compute_realized_pnl(
         # compute_liquidation_loss trả về -(margin) thuần (QĐ #7).
         gross_pnl = compute_liquidation_loss(size_notional, leverage)
         
-        # [ADVISORY DIRECTIVE v11.9] Nhánh Thanh lý khấu trừ phí mở lệnh và phí funding cộng dồn (funding_accrued_usd)
-        # phát sinh trong suốt quá trình giữ lệnh trước khi cháy.
-        # + Nếu funding_accrued_usd > 0 (trả phí): trừ đi làm tăng lỗ tổng (Net PnL âm hơn).
-        # + Nếu funding_accrued_usd < 0 (nhận rebate): trừ số âm (- (-)) thành cộng, làm giảm lỗ tổng.
-        # KHÔNG thu phí exit_fee để tránh đếm kép với liquidation clearance fee của sàn.
-        net_pnl = gross_pnl - fee_entry_cost - funding_accrued_usd
+        # [KHẮC PHỤC LỖ HỔNG #3]: TUYỆT ĐỐI KHÔNG KHẤU TRỪ THÊM FUNDING FEE!
+        # Do funding fee đã bòn rút Initial Margin từ trước, nó là nguyên nhân 
+        # đẩy giá thanh lý (P_liq) lại gần Entry hơn. Khoản lỗ tối đa chính bằng lượng 
+        # margin thực tế mất đi. Trừ thêm lần nữa là lỗi ĐẾM KÉP (Double-Count).
+        net_pnl = gross_pnl - fee_entry_cost
         
-        # Lợi suất (chưa đòn bẩy) dùng cho Kelly
-        realized_return = net_pnl / size_notional
+        # [KHẮC PHỤC LỖ HỔNG #1]: LỢI SUẤT CHƯA ĐÒN BẨY DÙNG CHO KELLY
+        # KHÔNG ĐƯỢC chia net_pnl / size_notional (tạo ra ảo giác đòn bẩy cao rủi ro thấp).
+        # Phải dùng biến động giá cơ sở tới ngưỡng thanh lý: r_u = (P_liq - P_entry) / P_entry * side
+        # Ngầm định exit_price được truyền vào đây chính là liquidation_price.
+        price_delta_pct = (exit_price - entry_price) / entry_price if side > 0 else (entry_price - exit_price) / entry_price
+        realized_return = price_delta_pct
         
         return {
             "gross_pnl": float(gross_pnl),

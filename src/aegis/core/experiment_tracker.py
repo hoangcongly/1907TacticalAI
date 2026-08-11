@@ -48,8 +48,12 @@ class ExperimentTracker:
     def __init__(self, log_dir: str = "logs/experiments"):
         if getattr(self, '_initialized', False):
             if self.log_dir != log_dir:
-                import warnings
-                warnings.warn(f"ExperimentTracker là Singleton. Đã khởi tạo với log_dir='{self.log_dir}'. Bỏ qua tham số log_dir='{log_dir}'.")
+                # [KHẮC PHỤC LỖ HỔNG #8]: Thay vì bỏ qua và gây rò rỉ log directory giữa các bài test,
+                # ta chủ động cấu hình lại thư mục log mới và khởi tạo lại file log.
+                self.log_dir = log_dir
+                os.makedirs(self.log_dir, exist_ok=True)
+                date_str = datetime.now(timezone.utc).strftime("%Y%m%d")
+                self.log_file = os.path.join(self.log_dir, f"trials_{date_str}.jsonl")
             return
             
         self.log_dir = log_dir
@@ -155,5 +159,23 @@ class ExperimentTracker:
                 f.write(json.dumps(record, sort_keys=True, default=_json_default) + "\n")
                 
         return param_hash
+
+    def get_total_trials(self) -> int:
+        """
+        Đếm tổng số lần chạy thử nghiệm (trials) đã ghi nhận trong tất cả các file log.
+        Dùng cho việc tính toán Deflated Sharpe Ratio (Multiple Testing Penalty).
+        """
+        count = 0
+        if self.log_dir and os.path.exists(self.log_dir):
+            for file_name in os.listdir(self.log_dir):
+                if file_name.endswith(".jsonl"):
+                    file_path = os.path.join(self.log_dir, file_name)
+                    try:
+                        with open(file_path, "r", encoding="utf-8") as f:
+                            for _ in f:
+                                count += 1
+                    except Exception:
+                        pass
+        return count
 
 

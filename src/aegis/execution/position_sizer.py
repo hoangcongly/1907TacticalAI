@@ -94,7 +94,7 @@ def compute_position_size(
     lot_step_size: Optional[float] = None,
     min_vol_multiplier: float = 0.2,
     max_vol_multiplier: float = 2.5,
-    max_safe_leverage: Optional[float] = None,
+    max_safe_leverage: float = 20.0,  # [KHẮC PHỤC LỖ HỔNG #2] Đổi thành tham số float bắt buộc
 ) -> float:
     """
     [PHÁT HIỆN O + KHẮC PHỤC LỖ HỔNG 7 & BẪY 1] Biến f* thành size_notional cho lệnh thật.

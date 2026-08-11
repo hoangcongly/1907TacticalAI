@@ -97,7 +97,7 @@ def resolve_trade_execution_params(
     leverage_requested: float = 10.0,
     maintenance_margin_rate: float = 0.005,
     fee_rate: float = 0.0004,
-    liquidation_fee_rate: float = 0.001,
+    liquidation_fee_rate: float = 0.005,
     safety_buffer_pct: float = 0.15,
     leverage_cap: float = 20.0,
     max_expected_funding_loss: float = 0.0,

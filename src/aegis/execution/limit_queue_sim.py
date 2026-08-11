@@ -237,12 +237,18 @@ def simulate_limit_fill_with_queue(
     queue_effective: float,
     order_size: float,
     subsequent_volumes: Union[list[float], np.ndarray],
+    limit_price: float,
+    side: int,
+    subsequent_highs: Union[list[float], np.ndarray],
+    subsequent_lows: Union[list[float], np.ndarray],
     timeout_bars: int = 5,
 ) -> dict:
     """
     Mô phỏng khả năng khớp lệnh giới hạn qua nhiều bar kề tiếp theo.
-    Lệnh khớp nếu tổng volume giao dịch thị trường kể từ lúc đặt vượt qua
-    lượng xếp hàng phía trước (queue_effective) + kích thước lệnh (order_size).
+    [KHẮC PHỤC LỖ HỔNG #4]: Kiểm tra Giá trước khi tính Volume.
+    Lệnh chỉ được tích lũy volume nếu thị trường thực sự quét qua limit_price.
+    - Lệnh Mua (side=1): quét qua nếu Low <= limit_price.
+    - Lệnh Bán (side=-1): quét qua nếu High >= limit_price.
     """
     if not isinstance(queue_effective, (int, float)) or queue_effective < 0 or math.isnan(queue_effective):
         raise ValueError(f"queue_effective không hợp lệ: {queue_effective}")
@@ -250,8 +256,13 @@ def simulate_limit_fill_with_queue(
         raise ValueError(f"order_size không hợp lệ: {order_size}")
     if not isinstance(timeout_bars, int) or timeout_bars <= 0:
         raise ValueError(f"timeout_bars phải là số nguyên dương: {timeout_bars}")
+    if side not in (1, -1):
+        raise ValueError(f"side phải là 1 hoặc -1, nhận {side}")
 
     vols_np = np.asarray(subsequent_volumes, dtype=np.float64)
+    highs_np = np.asarray(subsequent_highs, dtype=np.float64)
+    lows_np = np.asarray(subsequent_lows, dtype=np.float64)
+    
     if vols_np.ndim != 1 or np.any(vols_np < 0) or np.any(np.isnan(vols_np)):
         raise ValueError("subsequent_volumes phải là mảng 1D số thực >= 0 không chứa NaN.")
 
@@ -261,11 +272,21 @@ def simulate_limit_fill_with_queue(
     fill_bar_idx = -1
 
     for idx in range(min(timeout_bars, len(vols_np))):
-        cumulative_volume += float(vols_np[idx])
-        if cumulative_volume >= required_volume:
-            filled = True
-            fill_bar_idx = idx + 1  # 1-indexed count of bars elapsed
-            break
+        # [KHẮC PHỤC LỖ HỔNG #4]: Kiểm tra xem giá có chạm tới limit_price không
+        price_touched = False
+        if side > 0:
+            if lows_np[idx] <= limit_price:
+                price_touched = True
+        else:
+            if highs_np[idx] >= limit_price:
+                price_touched = True
+                
+        if price_touched:
+            cumulative_volume += float(vols_np[idx])
+            if cumulative_volume >= required_volume:
+                filled = True
+                fill_bar_idx = idx + 1  # 1-indexed count of bars elapsed
+                break
 
     return {
         "filled": bool(filled),

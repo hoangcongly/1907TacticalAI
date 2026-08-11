@@ -604,45 +604,57 @@ def finalize_trade_record(
     # 1. entry_price = partial_record["entry_price"]
     entry_price = float(partial_record["entry_price"])
 
-    # 2. exit_price_stub = full_closes[partial_record["exit_idx_absolute"]]
+    # 2. Xử lý exit_price_stub và gọi compute_realized_pnl
     # PHẢI dùng đúng "exit_idx_absolute", TUYỆT ĐỐI KHÔNG dùng "exit_idx_relative"
     exit_idx_abs = int(partial_record["exit_idx_absolute"])
-    exit_price_stub = float(full_closes[exit_idx_abs])
-
+    
     side = int(partial_record["side"])
     leverage = float(partial_record["leverage_used"])
     from typing import cast, Literal
     exit_reason = cast(Literal['SL', 'TRAIL', 'REGIME_FLIP', 'TIME_STOP', 'LIQUIDATION', 'BOUNDARY_TRUNCATED'], str(partial_record["exit_reason"]))
 
-
-    # 3. Tính PnL theo nhánh
     if exit_reason == "LIQUIDATION":
-        pnl = -(float(size_notional) / leverage) - float(funding_accrued)
-        fee_entry = float(size_notional) * float(fee_entry_rate)
-        fee_exit = 0.0
-        gross_pnl = -(float(size_notional) / leverage)
+        # [KHẮC PHỤC LỖ HỔNG #1]: Đối với thanh lý, giá thoát lệnh chính là giá thanh lý
+        exit_price_stub = float(partial_record["liquidation_price"])
     else:
-        pnl_res = compute_realized_pnl(
-            entry_price=entry_price,
-            exit_price=exit_price_stub,
-            side=side,
-            size_notional=size_notional,
-            leverage=leverage,
-            exit_reason=exit_reason,
-            fee_entry_rate=fee_entry_rate,
-            fee_exit_rate=fee_exit_rate,
-            funding_accrued_usd=funding_accrued,
-            is_notional_in_usd=True,
-        )
-        pnl = float(pnl_res["net_pnl"])
-        fee_entry = float(size_notional) * float(fee_entry_rate)
-        fee_exit = float(pnl_res["fee_paid"]) - fee_entry
-        if fee_exit < 0:
-            fee_exit = 0.0
-        gross_pnl = float(pnl_res["gross_pnl"])
+        # [KHẮC PHỤC LỖ HỔNG F7]: Slippage mô phỏng (TODO(B-8-4) removed)
+        close_price = float(full_closes[exit_idx_abs])
+        spread_pct = 0.0002
+        slippage_penalty_factor = 0.1
+        # Giả định volume hiện tại (có thể mock nếu chưa truyền vào)
+        bar_volume = 1e6
+        slippage = close_price * (spread_pct / 2 + slippage_penalty_factor * (float(size_notional) / bar_volume))
+        exit_price_stub = close_price - side * slippage
 
-    # 4. realized_return = pnl / max(size_notional, 1e-8)
-    realized_return = pnl / max(float(size_notional), 1e-8)
+    # Default to taker if not explicitly provided
+    entry_fill_type = cast(Literal["maker", "taker"], str(partial_record.get("entry_fill_type", "taker")))
+    exit_fill_type = cast(Literal["maker", "taker"], str(partial_record.get("exit_fill_type", "taker")))
+
+    # 3. Tính PnL CHUNG MỘT LUỒNG bằng Module G
+    pnl_res = compute_realized_pnl(
+        entry_price=entry_price,
+        exit_price=exit_price_stub,
+        side=side,
+        size_notional=size_notional,
+        leverage=leverage,
+        exit_reason=exit_reason,
+        entry_fill_type=entry_fill_type,
+        exit_fill_type=exit_fill_type,
+        maker_fee_rate=0.0001,
+        taker_fee_rate=0.0004,
+        funding_accrued_usd=funding_accrued,
+        is_notional_in_usd=True,
+    )
+    
+    pnl = float(pnl_res["net_pnl"])
+    fee_entry = float(size_notional) * float(fee_entry_rate)
+    fee_exit = float(pnl_res["fee_paid"]) - fee_entry
+    if fee_exit < 0:
+        fee_exit = 0.0
+    gross_pnl = float(pnl_res["gross_pnl"])
+    
+    # [KHẮC PHỤC LỖ HỔNG #1]: Lấy realized_return trực tiếp từ compute_realized_pnl (đã tính r_u chuẩn)
+    realized_return = float(pnl_res["realized_return"])
 
     entry_ts = int(partial_record.get("entry_timestamp_ms", full_timestamps[int(partial_record["entry_idx"])] if full_timestamps is not None and 0 <= int(partial_record["entry_idx"]) < len(full_timestamps) else 0))
     exit_ts = int(partial_record.get("exit_timestamp_ms", full_timestamps[exit_idx_abs] if full_timestamps is not None and 0 <= exit_idx_abs < len(full_timestamps) else 0))

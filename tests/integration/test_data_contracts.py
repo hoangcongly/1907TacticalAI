@@ -260,11 +260,13 @@ def test_leverage_does_not_affect_pnl_for_non_liquidated_exits():
     """
     res_lev_2 = compute_realized_pnl(
         entry_price=100.0, exit_price=110.0, side=1, size_notional=1000.0,
-        leverage=2.0, exit_reason="TRAIL"
+        leverage=2.0, exit_reason="TRAIL",
+        entry_fill_type="taker", exit_fill_type="taker"
     )
     res_lev_10 = compute_realized_pnl(
         entry_price=100.0, exit_price=110.0, side=1, size_notional=1000.0,
-        leverage=10.0, exit_reason="TRAIL"
+        leverage=10.0, exit_reason="TRAIL",
+        entry_fill_type="taker", exit_fill_type="taker"
     )
     
     assert res_lev_2["net_pnl"] == res_lev_10["net_pnl"], (

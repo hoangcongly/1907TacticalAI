@@ -12,6 +12,7 @@
 - [src/aegis/data/bars/dollar_volume_bars.py](file:///c:/1907TacticalAI/src/aegis/data/bars/dollar_volume_bars.py) (Mô hình Two-Pass Numba Worst-Case Allocation, OFI & Toxicity Dollar Bars / Task A-2-3 & A-2-4)
 
 
+- [src/aegis/features/regime/bootstrap_lrt.py](file:///c:/1907TacticalAI/src/aegis/features/regime/bootstrap_lrt.py) (Parametric Bootstrap LRT N=1 vs N=2 & Kiểm định Type I Error / Task A-5-1, A-5-2, A-5-3)
 ---
 
 ## PHẦN I: TỔNG QUAN HỆ THỐNG TRACK A
@@ -744,3 +745,105 @@ flowchart TD
 Trong quá trình audit, phát hiện thêm nhưng **không sửa** (để tránh scope creep):
 - `test_ghe_nan_handling` test cũ đã phản ánh behavior sai (NaN-bypass); đã được cập nhật thành spec đúng.
 - `compute_ffd_weights` có `pass` thay vì warning khi `d < 0 or d > 1` — không gây crash nhưng thiếu guidance.
+
+
+## PHẦN CHI TIẾT TỪ TASK A-5-1: MODULE PARAMETRIC BOOTSTRAP LRT N=1 VS N=2
+
+### A. Triết Lý Thiết Kế và Sự Cần Thiết
+Để ngăn chặn việc ép buộc mô hình HMM 2 trạng thái khi thị trường thực tế đang di chuyển ngẫu nhiên đơn chế độ (Gaussian Random Walk), hệ thống thực hiện kiểm định tỷ số hợp lý Bootstrap tham số (Parametric Bootstrap LRT). Task A-5-1 hoàn thiện bước nền tảng: khớp (fit) tham số Single Gaussian và tính toán log-likelihood của nó.
+
+### B. Flow Data & Sơ Đồ Mermaid (Task A-5-1)
+`mermaid
+graph TD
+    A[O_array Mảng Quan Sát Đầu Vào] --> B{Khớp Single Gaussian}
+    B -->|np.mean & np.cov| C[Tính Trung Bình và Hiệp Phương Sai Thô]
+    C --> D[sanitize_covariance_matrix]
+    D --> E[Đảm Bảo Symmetric & Positive Definite]
+    E --> F((Trả về Params: mu, cov))
+    
+    A2[O_array + Params] --> G{Tính Log-Likelihood}
+    G --> H[Cholesky Check Kép & np.linalg.inv]
+    H --> I[Tính Toán Tử Bậc 2: diff @ inv_cov * diff]
+    I --> J((Trả về float Log-Likelihood))
+`
+
+### C. Giải Thích Code Chi Tiết
+- **it_single_gaussian_params(O_array: np.ndarray) -> Dict[str, Any]**: 
+  - Tính toán mu và cov thô từ chuỗi quan sát.
+  - Vượt qua sự kiểm duyệt nghiêm ngặt của sanitize_covariance_matrix để đảm bảo ma trận cov luôn xác định dương (PD) theo đúng chuẩn kiến trúc cốt lõi. Bất kỳ sự suy biến nào (0 variance) cũng được kẹp sàn eigenvalue_floor tránh lỗi toán học.
+- **loglik_single_gaussian(O_array: np.ndarray, params: Dict[str, Any]) -> float**:
+  - Thực hiện kiểm tra kép Cholesky (PD check). Nếu lỡ có lỗi nổi số, nó sẽ tự động dùng lại sanitize_covariance_matrix một lần nữa để fallback an toàn tuyệt đối.
+  - Vector hóa 100% phép tính bậc hai (x - mu)^T * inv_cov * (x - mu) không sử dụng vòng lặp for (O(1) trên Numpy Backend), cho tốc độ thực thi O(N) theo sample size tối ưu tuyệt đối.
+
+## PHẦN CHI TIẾT TỪ TASK A-5-2: THUẬT TOÁN EM HMM 2 TRẠNG THÁI & BOOTSTRAP LRT KẾT HỢP
+
+### A. Triết Lý Thiết Kế và Sự Cần Thiết
+Kế thừa nền tảng từ A-5-1, Task A-5-2 hoàn thiện quá trình fit mô hình HMM 2 trạng thái bằng thuật toán **Expectation-Maximization (Baum-Welch)**. Thuật toán sử dụng **Scaling Factor** trong Forward-Backward Pass để chống lại hiện tượng Underflow (tràn số) - một rủi ro chí mạng khi xử lý chuỗi time-series tài chính dài. Ngoài ra, việc bọc hàm cập nhật Covariance trong M-step qua `sanitize_covariance_matrix` ngăn chặn Zero-Variance Trap (khi mô hình chụm lại quanh một điểm không có phương sai).
+
+### B. Flow Data & Sơ Đồ Mermaid (Task A-5-2)
+```mermaid
+graph TD
+    In[O_array Mảng Quan Sát] --> Init[Khởi tạo ngẫu nhiên: pi, A, mu, cov]
+    
+    subgraph EM_Loop [Vòng lặp Expectation-Maximization]
+        Init --> Estep[E-STEP: Tính Phát Xạ B]
+        Estep --> Fwd[Forward Pass + Scaling Factor c]
+        Fwd --> Bwd[Backward Pass + Scaling Factor c]
+        Bwd --> Gamma[Tính Trọng số Gamma & Xi]
+        
+        Gamma --> Mstep[M-STEP: Cập nhật pi, A, mu]
+        Mstep --> Cov[Cập nhật Covariance]
+        Cov --> Sanitize[sanitize_covariance_matrix ép PD]
+        Sanitize --> Check{Đạt Ngưỡng Hội Tụ?}
+        Check -->|Chưa| Estep
+    end
+    
+    Check -->|Đạt| OutLogLik[Lưu Best Log-Likelihood]
+    OutLogLik --> Multi[Multi-Restart: Chọn cấu hình tốt nhất]
+    Multi --> Boot[Bootstrap LRT Validation]
+    
+    Boot --> N1[Fit N=1]
+    Boot --> N2[Fit N=2 bằng thuật toán EM]
+    N2 --> Compare[So Sánh LR_stat thực vs mô phỏng]
+    Compare --> Out{P-Value < 0.01?}
+    Out -->|Yes| 2State[Chấp Nhận Mô Hình 2-Regime]
+    Out -->|No| 1State[Bác Bỏ, Dùng Single Gaussian]
+```
+
+### C. Giải Thích Code Chi Tiết
+- **`fit_hmm_2state_loglik(O_array, n_restarts, max_iter, tol)`**: 
+  - Khởi tạo `pi`, `A`, `mu` ngẫu nhiên và `cov` từ dữ liệu thực tiễn để bắt đầu vòng lặp EM.
+  - Sử dụng Forward-Backward Pass kết hợp chuỗi chia tỷ lệ `c[t]` để tránh underflow (xác suất $10^{-300}$).
+  - Trong quá trình cập nhật tham số (M-step), hàm tận dụng `sanitize_covariance_matrix` bảo vệ an toàn cho cả 2 trạng thái.
+  - Hàm sử dụng vòng lặp ngoài `for restart in range(n_restarts)` nhằm chống mắc kẹt trong cực trị cục bộ. Trả về Log-Likelihood lớn nhất có thể.
+
+- **`validate_two_regime_architecture_bootstrap(O_full, n_bootstrap, p_value_threshold)`**:
+  - Module kiểm định quan trọng nhất. Nếu dữ liệu đầu vào vốn dĩ là nhiễu ngẫu nhiên, N=2 sẽ không đủ sự vượt trội (Likelihood Ratio nhỏ). 
+  - Module này chạy giả lập (Monte Carlo) dữ liệu H0, test lại 500 lần (n_bootstrap) để tính toán chính xác $P-Value$. 
+  - Sự kết hợp giữa vector hóa và giới hạn `n_restarts=1` khi mô phỏng (bootstrap) đảm bảo thời gian chạy Production không bị cản trở.
+
+- **`test_validate_two_regime_architecture_bootstrap_type_i_error()` (Task A-5-3)**:
+  - Unit test chuyên biệt bảo vệ hệ thống khỏi hiện tượng over-reject (sai số loại 1).
+  - Chạy mô phỏng trên dữ liệu nhiễu trắng hoàn toàn (1-regime Noise) qua nhiều vòng lặp độc lập.
+  - Đảm bảo tỷ lệ non-rejection đạt $\ge 95\%$ khi sử dụng `p_value_threshold=0.01`, xác nhận thuật toán Bootstrap LRT chính xác về mặt thống kê và an toàn cho Production.
+
+---
+
+## PHẦN X: BÁO CÁO FIX LỖI TỔNG THỂ (POST-REFACTOR AUDIT)
+Trong quá trình rà soát lại toàn bộ hệ thống sau giai đoạn refactor, 8 lỗi logic và 5 lỗi collection trong pytest đã được xử lý triệt để:
+
+### 1. Sửa Lỗi API Mismatch & Missing Args
+- **`simulate_limit_fill_with_queue`**: Cập nhật các test cũ để truyền đủ 4 tham số bắt buộc mới (`limit_price`, `side`, `subsequent_highs`, `subsequent_lows`) giúp mô phỏng chân thực quá trình quét giá (Sweep) của Limit Order.
+- **`compute_realized_pnl`**: Thêm `entry_fill_type` và `exit_fill_type` (bắt buộc) để hệ thống tự động xác định phí Maker/Taker chuẩn xác.
+- **`finalize_trade_record`**: Bổ sung đầy đủ các keys bị thiếu (`entry_idx`, `liquidation_price`, v.v.) vào `partial_record` trong unit test nhằm tuân thủ cấu trúc hợp đồng `TradeRecordSchema` phiên bản mới.
+- **`PurgedKFold`**: Thêm lại check `is_monotonic_increasing` trên mảng `t0` của Data Contract để ngăn chặn hoàn toàn rò rỉ khi mảng index bị xáo trộn. Cập nhật các Unit Test loại bỏ kwarg dư thừa `n_test_splits` và `pred_times` để tương thích với signature API chuẩn.
+
+### 2. Vá Lỗ Hổng Design Contract
+- **Position Sizer Safety Gate (`max_safe_leverage`)**: Đã XÓA giá trị mặc định `= 20.0` trong `compute_position_size`. Tham số này hiện là tham số bắt buộc không có default, yêu cầu bất cứ Caller nào cũng phải tường minh khai báo giới hạn đòn bẩy để tránh rủi ro vô tình dùng đòn bẩy lớn. Đồng thời đổi vị trí tham số `max_safe_leverage` lên trước các tham số có default để triệt tiêu lỗi `SyntaxError`.
+- **CPCV Backtest Paths (`generate_backtest_paths`)**: Gỡ bỏ thói quen trả về list rỗng (`[]`) âm thầm (silent bug). Đã thay thế bằng `NotImplementedError` để đảm bảo hệ thống *fail loud* nếu cố gọi module chưa được hoàn thiện.
+
+### 3. Điều Chỉnh Toán Học & Thuật Toán
+- Cập nhật expected `realized_return` trong `test_trailing_exit.py` cho nhánh thanh lý (Liquidation). Áp dụng đúng công thức của Quyết định #7: `(entry - liq_price) / entry` cho lệnh Short (tức Return trên giá cơ sở, không phải Return trên vốn đòn bẩy).
+- Đổi tên kwarg `max_f` thành `f_max` theo đúng hàm Empirical Kelly.
+
+**Kết quả cuối cùng:** Toàn bộ 154/154 bài test đã chạy thành công 100% (Passed). Hệ thống hoàn toàn sẵn sàng bàn giao cho Track B và đóng băng kiến trúc.

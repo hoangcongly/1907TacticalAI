@@ -87,6 +87,7 @@ class AccountStateTracker:
 def compute_position_size(
     f_star: float,
     current_equity: float | AccountStateTracker,
+    max_safe_leverage: float,   # [BẮT BUỘC] Caller phải cung cấp tường minh — không có giá trị mặc định
     lambda_kelly: float = DEFAULT_LAMBDA_KELLY,
     max_notional_cap: Optional[float] = None,
     atr_hist_mean_pct: Optional[float] = None,
@@ -94,7 +95,6 @@ def compute_position_size(
     lot_step_size: Optional[float] = None,
     min_vol_multiplier: float = 0.2,
     max_vol_multiplier: float = 2.5,
-    max_safe_leverage: float = 20.0,  # [KHẮC PHỤC LỖ HỔNG #2] Đổi thành tham số float bắt buộc
 ) -> float:
     """
     [PHÁT HIỆN O + KHẮC PHỤC LỖ HỔNG 7 & BẪY 1] Biến f* thành size_notional cho lệnh thật.
@@ -153,10 +153,9 @@ def compute_position_size(
     size_notional = f_star * lambda_kelly * effective_equity * vol_multiplier
 
     # Kiểm duyệt cuối cùng qua rào chắn L_max (Mandatory Safety Gate)
-    if max_safe_leverage is not None:
-        if not isinstance(max_safe_leverage, (int, float)) or math.isnan(max_safe_leverage) or math.isinf(max_safe_leverage) or max_safe_leverage <= 0:
-            raise ValueError(f"max_safe_leverage phải > 0 và hợp lệ, nhận {max_safe_leverage}")
-        size_notional = min(size_notional, max_safe_leverage * effective_equity)
+    if not isinstance(max_safe_leverage, (int, float)) or math.isnan(max_safe_leverage) or math.isinf(max_safe_leverage) or max_safe_leverage <= 0:
+        raise ValueError(f"max_safe_leverage phải > 0 và hợp lệ, nhận {max_safe_leverage}")
+    size_notional = min(size_notional, max_safe_leverage * effective_equity)
 
     # Trần tuyệt đối (nếu có)
     if max_notional_cap is not None:

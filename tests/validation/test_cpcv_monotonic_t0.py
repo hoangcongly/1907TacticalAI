@@ -3,37 +3,45 @@ import pandas as pd
 import numpy as np
 from aegis.validation.cpcv import PurgedKFold
 
+
 def test_cpcv_monotonic_t0():
     """
     A3 / G2: Đảm bảo thời gian bắt đầu của label (t0) hoặc array index phải tăng nghiêm ngặt (monotonic).
     Nếu không tăng nghiêm ngặt, cơ chế purge/embargo sẽ bị sai (vì nó dựa vào việc searchsorted).
     """
     n_samples = 100
-    times = pd.Series(pd.date_range("2023-01-01", periods=n_samples, freq="1H"))
-    
+    times = pd.Series(pd.date_range("2023-01-01", periods=n_samples, freq="1h"))
+
     # Tạo label array sao cho t0 bị XÁO TRỘN.
     # Trong AEGIS, pred_times đóng vai trò là mảng nhãn, cần phải được sort.
     # PurgedKFold sẽ raise ValueError nếu pred_times không đơn điệu.
     t0_shuffled = pd.Series(np.random.permutation(times.values))
     t1 = t0_shuffled + pd.Timedelta(hours=1)
-    
-    cv = PurgedKFold(n_splits=3, n_test_splits=1)
+
+    # PurgedKFold không có n_test_splits — dùng n_splits trực tiếp
+    cv = PurgedKFold(n_splits=3)
+
+    # Dùng event_times pd.Series thay cho pred_times / eval_times
+    event_times = pd.Series(t1.values, index=t0_shuffled)
     
     with pytest.raises(ValueError, match="monotonically increasing"):
-        list(cv.split(X=np.zeros(n_samples), pred_times=t0_shuffled, eval_times=t1))
+        list(cv.split(X=np.zeros(n_samples), event_times=event_times))
+
 
 def test_cpcv_embargo_bars():
     """
     A4 / G2: Kiểm tra Embargo dùng Bars.
     """
     n_samples = 100
-    times = pd.Series(pd.date_range("2023-01-01", periods=n_samples, freq="1H"))
+    times = pd.Series(pd.date_range("2023-01-01", periods=n_samples, freq="1h"))
     t0 = times
-    t1 = t0 + pd.Timedelta(hours=2) # Mỗi lệnh kéo dài 2 bars
-    
-    cv = PurgedKFold(n_splits=2, n_test_splits=1, embargo_bars=5)
-    splits = list(cv.split(X=np.zeros(n_samples), pred_times=t0, eval_times=t1))
-    
+    t1 = t0 + pd.Timedelta(hours=2)  # Mỗi lệnh kéo dài 2 bars
+
+    # PurgedKFold không có n_test_splits — truyền embargo_bars trực tiếp
+    cv = PurgedKFold(n_splits=2, embargo_bars=5)
+    event_times = pd.Series(t1.values, index=t0)
+    splits = list(cv.split(X=np.zeros(n_samples), event_times=event_times))
+
     for train_indices, test_indices in splits:
         # Tập train đứng ngay sau tập test phải bị dời đi 5 bars so với điểm kết thúc (t1) của test
         # Lấy index lớn nhất trong test

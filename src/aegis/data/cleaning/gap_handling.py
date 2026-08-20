@@ -10,7 +10,7 @@ from numba import njit
 from aegis.data.cleaning.tick_kalman_replacer import ensure_pd_matrix_2x2_numba
 
 
-@njit(nopython=True)
+@njit
 def _kalman_predict_n_steps_numba(
     x_0: np.ndarray,
     P_0: np.ndarray,

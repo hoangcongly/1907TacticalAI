@@ -118,8 +118,8 @@ def kalman_replacer_filter_series_numba(
         if skip_update:
             # --- GIAO THỨC PREDICT-ONLY (Bỏ qua Cập nhật) ---
             # Xử lý Bad Tick hoặc nhánh predict-only không dùng giá quan sát (NaN gap)
-            x = x_pred
-            P = P_pred
+            x = x_pred  # type: ignore[assignment]
+            P = P_pred  # type: ignore[assignment]
             replaced_prices[i] = y_hat_one_step
         else:
             # --- BƯỚC UPDATE (Khi gặp Good Tick hợp lệ) ---
@@ -246,7 +246,7 @@ class TickLevelKalmanReplacer:
         if is_bad_ticks is None:
             bad_ticks_arr = np.zeros(n, dtype=np.bool_)
         else:
-            bad_ticks_arr = np.asarray(is_bad_ticks, dtype=np.bool_)
+            bad_ticks_arr = np.asarray(is_bad_ticks, dtype=np.bool_)  # type: ignore[assignment]
 
         if len(bad_ticks_arr) != n:
             raise ValueError("Độ dài mảng prices và is_bad_ticks phải hoàn toàn khớp nhau")

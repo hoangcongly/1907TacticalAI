@@ -15,7 +15,7 @@ def test_kelly_does_not_reward_leverage():
     price_deltas = np.array([0.02] * 60 + [-0.10] * 40)
     
     # Kelly should only care about price_deltas!
-    f_star_base = solve_empirical_kelly_fraction(price_deltas, max_f=50.0)
+    f_star_base = solve_empirical_kelly_fraction(price_deltas, f_max=50.0)
     
     # Now simulate leverage. If the old bug was present, a -10% price drop with 10x leverage 
     # would result in liquidation, and the old system computed return as net_pnl/size_notional 
@@ -30,6 +30,6 @@ def test_kelly_does_not_reward_leverage():
     
     # To prove the fix, if we feed the true underlying price returns, Kelly behaves correctly.
     # f_star should be exactly the same.
-    f_star_leveraged = solve_empirical_kelly_fraction(price_deltas, max_f=50.0)
+    f_star_leveraged = solve_empirical_kelly_fraction(price_deltas, f_max=50.0)
     
     assert abs(f_star_base - f_star_leveraged) < 1e-9, "f* thay đổi theo đòn bẩy -> Kelly bị đầu độc!"

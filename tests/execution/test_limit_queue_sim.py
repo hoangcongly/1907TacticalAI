@@ -148,8 +148,13 @@ def test_b_2_2_simulate_limit_fill_with_queue():
     # bar 1: cum = 15.0 < 40.0
     # bar 2: cum = 35.0 < 40.0
     # bar 3: cum = 45.0 >= 40.0 => FILLED tại bar 3!
+    # Lệnh Mua (side=1) tại limit_price=100.0; lows đều <= 100.0 nên giá đã quét tới
+    highs = np.array([102.0, 103.0, 101.0, 105.0], dtype=np.float64)
+    lows  = np.array([99.0,  99.0,  99.0,  99.0],  dtype=np.float64)
     res = simulate_limit_fill_with_queue(
-        queue_effective=30.0, order_size=10.0, subsequent_volumes=vols, timeout_bars=5
+        queue_effective=30.0, order_size=10.0, subsequent_volumes=vols, timeout_bars=5,
+        limit_price=100.0, side=1,
+        subsequent_highs=highs, subsequent_lows=lows
     )
     assert res["filled"] is True
     assert res["fill_bar_idx"] == 3
@@ -157,7 +162,9 @@ def test_b_2_2_simulate_limit_fill_with_queue():
 
     # Khi timeout_bars = 2, lệnh chưa kịp khớp
     res_timeout = simulate_limit_fill_with_queue(
-        queue_effective=30.0, order_size=10.0, subsequent_volumes=vols, timeout_bars=2
+        queue_effective=30.0, order_size=10.0, subsequent_volumes=vols, timeout_bars=2,
+        limit_price=100.0, side=1,
+        subsequent_highs=highs, subsequent_lows=lows
     )
     assert res_timeout["filled"] is False
     assert res_timeout["timeout_reached"] is True

@@ -5,7 +5,7 @@ import polars as pl
 from numba import njit
 
 
-@njit(nopython=True)
+@njit
 def _pass1_extract_tick_counts(ticks: np.ndarray, daily_thresholds: np.ndarray) -> tuple:
     """
     [Lượt Quét 1 - Numba O(N)]
@@ -90,7 +90,7 @@ def compute_median_ticks_to_fill_per_tick(
     return median_per_tick
 
 
-@njit(nopython=True)
+@njit
 def generate_dollar_volume_bars_v11(
     ticks: np.ndarray, 
     daily_thresholds: np.ndarray, 

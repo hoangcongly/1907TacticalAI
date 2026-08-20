@@ -8,7 +8,7 @@ import numpy as np
 from numba import njit
 
 
-@njit(nopython=True)
+@njit
 def get_insufficient_history_mask(
     timestamps_ms: np.ndarray, 
     gap_threshold_ms: float, 

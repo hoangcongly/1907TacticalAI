@@ -8,6 +8,10 @@ import itertools
 from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
+# [Backward-compat alias] PurgedKFold sống tại aegis.meta_labeling.purged_kfold
+# nhưng được re-export tại đây để các test import nhất quán.
+from aegis.meta_labeling.purged_kfold import PurgedKFold  # noqa: F401
+
 
 class CombinatorialPurgedKFold:
     """
@@ -155,7 +159,4 @@ class CombinatorialPurgedKFold:
         # Chúng ta phân bổ các khối test của các fold vào phi đường backtest (paths) sao cho
         # mỗi đường backtest bao phủ trọn vẹn toàn bộ n_groups khối đúng 1 lần (tạo thành chuỗi hoàn chỉnh).
         # Cách chuẩn là tìm các tổ hợp disjoint groups ghép lại thành đầy đủ 0..M-1.
-        paths: List[np.ndarray] = []
-        # Với cấu trúc tổng quát, ta có thể trả về ánh xạ hoặc chuỗi hoàn chỉnh tùy theo tham số K và M.
-        # Nếu K chia hết M (ví dụ M=6, K=2 -> K ghép được 3 khối = trọn chuỗi), ta ghép các fold disjoint.
-        return paths
+        raise NotImplementedError("CPCV: generate_backtest_paths chưa được implement (Task B-xxx)")

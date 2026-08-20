@@ -99,6 +99,11 @@ class PurgedKFold:
         # Hỗ trợ cả số nguyên, số thực lẫn DatetimeIndex
         t0_arr = et.index.to_numpy()
         t1_arr = et.to_numpy()
+        
+        # A3/G2: Kiểm duyệt mảng Entry Times (t0) phải tăng đơn điệu
+        if not et.index.is_monotonic_increasing:
+            raise ValueError("Lỗi B-1-14: event_times index (t0) must be monotonically increasing")
+            
         if np.any(t1_arr < t0_arr):
             raise ValueError("Lỗi B-1-14: Phát hiện Exit Time (t1) nhỏ hơn Entry Time (t0) trong event_times")
 

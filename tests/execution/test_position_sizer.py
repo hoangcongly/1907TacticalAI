@@ -7,8 +7,8 @@ def test_position_size_uses_current_equity():
     chứng minh hệ thống dùng vốn hiện tại (compounding), không phải vốn gốc cố định.
     """
     f_star = 0.3
-    size_1000 = compute_position_size(f_star=f_star, current_equity=1000.0)
-    size_2000 = compute_position_size(f_star=f_star, current_equity=2000.0)
+    size_1000 = compute_position_size(f_star=f_star, current_equity=1000.0, max_safe_leverage=20.0)
+    size_2000 = compute_position_size(f_star=f_star, current_equity=2000.0, max_safe_leverage=20.0)
 
     assert abs(size_2000 - size_1000 * 2.0) < 1e-6, (
         f"size_notional phải tỷ lệ thuận với Equity: {size_2000} vs {size_1000 * 2.0}"
@@ -20,7 +20,7 @@ def test_position_size_uses_current_equity():
 
 def test_position_size_zero_f_star():
     """f_star = 0 → Không cược tiền (kỳ vọng âm hoặc thiếu dữ liệu)."""
-    size = compute_position_size(f_star=0.0, current_equity=10000.0)
+    size = compute_position_size(f_star=0.0, current_equity=10000.0, max_safe_leverage=20.0)
     assert size == 0.0, f"f_star=0 phải trả về 0, nhận {size}"
     print("✅ f_star=0 → size=0 PASSED!")
 
@@ -28,7 +28,7 @@ def test_position_size_zero_f_star():
 def test_position_size_max_cap():
     """Trần tuyệt đối giới hạn size_notional."""
     size = compute_position_size(
-        f_star=10.0, current_equity=100000.0,
+        f_star=10.0, current_equity=100000.0, max_safe_leverage=20.0,
         lambda_kelly=0.5, max_notional_cap=50000.0
     )
     assert abs(size - 50000.0) < 1e-6, f"Phải bị giới hạn ở 50000, nhận {size}"
@@ -38,12 +38,12 @@ def test_position_size_max_cap():
 def test_position_size_armor_guards():
     """[ARMOR GUARD] Chặn input rác."""
     bad_inputs = [
-        {"f_star": -1.0, "current_equity": 1000.0},
-        {"f_star": float("nan"), "current_equity": 1000.0},
-        {"f_star": 0.3, "current_equity": -1000.0},
-        {"f_star": 0.3, "current_equity": 0.0},
-        {"f_star": 0.3, "current_equity": 1000.0, "lambda_kelly": 0.0},
-        {"f_star": 0.3, "current_equity": 1000.0, "lambda_kelly": 1.5},
+        {"f_star": -1.0, "current_equity": 1000.0, "max_safe_leverage": 20.0},
+        {"f_star": float("nan"), "current_equity": 1000.0, "max_safe_leverage": 20.0},
+        {"f_star": 0.3, "current_equity": -1000.0, "max_safe_leverage": 20.0},
+        {"f_star": 0.3, "current_equity": 0.0, "max_safe_leverage": 20.0},
+        {"f_star": 0.3, "current_equity": 1000.0, "max_safe_leverage": 20.0, "lambda_kelly": 0.0},
+        {"f_star": 0.3, "current_equity": 1000.0, "max_safe_leverage": 20.0, "lambda_kelly": 1.5},
     ]
     for kwargs in bad_inputs:
         try:
@@ -64,7 +64,7 @@ def test_position_size_vol_ratio_black_swan():
     # TH1: Thị trường bình thường (ATR_t = ATR_hist = 2%)
     size_normal = compute_position_size(
         f_star=f_star, current_equity=equity, lambda_kelly=0.5,
-        atr_hist_mean_pct=0.02, atr_current_pct=0.02
+        atr_hist_mean_pct=0.02, atr_current_pct=0.02, max_safe_leverage=20.0
     )
     # Size = 100k * 2.0 * 0.5 * min(1.0, 1.0) = 100k
     assert abs(size_normal - 100_000.0) < 1.0
@@ -72,7 +72,7 @@ def test_position_size_vol_ratio_black_swan():
     # TH2: Flash Crash (ATR_t vọt lên 10%, gấp 5 lần quá khứ)
     size_crash = compute_position_size(
         f_star=f_star, current_equity=equity, lambda_kelly=0.5,
-        atr_hist_mean_pct=0.02, atr_current_pct=0.10
+        atr_hist_mean_pct=0.02, atr_current_pct=0.10, max_safe_leverage=20.0
     )
     # Size = 100k * 2.0 * 0.5 * min(1.0, 0.2) = 20k (Bị chém mất 80% sức mua)
     assert abs(size_crash - 20_000.0) < 1.0
@@ -83,11 +83,11 @@ def test_position_size_inf_guards():
     """Kiểm chứng hệ thống chặn đứng input ATR hoặc max_notional_cap bị Inf."""
     import pytest
     with pytest.raises(ValueError, match="ATR hiện tại rác"):
-        compute_position_size(f_star=1.0, current_equity=1000.0, atr_hist_mean_pct=0.02, atr_current_pct=float("inf"))
+        compute_position_size(f_star=1.0, current_equity=1000.0, atr_hist_mean_pct=0.02, atr_current_pct=float("inf"), max_safe_leverage=20.0)
     with pytest.raises(ValueError, match="ATR lịch sử rác"):
-        compute_position_size(f_star=1.0, current_equity=1000.0, atr_hist_mean_pct=float("inf"), atr_current_pct=0.02)
+        compute_position_size(f_star=1.0, current_equity=1000.0, atr_hist_mean_pct=float("inf"), atr_current_pct=0.02, max_safe_leverage=20.0)
     with pytest.raises(ValueError, match="max_notional_cap phải > 0 và hợp lệ"):
-        compute_position_size(f_star=1.0, current_equity=1000.0, max_notional_cap=float("inf"))
+        compute_position_size(f_star=1.0, current_equity=1000.0, max_notional_cap=float("inf"), max_safe_leverage=20.0)
     print("✅ [ARMOR GUARD] Position Sizer chặn đứng Inf cho ATR/Cap PASSED!")
 
 
@@ -100,7 +100,7 @@ def test_compute_position_size_round_notional_down():
     # f_star * lambda_kelly * equity = 0.5 * 0.5 * 1000 = 250.0.
     # Giả sử do vol_multiplier hay trần dẫn tới thô là 257.8 USD, bước nhảy lot_step_size = 10.0
     size = compute_position_size(
-        f_star=0.5156, current_equity=1000.0, lambda_kelly=0.5, lot_step_size=10.0
+        f_star=0.5156, current_equity=1000.0, lambda_kelly=0.5, lot_step_size=10.0, max_safe_leverage=20.0
     )
     # 0.5156 * 0.5 * 1000 = 257.8 -> floor(257.8 / 10.0) * 10.0 = 250.0
     assert size == pytest.approx(250.0)
@@ -117,7 +117,7 @@ def test_vol_targeting_clamped_by_lmax_safety_gate():
     size_no_gate = compute_position_size(
         f_star=1.0, current_equity=1000.0, lambda_kelly=0.5,
         atr_hist_mean_pct=0.05, atr_current_pct=0.01,
-        max_vol_multiplier=2.5, max_safe_leverage=None
+        max_vol_multiplier=2.5, max_safe_leverage=1000.0  # Giá trị cực lớn = thực tế không giới hạn
     )
     assert abs(size_no_gate - 1250.0) < 1e-6, f"Kỳ vọng 1250.0, nhận {size_no_gate}"
 
@@ -150,7 +150,7 @@ def test_account_state_tracker_isolated_margin_no_upnl_leak():
     assert abs(tracker.available_margin - 8_000.0) < 1e-6, "Available margin chỉ được là 10k - 2k = 8k, không cộng uPnL!"
 
     # Khi đưa vào compute_position_size ở chế độ chuẩn Isolated Margin
-    size = compute_position_size(f_star=1.0, current_equity=tracker, lambda_kelly=0.5)
+    size = compute_position_size(f_star=1.0, current_equity=tracker, lambda_kelly=0.5, max_safe_leverage=20.0)
     # size = 1.0 * 0.5 * 8000.0 = 4000.0
     assert abs(size - 4000.0) < 1e-6, f"Kỳ vọng 4000.0 (dựa trên 8k available_margin), nhận {size}"
 

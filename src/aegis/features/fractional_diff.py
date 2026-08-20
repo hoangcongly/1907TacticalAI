@@ -12,7 +12,7 @@ from numba import njit
 from aegis.core.experiment_tracker import ExperimentTracker
 from aegis.core.trial_classes import TrialClass
 
-@njit(nopython=True)
+@njit
 def compute_ffd_weights(d: float, tau: float = 1e-5) -> np.ndarray:
     """
     [TASK A-4-1] Tính toán trọng số vi phân từng phần (Fractional Differentiation Weights)

@@ -11,6 +11,7 @@
 - [src/aegis/meta_labeling/sizing/kelly_empirical.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/meta_labeling/sizing/kelly_empirical.py) (Động cơ tối ưu hóa Kelly thực nghiệm phi tuyến / Task B-1-1)  
 - [src/aegis/meta_labeling/sizing/liquidation_layer.py](file:///Users/hoangcongly/1907TacticalAI/aegis-trading-system/src/aegis/meta_labeling/sizing/liquidation_layer.py) (Xấp xỉ giá thanh lý & Bảo vệ đòn bẩy an toàn Perpetual Futures / Task v11.9)  
 
+- [src/aegis/features/regime/bootstrap_lrt.py](file:///c:/1907TacticalAI/src/aegis/features/regime/bootstrap_lrt.py) (Parametric Bootstrap LRT N=1 vs N=2 & Kiểm định Type I Error / Task A-5-1, A-5-2, A-5-3)
 ---
 
 ## PHẦN I: TỔNG QUAN HỆ THỐNG & TRIẾT LÝ THIẾT KẾ ĐỊNH LƯỢNG (HỆ THỐNG 3 THÀNH PHẦN)
@@ -1315,3 +1316,84 @@ flowchart TD
 ```
 
 
+
+
+## PHẦN CHI TIẾT TỪ TASK A-5-1: MODULE PARAMETRIC BOOTSTRAP LRT N=1 VS N=2
+
+### A. Triết Lý Thiết Kế và Sự Cần Thiết
+Để ngăn chặn việc ép buộc mô hình HMM 2 trạng thái khi thị trường thực tế đang di chuyển ngẫu nhiên đơn chế độ (Gaussian Random Walk), hệ thống thực hiện kiểm định tỷ số hợp lý Bootstrap tham số (Parametric Bootstrap LRT). Task A-5-1 hoàn thiện bước nền tảng: khớp (fit) tham số Single Gaussian và tính toán log-likelihood của nó.
+
+### B. Flow Data & Sơ Đồ Mermaid (Task A-5-1)
+`mermaid
+graph TD
+    A[O_array Mảng Quan Sát Đầu Vào] --> B{Khớp Single Gaussian}
+    B -->|np.mean & np.cov| C[Tính Trung Bình và Hiệp Phương Sai Thô]
+    C --> D[sanitize_covariance_matrix]
+    D --> E[Đảm Bảo Symmetric & Positive Definite]
+    E --> F((Trả về Params: mu, cov))
+    
+    A2[O_array + Params] --> G{Tính Log-Likelihood}
+    G --> H[Cholesky Check Kép & np.linalg.inv]
+    H --> I[Tính Toán Tử Bậc 2: diff @ inv_cov * diff]
+    I --> J((Trả về float Log-Likelihood))
+`
+
+### C. Giải Thích Code Chi Tiết
+- **it_single_gaussian_params(O_array: np.ndarray) -> Dict[str, Any]**: 
+  - Tính toán mu và cov thô từ chuỗi quan sát.
+  - Vượt qua sự kiểm duyệt nghiêm ngặt của sanitize_covariance_matrix để đảm bảo ma trận cov luôn xác định dương (PD) theo đúng chuẩn kiến trúc cốt lõi. Bất kỳ sự suy biến nào (0 variance) cũng được kẹp sàn eigenvalue_floor tránh lỗi toán học.
+- **loglik_single_gaussian(O_array: np.ndarray, params: Dict[str, Any]) -> float**:
+  - Thực hiện kiểm tra kép Cholesky (PD check). Nếu lỡ có lỗi nổi số, nó sẽ tự động dùng lại sanitize_covariance_matrix một lần nữa để fallback an toàn tuyệt đối.
+  - Vector hóa 100% phép tính bậc hai (x - mu)^T * inv_cov * (x - mu) không sử dụng vòng lặp for (O(1) trên Numpy Backend), cho tốc độ thực thi O(N) theo sample size tối ưu tuyệt đối.
+
+## PHẦN CHI TIẾT TỪ TASK A-5-2: THUẬT TOÁN EM HMM 2 TRẠNG THÁI & BOOTSTRAP LRT KẾT HỢP
+
+### A. Triết Lý Thiết Kế và Sự Cần Thiết
+Kế thừa nền tảng từ A-5-1, Task A-5-2 hoàn thiện quá trình fit mô hình HMM 2 trạng thái bằng thuật toán **Expectation-Maximization (Baum-Welch)**. Thuật toán sử dụng **Scaling Factor** trong Forward-Backward Pass để chống lại hiện tượng Underflow (tràn số) - một rủi ro chí mạng khi xử lý chuỗi time-series tài chính dài. Ngoài ra, việc bọc hàm cập nhật Covariance trong M-step qua `sanitize_covariance_matrix` ngăn chặn Zero-Variance Trap (khi mô hình chụm lại quanh một điểm không có phương sai).
+
+### B. Flow Data & Sơ Đồ Mermaid (Task A-5-2)
+```mermaid
+graph TD
+    In[O_array Mảng Quan Sát] --> Init[Khởi tạo ngẫu nhiên: pi, A, mu, cov]
+    
+    subgraph EM_Loop [Vòng lặp Expectation-Maximization]
+        Init --> Estep[E-STEP: Tính Phát Xạ B]
+        Estep --> Fwd[Forward Pass + Scaling Factor c]
+        Fwd --> Bwd[Backward Pass + Scaling Factor c]
+        Bwd --> Gamma[Tính Trọng số Gamma & Xi]
+        
+        Gamma --> Mstep[M-STEP: Cập nhật pi, A, mu]
+        Mstep --> Cov[Cập nhật Covariance]
+        Cov --> Sanitize[sanitize_covariance_matrix ép PD]
+        Sanitize --> Check{Đạt Ngưỡng Hội Tụ?}
+        Check -->|Chưa| Estep
+    end
+    
+    Check -->|Đạt| OutLogLik[Lưu Best Log-Likelihood]
+    OutLogLik --> Multi[Multi-Restart: Chọn cấu hình tốt nhất]
+    Multi --> Boot[Bootstrap LRT Validation]
+    
+    Boot --> N1[Fit N=1]
+    Boot --> N2[Fit N=2 bằng thuật toán EM]
+    N2 --> Compare[So Sánh LR_stat thực vs mô phỏng]
+    Compare --> Out{P-Value < 0.01?}
+    Out -->|Yes| 2State[Chấp Nhận Mô Hình 2-Regime]
+    Out -->|No| 1State[Bác Bỏ, Dùng Single Gaussian]
+```
+
+### C. Giải Thích Code Chi Tiết
+- **`fit_hmm_2state_loglik(O_array, n_restarts, max_iter, tol)`**: 
+  - Khởi tạo `pi`, `A`, `mu` ngẫu nhiên và `cov` từ dữ liệu thực tiễn để bắt đầu vòng lặp EM.
+  - Sử dụng Forward-Backward Pass kết hợp chuỗi chia tỷ lệ `c[t]` để tránh underflow (xác suất $10^{-300}$).
+  - Trong quá trình cập nhật tham số (M-step), hàm tận dụng `sanitize_covariance_matrix` bảo vệ an toàn cho cả 2 trạng thái.
+  - Hàm sử dụng vòng lặp ngoài `for restart in range(n_restarts)` nhằm chống mắc kẹt trong cực trị cục bộ. Trả về Log-Likelihood lớn nhất có thể.
+
+- **`validate_two_regime_architecture_bootstrap(O_full, n_bootstrap, p_value_threshold)`**:
+  - Module kiểm định quan trọng nhất. Nếu dữ liệu đầu vào vốn dĩ là nhiễu ngẫu nhiên, N=2 sẽ không đủ sự vượt trội (Likelihood Ratio nhỏ). 
+  - Module này chạy giả lập (Monte Carlo) dữ liệu H0, test lại 500 lần (n_bootstrap) để tính toán chính xác $P-Value$. 
+  - Sự kết hợp giữa vector hóa và giới hạn `n_restarts=1` khi mô phỏng (bootstrap) đảm bảo thời gian chạy Production không bị cản trở.
+
+- **`test_validate_two_regime_architecture_bootstrap_type_i_error()` (Task A-5-3)**:
+  - Unit test chuyên biệt bảo vệ hệ thống khỏi hiện tượng over-reject (sai số loại 1).
+  - Chạy mô phỏng trên dữ liệu nhiễu trắng hoàn toàn (1-regime Noise) qua nhiều vòng lặp độc lập.
+  - Đảm bảo tỷ lệ non-rejection đạt $\ge 95\%$ khi sử dụng `p_value_threshold=0.01`, xác nhận thuật toán Bootstrap LRT chính xác về mặt thống kê và an toàn cho Production.

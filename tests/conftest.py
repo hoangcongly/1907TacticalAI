@@ -1,5 +1,11 @@
 import pytest
 import numpy as np
+from aegis.core.experiment_tracker import ExperimentTracker
+
+@pytest.fixture(autouse=True)
+def reset_experiment_tracker():
+    yield
+    ExperimentTracker.reset_instance()
 
 
 @pytest.fixture

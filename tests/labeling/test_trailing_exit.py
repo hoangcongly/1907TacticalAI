@@ -373,12 +373,19 @@ def test_finalize_trade_record_reads_price_at_absolute_index():
     result = finalize_trade_record(partial, closes, size_notional=1000.0)
     expected_exit_price = closes[9]  # PHẢI đọc tại index 9 (absolute), KHÔNG phải index 3
     # Xác nhận gián tiếp qua việc realized_return khớp công thức dùng đúng closes[9]
+    # finalize_trade_record áp dụng slippage trước khi tính PnL
     from aegis.execution.pnl import compute_realized_pnl
+    spread_pct = 0.0002
+    slippage_penalty_factor = 0.1
+    bar_volume = 1e6
+    size_notional_val = 1000.0
+    slippage = expected_exit_price * (spread_pct / 2 + slippage_penalty_factor * (size_notional_val / bar_volume))
+    exit_price_with_slippage = expected_exit_price - 1 * slippage  # side=1 (Long)
     expected_pnl = compute_realized_pnl(
         entry_price=105.0,
-        exit_price=expected_exit_price,
+        exit_price=exit_price_with_slippage,
         side=1, size_notional=1000.0, leverage=5.0, exit_reason="TRAIL",
-        fee_entry_rate=0.0004, fee_exit_rate=0.0004
+        entry_fill_type="taker", exit_fill_type="taker"
     )["net_pnl"]
     assert abs(result["realized_return"] - expected_pnl / 1000.0) < 1e-9
 
@@ -393,7 +400,10 @@ def test_finalize_trade_record_liquidation_branch_uses_margin_formula():
         "exit_reason": "LIQUIDATION", "boundary_truncated": False,
     }
     result = finalize_trade_record(partial, closes, size_notional=1000.0)
-    expected_return = -(1000.0 / 5.0) / 1000.0  # = -0.20, KHÔNG dùng compute_realized_pnl thường
+    # [QĐ #7] realized_return cho nhánh LIQUIDATION = price_delta_pct (unleveraged price return)
+    # Short side=-1: price_delta_pct = (entry_price - liq_price) / entry_price
+    # = (105.0 - 110.0) / 105.0 = -0.047619...
+    expected_return = (105.0 - 110.0) / 105.0
     assert abs(result["realized_return"] - expected_return) < 1e-9
 
 

@@ -157,6 +157,31 @@ def main(argv=None) -> int:
               f"= ${o['notional']:>8.2f}  ({o['reason']})")
     if "submitted" in res:
         print(f"Đã gửi      : {res['submitted']} | bị từ chối: {res['rejected']}")
+
+    # Gửi thông báo Telegram nếu đã cấu hình
+    try:
+        from aegis.monitoring.alerts import TelegramNotifier
+        notifier = TelegramNotifier()
+        if notifier.is_configured:
+            if res.get("action") == "HALT":
+                notifier.send_circuit_breaker_alert(
+                    reason=res.get("reason", "HALT"),
+                    detail=res.get("detail", ""),
+                    drawdown=res.get("drawdown", 0.0),
+                    equity=res.get("equity"),
+                )
+            elif res.get("orders"):
+                notifier.send_order_alert(
+                    mode=mode,
+                    equity=res.get("equity", 0.0),
+                    orders=res.get("orders", []),
+                    turnover=res.get("turnover", 0.0),
+                    capacity=res.get("capacity"),
+                    data_age_hours=res.get("data_age_hours"),
+                )
+    except Exception as exc:
+        logging.warning("Không thể gửi thông báo Telegram: %s", exc)
+
     return 0
 
 

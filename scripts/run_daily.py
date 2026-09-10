@@ -14,12 +14,19 @@ MẶC ĐỊNH AN TOÀN: dry-run + testnet. Muốn chạm tiền thật phải n�
 import argparse
 import json
 import logging
+import pathlib
 import sys
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+src_path = str(ROOT / "src")
+if src_path not in sys.path:
+    sys.path.insert(0, src_path)
 
 from aegis.core.state_store import StateStore
 from aegis.data.ingestion.binance_rest import BinanceFuturesREST
 from aegis.oms.order_router import BinanceOrderRouter
 from aegis.pipelines.xs_live_pipeline import CrossSectionalLivePipeline, LiveConfig
+
 
 
 def show_status(pipe: CrossSectionalLivePipeline) -> int:

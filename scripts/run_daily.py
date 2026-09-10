@@ -66,6 +66,8 @@ def main(argv=None) -> int:
     ap.add_argument("--config", default=None,
                     help="File cấu hình chiến lược. Mặc định: artifacts/strategy_v3.json "
                          "nếu có, nếu không thì artifacts/strategy_validated.json (v1).")
+    ap.add_argument("--max-order-notional", type=float, default=None,
+                    help="Trần notional tối đa cho 1 lệnh (USD). Mặc định tự tính theo quy mô vốn.")
     a = ap.parse_args(argv)
 
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
@@ -84,9 +86,19 @@ def main(argv=None) -> int:
     cfg.leverage = a.leverage
     client = BinanceFuturesREST(testnet=not a.mainnet)
     dry = not a.live
+
+    max_notional = a.max_order_notional
+    if max_notional is None:
+        try:
+            bal = client.balance_usdt()
+            eq = bal.get("wallet_balance", 1000.0) + bal.get("unrealized_pnl", 0.0)
+            max_notional = max(1000.0, eq * cfg.leverage * 0.35)
+        except Exception:
+            max_notional = 1000.0
+
     pipe = CrossSectionalLivePipeline(
         config=cfg, client=client,
-        router=BinanceOrderRouter(client=client, dry_run=dry),
+        router=BinanceOrderRouter(client=client, max_order_notional=max_notional, dry_run=dry),
         state_store=StateStore(a.state), dry_run=dry,
     )
 

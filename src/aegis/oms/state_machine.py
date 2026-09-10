@@ -121,7 +121,8 @@ class ManagedOrder:
                 f"không thể chuyển sang {new_state.value}"
             )
 
-        if new_state not in VALID_TRANSITIONS[self.state]:
+        # Sự kiện lặp trên trạng thái chưa kết thúc (vd: polling lặp lại trạng thái NEW)
+        if new_state != self.state and new_state not in VALID_TRANSITIONS[self.state]:
             raise InvalidTransitionError(
                 f"Chuyển trạng thái không hợp lệ cho {self.client_order_id}: "
                 f"{self.state.value} -> {new_state.value}"

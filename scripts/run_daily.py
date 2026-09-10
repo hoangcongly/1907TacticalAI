@@ -46,9 +46,19 @@ def show_status(pipe: CrossSectionalLivePipeline) -> int:
     print(f"  Kill switch   : {'🔴 ĐÃ KÍCH HOẠT' if state.is_dead else '🟢 bình thường'}")
     print(f"  Số lần cân    : {state.rebalance_count}")
     print(f"  Vị thế mở     : {len(pos)}")
-    for p in pos:
+    pos_sorted = sorted(pos, key=lambda x: float(x.get("unRealizedProfit", 0)), reverse=True)
+    for p in pos_sorted:
         amt = float(p["positionAmt"])
-        print(f"     {p['symbol']:<14}{amt:>12.4f}  uPnL ${float(p['unRealizedProfit']):+8.2f}")
+        side = "LONG" if amt > 0 else "SHORT"
+        entry = float(p.get("entryPrice", 0))
+        mark = float(p.get("markPrice", 0))
+        pnl = float(p.get("unRealizedProfit", 0))
+        lev = float(p.get("leverage", 2.0))
+        roi = 0.0
+        if entry > 0:
+            raw_diff = (mark - entry) / entry if side == "LONG" else (entry - mark) / entry
+            roi = raw_diff * lev * 100.0
+        print(f"     {p['symbol']:<13} {side:<5} {amt:>11.4f}  vào ${entry:<9.4f} mark ${mark:<9.4f} uPnL ${pnl:>+7.2f} ({roi:>+6.2f}%)")
     if state.last_error:
         print(f"  Lỗi gần nhất  : {state.last_error[:120]}")
     print("=" * 62)

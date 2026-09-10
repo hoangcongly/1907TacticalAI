@@ -128,7 +128,9 @@ class AegisTelegramAIBot:
                 f"🎯 <b>Vị thế đang mở ({len(live)} cặp):</b>",
             ]
 
-            for p in live:
+            live_sorted = sorted(live, key=lambda x: float(x.get("unRealizedProfit", 0)), reverse=True)
+
+            for p in live_sorted:
                 sym = p["symbol"]
                 amt = float(p["positionAmt"])
                 entry = float(p.get("entryPrice", 0))
@@ -139,9 +141,17 @@ class AegisTelegramAIBot:
                 p_icon = "📈" if pnl >= 0 else "📉"
                 p_sign = "+" if pnl >= 0 else ""
 
+                # Tính ROI (%) với đòn bẩy
+                lev = float(p.get("leverage", 2.0))
+                roi_pct = 0.0
+                if entry > 0:
+                    raw_diff = (mark - entry) / entry if side == "LONG" else (entry - mark) / entry
+                    roi_pct = raw_diff * lev * 100.0
+
+                roi_sign = "+" if roi_pct >= 0 else ""
                 lines.append(
-                    f"{icon} <b>{sym}</b> ({side}): {abs(amt)} @ ${entry:,.4f}\n"
-                    f"   └ Mark: ${mark:,.4f} | {p_icon} uPnL: <code>{p_sign}${pnl:,.2f}</code>"
+                    f"{icon} <b>{sym}</b> ({side}): <code>{abs(amt)}</code> @ ${entry:,.4f}\n"
+                    f"   └ Mark: ${mark:,.4f} | {p_icon} uPnL: <code>{p_sign}${pnl:,.2f}</code> (<b>{roi_sign}{roi_pct:.2f}%</b>)"
                 )
 
             return "\n".join(lines)

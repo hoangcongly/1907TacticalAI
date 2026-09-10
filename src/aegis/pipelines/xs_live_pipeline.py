@@ -460,11 +460,16 @@ class CrossSectionalLivePipeline:
                       gross_notional=plan.gross_notional, skipped=len(plan.skipped),
                       position_multiplier=multiplier)
 
+        orders_list = [
+            {"symbol": o.symbol, "side": o.side, "qty": o.qty,
+             "price": o.price, "notional": round(o.notional, 2), "reason": o.reason}
+            for o in plan.orders
+        ]
+        result["orders"] = orders_list
+        result["equity"] = equity
+
         if self.dry_run:
-            result.update(action="DRY_RUN", orders=[
-                {"symbol": o.symbol, "side": o.side, "qty": o.qty,
-                 "price": o.price, "notional": round(o.notional, 2), "reason": o.reason}
-                for o in plan.orders])
+            result.update(action="DRY_RUN")
             return result
 
         # [FIX STALE-ORDERS] Huỷ lệnh treo từ lượt trước. Lệnh maker không khớp hết

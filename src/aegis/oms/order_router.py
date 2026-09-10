@@ -52,11 +52,21 @@ class BinanceOrderRouter:
         order_book: Optional[OrderBook] = None,
         max_order_notional: float = DEFAULT_MAX_ORDER_NOTIONAL,
         dry_run: bool = False,
+        notifier: Optional[Any] = None,
     ):
         self.client = client or BinanceFuturesREST()
         self.book = order_book or OrderBook()
         self.max_order_notional = float(max_order_notional)
         self.dry_run = bool(dry_run)
+
+        if notifier is None:
+            try:
+                from aegis.monitoring.alerts import TelegramNotifier
+                self.notifier = TelegramNotifier()
+            except Exception:
+                self.notifier = None
+        else:
+            self.notifier = notifier
 
         if self.client.credentials is not None and not self.client.credentials.testnet and not dry_run:
             logger.warning("⚠️  ROUTER ĐANG TRỎ MAINNET — lệnh sẽ dùng TIỀN THẬT")
@@ -180,6 +190,12 @@ class BinanceOrderRouter:
                                    backoff_ticks=backoff_ticks * 2)
             managed.transition(OrderState.REJECTED, error=str(exc))
             logger.error("Lệnh %s bị từ chối: %s", coid, exc)
+            if not self.dry_run and self.notifier and getattr(self.notifier, "is_configured", False):
+                self.notifier.send_anomaly_alert(
+                    title=f"Sàn từ chối lệnh {order.symbol}",
+                    message=f"Lệnh {order.side} {order.qty} @ ${order.price} bị từ chối: {exc}",
+                    level="ERROR",
+                )
             return managed
 
         managed.exchange_order_id = int(resp.get("orderId", 0)) or None
@@ -195,6 +211,19 @@ class BinanceOrderRouter:
         # module reconciliation sinh ra để bắt. Truy vấn lại để lấy trạng thái thật.
         if not post_only and not managed.is_terminal:
             managed = self.poll_status(managed)
+
+        if not self.dry_run and self.notifier and getattr(self.notifier, "is_configured", False):
+            self.notifier.send_single_order_alert(
+                symbol=order.symbol,
+                side=order.side,
+                qty=order.qty,
+                price=order.price,
+                notional=order.notional,
+                reason=order.reason,
+                status=managed.state.value,
+                order_type="LIMIT" if post_only else "MARKET",
+                client_order_id=coid,
+            )
 
         return managed
 
@@ -253,6 +282,12 @@ class BinanceOrderRouter:
                 results.append(self.submit(order, filt, post_only=post_only, epoch_bucket=bucket))
             except OrderRejected as exc:
                 logger.error("Chặn tại chỗ: %s", exc)
+                if not self.dry_run and self.notifier and getattr(self.notifier, "is_configured", False):
+                    self.notifier.send_anomaly_alert(
+                        title=f"Chặn lệnh {order.symbol}",
+                        message=f"Vi phạm kiểm tra an toàn: {exc}",
+                        level="WARNING",
+                    )
         return results
 
     # ------------------------------------------------------------------

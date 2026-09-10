@@ -28,8 +28,16 @@ class TelegramNotifier:
         timeout_s: float = 6.0,
     ):
         load_dotenv()
-        self.bot_token = bot_token or os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-        self.chat_id = chat_id or os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+        if bot_token is not None:
+            self.bot_token = bot_token.strip()
+        else:
+            self.bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+
+        if chat_id is not None:
+            self.chat_id = chat_id.strip()
+        else:
+            self.chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+
         self.timeout_s = timeout_s
 
     @property
@@ -154,6 +162,57 @@ class TelegramNotifier:
         lines.append(f"━━━━━━━━━━━━━━━━━━━━━")
         lines.append("🛑 <i>Hệ thống đã dừng gửi lệnh mới để bảo toàn vốn!</i>")
 
+    def send_single_order_alert(
+        self,
+        symbol: str,
+        side: str,
+        qty: float,
+        price: float,
+        notional: float,
+        reason: str = "",
+        status: str = "SUBMITTED",
+        order_type: str = "LIMIT",
+        client_order_id: Optional[str] = None,
+    ) -> bool:
+        """Thông báo từng lệnh riêng lẻ ngay tức thì khi phát sinh."""
+        if not self.is_configured:
+            return False
+
+        icon = "🟢" if side.upper() == "BUY" else "🔴"
+        status_icon = "✅" if status in ("FILLED", "ACKNOWLEDGED", "SUBMITTED", "NEW") else "⚠️"
+        now_str = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
+
+        lines = [
+            f"{icon} <b>[LỆNH {side.upper()}] {symbol}</b>",
+            f"━━━━━━━━━━━━━━━━━━━━━",
+            f"⚡ <b>Trạng thái:</b> {status_icon} <code>{status}</code>",
+            f"📦 <b>Khối lượng:</b> <code>{qty}</code>",
+            f"💵 <b>Giá đặt:</b> <code>${price:,.4f}</code>",
+            f"💰 <b>Giá trị:</b> <code>${notional:,.2f}</code>",
+            f"🏷️ <b>Loại / Mục đích:</b> {order_type} {f'({reason})' if reason else ''}",
+            f"⏰ <i>{now_str}</i>",
+        ]
+        return self.send_message("\n".join(lines))
+
+    def send_anomaly_alert(
+        self,
+        title: str,
+        message: str,
+        level: str = "WARNING",
+    ) -> bool:
+        """Thông báo bất thường (Lỗi sàn, lệch sổ, rớt mạng, nến cũ...)."""
+        if not self.is_configured:
+            return False
+
+        level_icon = "🚨" if level == "ERROR" else "⚠️"
+        now_str = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
+
+        lines = [
+            f"{level_icon} <b>[CẢNH BÁO BẤT THƯỜNG] {title}</b>",
+            f"━━━━━━━━━━━━━━━━━━━━━",
+            f"📝 <b>Nội dung:</b> {message}",
+            f"⏰ <i>{now_str}</i>",
+        ]
         return self.send_message("\n".join(lines))
 
 

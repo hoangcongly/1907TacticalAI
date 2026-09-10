@@ -12,10 +12,12 @@ MẶC ĐỊNH AN TOÀN: dry-run + testnet. Muốn chạm tiền thật phải n�
 `--live` lẫn `--mainnet`, và gõ xác nhận.
 """
 import argparse
+from datetime import datetime
 import json
 import logging
 import pathlib
 import sys
+import time
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 src_path = str(ROOT / "src")

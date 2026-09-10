@@ -68,6 +68,10 @@ def main(argv=None) -> int:
                          "nếu có, nếu không thì artifacts/strategy_validated.json (v1).")
     ap.add_argument("--max-order-notional", type=float, default=None,
                     help="Trần notional tối đa cho 1 lệnh (USD). Mặc định tự tính theo quy mô vốn.")
+    ap.add_argument("--loop", action="store_true",
+                    help="Chạy liên tục dạng daemon trong nền, tự động theo dõi và tái cân bằng")
+    ap.add_argument("--loop-interval-mins", type=float, default=60.0,
+                    help="Chu kỳ kiểm tra trạng thái trong chế độ loop (phút). Mặc định: 60 phút.")
     a = ap.parse_args(argv)
 
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
@@ -139,51 +143,114 @@ def main(argv=None) -> int:
     print(f"[{mode}] {desc} | đòn bẩy={cfg.leverage}x "
           f"| top_frac={cfg.top_frac}\n")
 
-    res = pipe.run_once(skip_data_refresh=a.skip_refresh)
+    from datetime import datetime
 
-    print(f"Hành động   : {res.get('action')}")
-    if res.get("reason"):
-        print(f"Lý do       : {res['reason']} — {res.get('detail','')}")
-    print(f"Equity      : ${res.get('equity',0):.2f}")
-    if "data_age_hours" in res:
-        print(f"Tuổi dữ liệu: {res['data_age_hours']}h")
-    if "n_targets" in res:
-        print(f"Mục tiêu    : {res['n_targets']} vị thế (sức chứa vốn: {res['capacity']})")
-    if "n_orders" in res:
-        print(f"Lệnh        : {res['n_orders']} | turnover ${res.get('turnover',0):.2f} "
-              f"| gross ${res.get('gross_notional',0):.2f} | bỏ qua {res.get('skipped',0)}")
-    for o in res.get("orders", [])[:40]:
-        print(f"   {o['side']:<5}{o['symbol']:<14}{o['qty']:>12}  @ ${o['price']:<12} "
-              f"= ${o['notional']:>8.2f}  ({o['reason']})")
-    if "submitted" in res:
-        print(f"Đã gửi      : {res['submitted']} | bị từ chối: {res['rejected']}")
+    def _execute_cycle():
+        res = pipe.run_once(skip_data_refresh=a.skip_refresh)
 
-    # Gửi thông báo Telegram nếu đã cấu hình
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"[{now_str}] Hành động   : {res.get('action')}")
+        if res.get("reason"):
+            print(f"Lý do       : {res['reason']} — {res.get('detail','')}")
+        print(f"Equity      : ${res.get('equity',0):.2f}")
+        if "data_age_hours" in res:
+            print(f"Tuổi dữ liệu: {res['data_age_hours']}h")
+        if "n_targets" in res:
+            print(f"Mục tiêu    : {res['n_targets']} vị thế (sức chứa vốn: {res['capacity']})")
+        if "n_orders" in res:
+            print(f"Lệnh        : {res['n_orders']} | turnover ${res.get('turnover',0):.2f} "
+                  f"| gross ${res.get('gross_notional',0):.2f} | bỏ qua {res.get('skipped',0)}")
+        for o in res.get("orders", [])[:40]:
+            print(f"   {o['side']:<5}{o['symbol']:<14}{o['qty']:>12}  @ ${o['price']:<12} "
+                  f"= ${o['notional']:>8.2f}  ({o['reason']})")
+        if "submitted" in res:
+            print(f"Đã gửi      : {res['submitted']} | bị từ chối: {res['rejected']}")
+
+        # Gửi thông báo Telegram nếu đã cấu hình
+        try:
+            from aegis.monitoring.alerts import TelegramNotifier
+            notifier = TelegramNotifier()
+            if notifier.is_configured:
+                if res.get("action") == "HALT":
+                    notifier.send_circuit_breaker_alert(
+                        reason=res.get("reason", "HALT"),
+                        detail=res.get("detail", ""),
+                        drawdown=res.get("drawdown", 0.0),
+                        equity=res.get("equity"),
+                    )
+                elif res.get("orders"):
+                    notifier.send_order_alert(
+                        mode=mode,
+                        equity=res.get("equity", 0.0),
+                        orders=res.get("orders", []),
+                        turnover=res.get("turnover", 0.0),
+                        capacity=res.get("capacity"),
+                        data_age_hours=res.get("data_age_hours"),
+                    )
+        except Exception as exc:
+            logging.warning("Không thể gửi thông báo Telegram: %s", exc)
+
+        return res
+
+    if not a.loop:
+        _execute_cycle()
+        return 0
+
+    # Chế độ LOOP chạy ngầm:
+    print(f"🚀 Bắt đầu chế độ Daemon Loop ({mode}) — Kiểm tra mỗi {a.loop_interval_mins:.0f} phút, tái cân bằng mỗi {cfg.rebalance_hours:.0f}h...")
     try:
         from aegis.monitoring.alerts import TelegramNotifier
         notifier = TelegramNotifier()
         if notifier.is_configured:
-            if res.get("action") == "HALT":
-                notifier.send_circuit_breaker_alert(
-                    reason=res.get("reason", "HALT"),
-                    detail=res.get("detail", ""),
-                    drawdown=res.get("drawdown", 0.0),
-                    equity=res.get("equity"),
-                )
-            elif res.get("orders"):
-                notifier.send_order_alert(
-                    mode=mode,
-                    equity=res.get("equity", 0.0),
-                    orders=res.get("orders", []),
-                    turnover=res.get("turnover", 0.0),
-                    capacity=res.get("capacity"),
-                    data_age_hours=res.get("data_age_hours"),
-                )
-    except Exception as exc:
-        logging.warning("Không thể gửi thông báo Telegram: %s", exc)
+            notifier.send_message(
+                f"🚀 <b>Aegis Trading Bot đã bắt đầu chạy ngầm ({mode})!</b>\n"
+                f"⏰ <i>Kiểm tra mỗi {a.loop_interval_mins:.0f} phút, tái cân bằng mỗi {cfg.rebalance_hours:.0f}h.</i>\n"
+                f"💰 <b>Vốn hiện tại:</b> ${pipe.client.balance_usdt().get('wallet_balance', 0):,.2f} USDT"
+            )
+    except Exception:
+        pass
+
+    while True:
+        try:
+            state = pipe.store.load()
+            now_ms = int(time.time() * 1000)
+            hours_since_last = (now_ms - state.last_rebalance_ms) / 3_600_000 if state.last_rebalance_ms else 999.0
+
+            if state.rebalance_count == 0 or hours_since_last >= cfg.rebalance_hours:
+                print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Đến hạn tái cân bằng ({hours_since_last:.1f}h >= {cfg.rebalance_hours:.0f}h)...")
+                _execute_cycle()
+            else:
+                bal = pipe.client.balance_usdt()
+                equity = bal["wallet_balance"] + bal["unrealized_pnl"]
+                dd = state.drawdown(equity)
+                print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Heartbeat: Equity ${equity:,.2f} | uPnL ${bal['unrealized_pnl']:+,.2f} | Đã qua {hours_since_last:.1f}/{cfg.rebalance_hours:.0f}h | DD: {dd*100:.2f}%")
+                blocked = pipe._check_circuit_breaker(state, equity, now_ms)
+                if blocked:
+                    print(f"⚠️ Circuit breaker kích hoạt: {blocked}")
+                    from aegis.monitoring.alerts import TelegramNotifier
+                    notifier = TelegramNotifier()
+                    if notifier.is_configured:
+                        notifier.send_circuit_breaker_alert(
+                            reason="CIRCUIT_BREAKER", detail=str(blocked), drawdown=dd, equity=equity
+                        )
+        except KeyboardInterrupt:
+            print("\nĐã nhận tín hiệu dừng bot.")
+            break
+        except Exception as exc:
+            logging.error("Lỗi trong chu trình daemon: %s", exc)
+            try:
+                from aegis.monitoring.alerts import TelegramNotifier
+                notifier = TelegramNotifier()
+                if notifier.is_configured:
+                    notifier.send_anomaly_alert(title="Lỗi tiến trình ngầm", message=str(exc), level="ERROR")
+            except Exception:
+                pass
+
+        time.sleep(a.loop_interval_mins * 60)
 
     return 0
 
 
 if __name__ == "__main__":
     sys.exit(main())
+

@@ -201,6 +201,37 @@ class AegisTelegramAIBot:
         except Exception as exc:
             return f"❌ Lỗi khi kích hoạt kill switch: {exc}"
 
+    def handle_sync(self) -> str:
+        """Xử lý lệnh /sync — đồng bộ vị thế thực tế từ sàn vào state store."""
+        try:
+            positions = self.client.position_risk()
+            real_pos = {}
+            for p in positions:
+                amt = float(p.get("positionAmt", 0))
+                if abs(amt) > 0:
+                    real_pos[p["symbol"]] = amt
+
+            bal = self.client.balance_usdt()
+            equity = bal["wallet_balance"] + bal["unrealized_pnl"]
+
+            state = self.store.load()
+            state.positions = real_pos
+            state.last_equity = equity
+            state.peak_equity = max(state.peak_equity, equity)
+            state.last_error = None
+            state.updated_ms = int(time.time() * 1000)
+            self.store.save(state)
+
+            lines = [
+                "✅ <b>ĐÃ ĐỒNG BỘ SỔ SÁCH VỚI BINANCE THÀNH CÔNG!</b>",
+                f"• Số vị thế ghi nhận: {len(real_pos)} cặp",
+                f"• Tổng tài sản (Equity): ${equity:,.2f}",
+                "• Trạng thái lỗi: Đã xoá sạch, hệ thống an toàn.",
+            ]
+            return "\n".join(lines)
+        except Exception as exc:
+            return f"❌ Lỗi khi đồng bộ sổ sách: {exc}"
+
     def process_message(self, text: str) -> str:
         """Xử lý tin nhắn từ người dùng (lệnh hoặc câu hỏi AI)."""
         cmd = text.strip().lower()
@@ -211,6 +242,7 @@ class AegisTelegramAIBot:
                 "Tôi là trợ lý định lượng cá nhân của anh, quản lý danh mục Futures tự động 24/7.\n\n"
                 "📌 <b>Các lệnh nhanh:</b>\n"
                 "• /status — Xem số dư, lãi/lỗ và các vị thế đang mở\n"
+                "• /sync — Đồng bộ tức thì sổ sách nội bộ khớp với sàn Binance\n"
                 "• /costs — Xem chi phí giao dịch & độ trung lập\n"
                 "• /rebalance — Kích hoạt tái cân bằng danh mục ngay\n"
                 "• /kill — Dừng khẩn cấp, đóng sạch toàn bộ vị thế\n\n"
@@ -219,6 +251,8 @@ class AegisTelegramAIBot:
             )
         elif cmd == "/status":
             return self.handle_status()
+        elif cmd == "/sync":
+            return self.handle_sync()
         elif cmd == "/costs":
             return self.handle_costs()
         elif cmd == "/rebalance":

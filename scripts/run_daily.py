@@ -55,12 +55,41 @@ def show_status(pipe: CrossSectionalLivePipeline) -> int:
     return 0
 
 
+def sync_state(pipe: CrossSectionalLivePipeline) -> int:
+    """Đồng bộ vị thế thực tế từ sàn vào state store để xoá sai lệch sổ sách."""
+    state = pipe.store.load()
+    positions = pipe.client.position_risk()
+    real_pos = {}
+    for p in positions:
+        amt = float(p.get("positionAmt", 0))
+        if abs(amt) > 0:
+            real_pos[p["symbol"]] = amt
+
+    bal = pipe.client.balance_usdt()
+    equity = bal["wallet_balance"] + bal["unrealized_pnl"]
+
+    state.positions = real_pos
+    state.last_equity = equity
+    state.peak_equity = max(state.peak_equity, equity)
+    state.last_error = None
+    state.updated_ms = int(time.time() * 1000)
+    pipe.store.save(state)
+    print("=" * 62)
+    print(f"  ✅ ĐÃ ĐỒNG BỘ THÀNH CÔNG {len(real_pos)} VỊ THẾ TỪ SÀN")
+    print("=" * 62)
+    for sym, amt in real_pos.items():
+        print(f"     {sym:<14} : {amt:>12.4f}")
+    print("=" * 62)
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Vòng lặp vận hành Aegis cross-sectional")
     ap.add_argument("--live", action="store_true", help="Đặt lệnh thật (mặc định là dry-run)")
     ap.add_argument("--mainnet", action="store_true", help="Dùng TIỀN THẬT thay vì testnet")
     ap.add_argument("--kill", action="store_true", help="Dừng khẩn cấp, đóng sạch vị thế")
     ap.add_argument("--status", action="store_true", help="Chỉ xem trạng thái")
+    ap.add_argument("--sync", action="store_true", help="Đồng bộ vị thế thực tế từ sàn vào state store")
     ap.add_argument("--costs", action="store_true", help="Báo cáo chi phí thực thi thực tế")
     ap.add_argument("--leverage", type=float, default=2.0)
     ap.add_argument("--skip-refresh", action="store_true", help="Bỏ qua tải dữ liệu mới")
@@ -128,6 +157,9 @@ def main(argv=None) -> int:
 
     if a.status:
         return show_status(pipe)
+
+    if a.sync:
+        return sync_state(pipe)
 
     if a.kill:
         # [FIX KILL] Kill switch KHÔNG BAO GIỜ được chạy dry-run. Một nút dừng khẩn

@@ -1,25 +1,22 @@
 {
   "schema_version": 1,
-  "peak_equity": 5098.90990032,
+  "peak_equity": 5240.38387373,
   "is_dead": false,
   "frozen_until_ms": 0,
   "positions": {
-    "AKEUSDT": 55163.0,
-    "ETCUSDT": -108.6,
+    "BCHUSDT": -2.546,
+    "1000PEPEUSDT": -146389.0,
     "RAYSOLUSDT": 623.8,
-    "LTCUSDT": -16.238,
-    "BTRUSDT": -16127.0,
-    "PENGUUSDT": -112202.0,
-    "ASTERUSDT": -1189.0,
-    "FORMUSDT": -3235.5,
-    "USELESSUSDT": 3631.0,
-    "HEMIUSDT": 120285.0,
-    "IOSTUSDT": 828404.0,
-    "BULLAUSDT": 10443.0
+    "DASHUSDT": 10.703,
+    "XRPUSDT": -464.9,
+    "USELESSUSDT": 1328.0,
+    "IOSTUSDT": 1383845.0,
+    "BULLAUSDT": 4825.0,
+    "ARBUSDT": 5471.1
   },
   "last_rebalance_ms": 1789026241502,
   "rebalance_count": 1,
-  "last_equity": 5098.90990032,
-  "last_error": "❌ LỆCH SỔ SÁCH (15 vị thế, 0 lệnh mồ côi)\n   FORMUSDT     nội bộ -3235.500000 | sàn +0.000000 | lệch +3235.500000 (nội bộ tưởng có vị thế nhưng sàn không có)\n   BCHUSDT      nội bộ +0.000000 | sàn -2.546000 | lệch -2.546000 (sàn có vị thế mà nội bộ không biết)\n   1000PEPEUSDT nội bộ +0.000000 | sàn -146389.000000 | lệch -146389.000000 (sàn có vị thế mà nội bộ không biết)\n   ASTERUSDT    nội bộ -1189.000000 | sàn +0.000000 | lệch +1189.000000 (nội bộ tưởng có vị thế nhưng sàn không có)\n   IOSTUSDT     nội bộ +828404.000000 | sàn +1383845.000000 | lệch +555441.000000 (lệch khối lượng)\n   LTCUSDT      nội bộ -16.238000 | sàn +0.000000 | lệch +16.238000 (nội bộ tưởng có vị thế nhưng sàn không có)\n   BULLAUSDT    nội bộ +10443.000000 | sàn +4825.000000 | lệch -5618.000000 (lệch khối lượng)\n   ETCUSDT      nội bộ -108.600000 | sàn +0.000000 | lệch +108.600000 (nội bộ tưởng có vị thế nhưng sàn không có)\n   ARBUSDT      nội bộ +0.000000 | sàn +5471.100000 | lệch +5471.100000 (sàn có vị thế mà nội bộ không biết)\n   BTRUSDT      nội bộ -16127.000000 | sàn +0.000000 | lệch +16127.000000 (nội bộ tưởng có vị thế nhưng sàn không có)\n   PENGUUSDT    nội bộ -112202.000000 | sàn +0.000000 | lệch +112202.000000 (nội bộ tưởng có vị thế nhưng sàn không có)\n   HEMIUSDT     nội bộ +120285.000000 | sàn +0.000000 | lệch -120285.000000 (nội bộ tưởng có vị thế nhưng sàn không có)\n   DASHUSDT     nội bộ +0.000000 | sàn +10.703000 | lệch +10.703000 (sàn có vị thế mà nội bộ không biết)\n   XRPUSDT      nội bộ +0.000000 | sàn -464.900000 | lệch -464.900000 (sàn có vị thế mà nội bộ không biết)\n   AKEUSDT      nội bộ +55163.000000 | sàn +0.000000 | lệch -55163.000000 (nội bộ tưởng có vị thế nhưng sàn không có)\n\nHệ thống DỪNG. Hãy kiểm tra thủ công trên sàn rồi:\n  - đóng vị thế ngoài dự kiến, hoặc\n  - cập nhật state store cho khớp thực tế, hoặc\n  - chạy kill switch để đưa về trạng thái phẳng.",
-  "updated_ms": 1789037752634
+  "last_equity": 5240.38387373,
+  "last_error": null,
+  "updated_ms": 1789048504820
 }

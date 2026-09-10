@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "peak_equity": 5098.90990032,
+  "is_dead": false,
+  "frozen_until_ms": 0,
+  "positions": {
+    "AKEUSDT": 55163.0,
+    "ETCUSDT": -108.6,
+    "RAYSOLUSDT": 623.8,
+    "LTCUSDT": -16.238,
+    "BTRUSDT": -16127.0,
+    "PENGUUSDT": -112202.0,
+    "ASTERUSDT": -1189.0,
+    "FORMUSDT": -3235.5,
+    "USELESSUSDT": 3631.0,
+    "HEMIUSDT": 120285.0,
+    "IOSTUSDT": 828404.0,
+    "BULLAUSDT": 10443.0
+  },
+  "last_rebalance_ms": 1789026241502,
+  "rebalance_count": 1,
+  "last_equity": 5098.90990032,
+  "last_error": null,
+  "updated_ms": 1789026403830
+}

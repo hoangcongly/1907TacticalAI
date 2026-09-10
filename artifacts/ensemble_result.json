@@ -1,0 +1,35 @@
+{
+  "ensemble_holdout": {
+    "n": 329.0,
+    "ann_return": 0.47223941268876074,
+    "ann_vol": 0.6650269722750253,
+    "sharpe": 0.7101056534192176,
+    "sortino": 1.62416632352811,
+    "t_stat": 0.9534314748257972,
+    "max_dd": 0.5067941962197214,
+    "calmar": 0.9318169312341938,
+    "hit_rate": 0.48024316109422494,
+    "total_return": 0.6564898450507544,
+    "cagr": 0.32308114400693233,
+    "avg_turnover": 1.0372077591445046,
+    "cost_drag_ann": 0.09259018219967287,
+    "funding_ann": 0.23893836973093802,
+    "avg_positions": 11.236363636363636,
+    "skew": 5.241799404052775,
+    "kurtosis": 48.20387095746943
+  },
+  "member_sharpes": {
+    "26ad/rank_binary/r12": 0.9479049580543306,
+    "26ad/zscore_riskparity/r12": 0.9816901674386748,
+    "old4/rank_binary/r12": 0.4295264351156416,
+    "old4/zscore_riskparity/r12": 0.49319934114177516,
+    "26ad/rank_binary/r18": 1.1183783401946483,
+    "26ad/zscore_riskparity/r18": 0.7078971839578679,
+    "old4/rank_binary/r18": 0.7293665026064882,
+    "old4/zscore_riskparity/r18": 0.8183687894243274
+  },
+  "grid_rebalance": 12,
+  "n_positions": 12,
+  "maker_ratio": 0.5,
+  "evidence_note": "Holdout đã bị dùng trước đó; con số này là CHỈ BÁO, không phải kiểm định ngoài mẫu sạch."
+}

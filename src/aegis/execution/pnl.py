@@ -101,7 +101,11 @@ def compute_realized_pnl(
         
     # Tính chi phí thoát lệnh trên Exit Notional thực tế (Vá BỌ SỐ 1: Exit Fee Accounting Flaw)
     if is_notional_in_usd:
-        exit_notional = max(0.0, size_notional + gross_pnl)
+        # [FIX F11] Exit notional = qty * exit_price, với qty = size_notional / entry_price.
+        # Công thức cũ (size_notional + gross_pnl) chỉ đúng cho LONG; với SHORT nó cho ra
+        # size*(2*entry - exit)/entry (soi gương quanh entry) => tính phí sai dấu:
+        # thu quá phí trên short thắng, thu thiếu phí trên short thua.
+        exit_notional = size_notional * (exit_price / entry_price)
         fee_exit_cost = exit_notional * fee_exit_rate
     else:
         # Nếu notional tính bằng Coin (Coin-M), giá trị USD tại thời điểm thoát là size_notional * exit_price

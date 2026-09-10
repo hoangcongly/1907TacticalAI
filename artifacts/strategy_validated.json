@@ -1,0 +1,51 @@
+{
+  "universe_file": "artifacts/universe_filtered.json",
+  "n_symbols": 59,
+  "signals": [
+    "funding_carry",
+    "momentum_90",
+    "ofi_flow",
+    "funding_mom"
+  ],
+  "combine": "zscore_mean",
+  "min_coverage": 3,
+  "top_frac": 0.1,
+  "rebalance_every": 6,
+  "interval": "4h",
+  "cost_rate": 0.0001,
+  "train": {
+    "ann": 1.1036593361860294,
+    "vol": 0.45256632213377673,
+    "sharpe": 2.4386687259061937,
+    "t": 5.007554521168448,
+    "dd": 0.2533618879986772,
+    "n": 1539.0
+  },
+  "holdout": {
+    "ann": 0.5616921620746196,
+    "vol": 0.451077111163418,
+    "sharpe": 1.2452242602731565,
+    "t": 1.6731845602886146,
+    "dd": 0.37525750401803903,
+    "n": 659.0
+  },
+  "holdout_uses": 2,
+  "note": "Lần dùng holdout thứ 2 — giá trị chứng cứ thấp hơn lần đầu. KHÔNG được tinh chỉnh tiếp rồi chạy lại.",
+  "exit_frac": 0.15,
+  "execution": {
+    "passive_wait_s": 300.0,
+    "requote": true,
+    "max_chase_bps": 15.0,
+    "passive_offset_ticks": 1,
+    "allow_taker_fallback": true,
+    "measured_maker_ratio_testnet": 0.378,
+    "measured_cost_bps_testnet": 2.87,
+    "note": "Testnet thanh khoản giả nên tỷ lệ maker thấp hơn mainnet thực tế."
+  },
+  "cost_sensitivity": {
+    "holdout_sharpe_at_1bp": 1.25,
+    "holdout_sharpe_at_2.96bp": 1.06,
+    "holdout_sharpe_at_4bp": 0.96,
+    "note": "Chiến lược sống được ở mọi mức chi phí đã thử."
+  }
+}

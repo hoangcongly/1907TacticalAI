@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0.0",
+  "dataset_manifest_hash": "5443851b7bc8988e4a1736780589bb044362e00eb2b73407f1a41a405ae5da5f",
+  "selected_features": [
+    "hl_spread",
+    "ret_1",
+    "ret_5",
+    "vol_ratio",
+    "ofi"
+  ],
+  "n_samples": 6,
+  "n_bars": 150,
+  "oos_sharpe": 3.356601542018671,
+  "dsr_stat": 1.0,
+  "truncation_rate": 0.2692307692307692,
+  "timestamp": 1788514451578,
+  "artifacts": {
+    "model": "model.pkl",
+    "selected_features": "selected_features.json",
+    "kelly_tables": "kelly_tables.json"
+  }
+}

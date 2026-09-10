@@ -132,6 +132,41 @@ def compute_sl_initial(
 # ============================================================================
 # [TASK B-1-4] REGIME-AWARE TRAILING EXIT V2 (ĐỐI XỨNG & REGIME-FLIP WITH ARMOR GUARDS)
 # ============================================================================
+def resolve_regime_exit_threshold(
+    p_trend_sample: np.ndarray,
+    quantile: float = 0.10,
+    mode: str = "follow",
+) -> float:
+    """
+    [FIX F6b] Ngưỡng thoát Regime-Flip TỰ CHUẨN HOÁ theo phân phối p_trend thực tế.
+
+    VÌ SAO CẦN: ngưỡng cũ là hằng số tuyệt đối (follow=0.35, fade=0.65), hiệu chỉnh
+    cho phân phối p_trend của HMM. Sau khi F6 thay HMM bằng Efficiency Ratio, phân
+    phối đổi hẳn — trên BTC 1h, p_trend có trung vị 0.203 nên `p_trend < 0.35` đúng
+    ở 80% số nến, giết 53.8% số lệnh bằng REGIME_FLIP trước khi chúng kịp phát triển.
+
+    Bài học tổng quát: mọi ngưỡng TUYỆT ĐỐI đặt trên một đại lượng có phân phối
+    phụ thuộc mô hình đều là lỗi chờ phát nổ. Lấy theo PHÂN VỊ thì bất biến.
+
+    CHỐNG RÒ RỈ: `p_trend_sample` PHẢI chỉ chứa dữ liệu train fold, tuyệt đối không
+    được là toàn bộ chuỗi.
+
+    - follow: thoát khi trend rơi xuống dưới phân vị `quantile` (mặc định thập phân vị).
+    - fade:   đối xứng, thoát khi trend vượt lên trên phân vị `1 - quantile`.
+    """
+    if not (0.0 < quantile < 0.5):
+        raise ValueError(f"quantile phải thuộc (0, 0.5), nhận {quantile}")
+
+    sample = np.asarray(p_trend_sample, dtype=np.float64)
+    sample = sample[np.isfinite(sample)]
+    if sample.size < 20:
+        # Quá ít mẫu để ước lượng phân vị -> giữ hằng số lịch sử làm phương án lùi.
+        return 0.35 if mode == "follow" else 0.65
+
+    q = quantile if mode == "follow" else (1.0 - quantile)
+    return float(np.clip(np.quantile(sample, q), 0.0, 1.0))
+
+
 def _update_regime_flip(
     p_trend_k: float, trade_mode: str, threshold: float, prev_count: int
 ) -> int:

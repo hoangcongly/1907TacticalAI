@@ -1,0 +1,16 @@
+{
+  "signals": [
+    "funding_carry",
+    "momentum_90",
+    "ofi_flow",
+    "risk_adj_mom",
+    "funding_mom"
+  ],
+  "combine": "chia \u0111\u1ec1u v\u1ed1n",
+  "top_frac": 0.1,
+  "rebalance_every": 6,
+  "interval": "4h",
+  "cost_rate": 0.0001,
+  "train_sharpe": 2.0305499788926102,
+  "train_ann": 0.5871580333390394
+}

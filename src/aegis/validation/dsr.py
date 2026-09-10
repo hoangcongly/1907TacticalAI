@@ -71,7 +71,8 @@ def compute_deflated_sharpe_ratio(
     sr_benchmark: float = 0.0,
     skewness: float = 0.0,
     kurtosis: float = 3.0,
-    approval_threshold: float = 0.95
+    approval_threshold: float = 0.95,
+    use_experiment_tracker: bool = False,
 ) -> Dict[str, Any]:
     """
     [ARMOR-PLATED GUARDS — HẢI QUAN BỌC THÉP]:
@@ -104,11 +105,25 @@ def compute_deflated_sharpe_ratio(
     if variance_of_srs < 0.0:
         raise ValueError(f"Lỗi hải quan DSR: variance_of_srs không được âm, nhận {variance_of_srs}")
 
-    # Lấy số lượng trials thực tế đã chạy trên hệ thống
-    from aegis.core.experiment_tracker import ExperimentTracker
-    actual_trials = ExperimentTracker().get_total_trials()
-    # Nếu num_trials truyền vào lớn hơn số trials thực tế thì giữ num_trials lớn hơn
-    effective_num_trials = max(num_trials, actual_trials, 1)
+    # ====================================================================
+    # [FIX F17] SỐ TRIALS PHẢI TƯỜNG MINH — KHÔNG ĐỌC TRẠNG THÁI TOÀN CỤC
+    # ====================================================================
+    # Bản cũ gọi ExperimentTracker().get_total_trials() (đếm số DÒNG trong
+    # logs/experiments/*.jsonl) rồi lấy max() với num_trials của caller.
+    # Ba vấn đề nghiêm trọng:
+    #   1. DSR KHÔNG TÁI LẬP ĐƯỢC: cùng input cho kết quả khác nhau tuỳ máy đã
+    #      chạy bao nhiêu thí nghiệm. Clone mới và máy cũ ra hai con số khác hẳn.
+    #   2. Âm thầm ghi đè tham số caller truyền vào.
+    #   3. Số dòng log KHÔNG phải số trial — mỗi lần chạy pipeline ghi nhiều dòng.
+    # Hình phạt multiple-testing vẫn đúng về mặt lý thuyết, nhưng phải do caller
+    # cung cấp TƯỜNG MINH qua `num_trials` (hoặc bật `use_experiment_tracker`).
+    effective_num_trials = max(int(num_trials), 1)
+    if use_experiment_tracker:
+        from aegis.core.experiment_tracker import ExperimentTracker
+
+        effective_num_trials = max(
+            effective_num_trials, int(ExperimentTracker().get_total_trials()), 1
+        )
 
     # Bước 1: Tính kỳ vọng SR tối đa (SR_0^*) từ N lần thử nghiệm
     sr_expected_max = euler_mascheroni_approx_max_sr(sr_benchmark, effective_num_trials, variance_of_srs)

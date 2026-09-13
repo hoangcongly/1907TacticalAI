@@ -1,7 +1,7 @@
 # Aegis Trading System
 
 Hệ thống giao dịch **perpetual futures USDⓈ-M** (KHÔNG phải margin spot).
-Python 3.10+, `src/aegis/`, ~12k dòng, 341 test.
+Python 3.10+, `src/aegis/`, ~12k dòng, 371 test.
 
 ## 🆕 Nâng cấp v3 (2026-09-10) — ĐỌC `docs/upgrade_v3_report.md` TRƯỚC KHI SỬA CHIẾN LƯỢC
 Ba điều bắt buộc biết trước khi chạm vào code chiến lược:
@@ -9,6 +9,13 @@ Ba điều bắt buộc biết trước khi chạm vào code chiến lược:
    thế cao hơn thực tế 0.1-0.35 Sharpe. Dùng `backtest_v2.estimate_cost_bps`.
 2. **IC và chênh lệch decile có thể NGƯỢC DẤU** khi quan hệ không đơn điệu — đã xảy ra
    thật ở đây. Chọn tín hiệu bằng `ic_analysis.decile_spread`, không bằng IC.
+3a. **Basis trade** (`research/basis_trade.py`): edge ĐÃ CHẾT từ 2025 — funding đổi
+   dấu (2024: +12,7% -> 2025: −2,2%). Trên 119 cặp, Sharpe holdout trung vị −0,54,
+   chỉ 17% cấu hình dương. ĐỪNG bật lại nếu chưa phân rã theo năm. §12.
+3b. **ĐÃ THỬ VÀ THUA, đừng làm lại**: hồi quy mặt cắt ngang kiểu CTREND
+   (`research/xs_regression.py`) và LambdaRank (`research/rank_model.py`). Cả hai
+   thua tầng gộp hiện có vì universe chỉ có ~41 tài sản/kỳ — ràng buộc là ĐỘ RỘNG,
+   không phải thuật toán. Chi tiết `docs/upgrade_v3_report.md` §11.
 3. **Kỳ vọng hợp lý là Sharpe 1.0-1.3 / 55-75%/năm ở gross 1.0x**, không phải 1.99 của
    train. Holdout v3: Sharpe **1.28**, ann **70.8%**, maxDD 36.9%, giữ 64% Sharpe train.
    Qua 32 cấu hình siêu tham số, holdout **100% dương**, trung vị 1.24.
@@ -31,10 +38,17 @@ reference nạp theo nhu cầu: `defects.md` (lỗi F1–F16), `money-path.md` (
 ## ⚠️ Trạng thái thật của hệ thống
 - **341 test xanh KHÔNG có nghĩa chiến lược sinh lời.** Test khoá tính ĐÚNG (nhân quả,
   kế toán, bất biến danh mục), không khoá được EDGE. Edge chỉ đo được ngoài mẫu.
-- F1–F13 đã vá; OMS và ingestion đã chạy đầu-cuối trên testnet. F14–F16 còn lại
-  (`references/defects.md`).
+- F1–F13 và **F21–F31** đã vá; F14–F16 còn lại (`references/defects.md`).
+- **Sự cố thực thi 10/09/2026** sinh ra F21–F26: một ngoại lệ không bắt trong
+  `submit_plan` làm hỏng cả lượt, để lại lệnh post-only sống 3h39 trên sàn và danh
+  mục lệch **+35%** khỏi trung lập suốt 27 giờ.
+- **Sự cố nhân đôi 11/09/2026** sinh ra F27–F28: báo giá lại đếm trùng phần đã khớp
+  -> danh mục chạy **3,69x** thay vì 2,0x (F29: cổng chặn chỉ kiểm net nên không thấy). Đọc hai mục cuối `references/defects.md`
+  trước khi sửa bất cứ thứ gì trong `oms/` hoặc `xs_live_pipeline.py`.
 - **~20 file vẫn là stub** chỉ có docstring (`governance/l2_depth.py`,
   `validation/flat_plateau.py`, ...). Danh sách ở đầu `references/codemap.md`.
+- **CHƯA ĐƯỢC BƠM TIỀN THẬT.** `scripts/readiness_gate.py` đang báo 0/3 lượt sạch.
+  Chỉ mở cổng khi 3 lượt tái cân bằng liên tiếp đều sạch (~9 ngày ở chu kỳ 72h).
 - **Holdout đã dùng 2 lần** (lần 2 chạy lại sau khi sửa lỗi đo lường, không đổi tham
   số nào). Bước tiếp theo bắt buộc: giao dịch giấy tiến về phía trước 4–8 tuần
   (`python scripts/run_daily.py --live` trên testnet), rồi `--costs` để đo tỷ lệ maker thật.
@@ -52,11 +66,12 @@ bất biến này (sai số < 1e-9). Viết lại công thức ở tầng live =
 
 ## Lệnh
 ```bash
-python -m pytest -q                    # 341 test, ~120s
+python -m pytest -q                    # 371 test, ~135s
 python scripts/attribution.py          # quy kết từng nâng cấp (train)
 python scripts/stability.py            # chọn cấu hình theo ĐỘ ỔN ĐỊNH, không theo đỉnh
 python scripts/diagnose_oos.py         # chẩn đoán suy giảm ngoài mẫu
 python scripts/refresh_spreads.py      # đo lại spread sổ lệnh thật
+python scripts/readiness_gate.py       # ĐÃ ĐƯỢC PHÉP BƠM TIỀN THẬT CHƯA?
 python scripts/gen_codemap.py          # sinh lại bản đồ code sau refactor
 python scripts/check_docs.py           # kiểm tra tham chiếu file:line trong docs còn đúng
 make agent-sync                        # chạy cả hai (làm sau mỗi lần refactor)

@@ -58,6 +58,13 @@ class BinanceOrderRouter:
         self.book = order_book or OrderBook()
         self.max_order_notional = float(max_order_notional)
         self.dry_run = bool(dry_run)
+        # Lệnh không đặt được ở lượt gần nhất — phía gọi PHẢI đọc trước khi coi
+        # lượt tái cân bằng là thành công. [FIX F22]
+        self.last_plan_failures: List[Dict[str, Any]] = []
+        # Cặp còn lệnh treo không xác nhận huỷ được. [FIX F21]
+        self.uncancelled: List[str] = []
+        # Mọi lệnh đã đặt cho từng cặp trong lượt hiện tại. [FIX F27]
+        self._cycle_orders: Dict[str, List[ManagedOrder]] = {}
 
         if notifier is None:
             try:
@@ -273,21 +280,51 @@ class BinanceOrderRouter:
         opening = [o for o in orders if o.reason != "đóng"]
 
         results: List[ManagedOrder] = []
+        self.last_plan_failures: List[Dict[str, Any]] = []
+
         for order in closing + opening:
             filt = filters.get(order.symbol)
             if filt is None:
                 logger.error("Thiếu bộ lọc sàn cho %s — bỏ qua", order.symbol)
+                self.last_plan_failures.append(
+                    {"symbol": order.symbol, "side": order.side, "qty": order.qty,
+                     "reason": "thiếu bộ lọc sàn"})
                 continue
             try:
                 results.append(self.submit(order, filt, post_only=post_only, epoch_bucket=bucket))
             except OrderRejected as exc:
                 logger.error("Chặn tại chỗ: %s", exc)
+                self.last_plan_failures.append(
+                    {"symbol": order.symbol, "side": order.side, "qty": order.qty,
+                     "reason": f"OrderRejected: {exc}"})
                 if not self.dry_run and self.notifier and getattr(self.notifier, "is_configured", False):
                     self.notifier.send_anomaly_alert(
                         title=f"Chặn lệnh {order.symbol}",
                         message=f"Vi phạm kiểm tra an toàn: {exc}",
                         level="WARNING",
                     )
+            except Exception as exc:
+                # [FIX F22] NGUYÊN NHÂN GỐC CỦA SỰ CỐ 10/09/2026.
+                # Bản cũ chỉ bắt `OrderRejected`. Một ngoại lệ khác (lỗi mạng, HTTP
+                # 5xx, đệ quy lùi giá -5022 cạn lượt) thoát ra khỏi vòng lặp và GIẾT
+                # CẢ LƯỢT giữa chừng. Một sự cố duy nhất giải thích trọn vẹn mọi
+                # triệu chứng quan sát được:
+                #   - SANDUSDT và XMRUSDT (nằm cuối danh sách MỞ) chưa từng được đặt
+                #   - COTIUSDT không bao giờ được huỷ -> khớp sau 3h39 không ai biết
+                #   - `rebalance_count` không tăng vì bước lưu trạng thái không tới được
+                #   - danh mục còn 10/12 vị thế, lệch +35% khỏi trung lập
+                # Một cặp lỗi KHÔNG được phép kéo theo 11 cặp còn lại. Ghi nhận rồi
+                # đi tiếp; phía gọi quyết định dựa trên `last_plan_failures`.
+                logger.exception("[F22] Lỗi ngoài dự kiến khi đặt %s — bỏ qua cặp này, "
+                                 "TIẾP TỤC phần còn lại của kế hoạch", order.symbol)
+                self.last_plan_failures.append(
+                    {"symbol": order.symbol, "side": order.side, "qty": order.qty,
+                     "reason": f"{type(exc).__name__}: {exc}"})
+
+        if self.last_plan_failures:
+            logger.error("[F22] %d/%d lệnh KHÔNG đặt được: %s", len(self.last_plan_failures),
+                         len(closing) + len(opening),
+                         ", ".join(f["symbol"] for f in self.last_plan_failures))
         return results
 
     # ------------------------------------------------------------------
@@ -322,8 +359,16 @@ class BinanceOrderRouter:
             "taker_orders": 0, "taker_notional": 0.0, "unfilled": [],
         }
 
+        self.uncancelled = []
+        # [FIX F27] Sổ theo dõi MỌI lệnh đã đặt cho từng cặp trong lượt này.
+        # Bắt buộc phải có: khi báo giá lại, `passive[idx]` bị GHI ĐÈ bằng lệnh mới,
+        # nên phần đã khớp của lệnh cũ biến mất khỏi danh sách. Nếu tính "còn thiếu"
+        # theo riêng lệnh mới nhất, ta sẽ đặt lại phần đã khớp rồi — và vị thế nhân đôi.
+        self._cycle_orders: Dict[str, List[ManagedOrder]] = {}
         intents = {o.symbol: o for o in orders}
         passive = self.submit_plan(orders, filters, post_only=True)
+        for m in passive:
+            self._cycle_orders.setdefault(m.symbol, []).append(m)
         report["passive_submitted"] = len(passive)
         report["requotes"] = 0
 
@@ -334,7 +379,23 @@ class BinanceOrderRouter:
         # chạy giá và mua đúng đỉnh.
         deadline = time.time() + max(0.0, passive_wait_s)
         anchor = {m.symbol: (m.price or 0.0) for m in passive}
+        report["plan_failures"] = list(self.last_plan_failures)
 
+        try:
+            self._passive_wait_loop(passive, intents, filters, deadline, poll_interval_s,
+                                    requote, max_chase_bps, anchor, report)
+        except Exception:
+            # [FIX F23] Dù vòng chờ hỏng vì bất kỳ lý do gì, phần DỌN DẸP bên dưới
+            # vẫn phải chạy. Bỏ qua dọn dẹp đồng nghĩa để lệnh post-only sống trên
+            # sàn mà không ai theo dõi — đúng sự cố COTIUSDT ngày 10/09.
+            logger.exception("[F23] Vòng chờ khớp thụ động lỗi — vẫn tiếp tục dọn dẹp")
+            report["passive_loop_error"] = True
+
+        return self._cleanup_and_fallback(passive, intents, filters, allow_taker_fallback, report)
+
+    def _passive_wait_loop(self, passive, intents, filters, deadline, poll_interval_s,
+                           requote, max_chase_bps, anchor, report) -> None:
+        """Chờ khớp thụ động, định kỳ báo giá lại theo BBO hiện tại."""
         while time.time() < deadline:
             time.sleep(min(poll_interval_s, max(0.0, deadline - time.time())))
             for m in passive:
@@ -347,53 +408,124 @@ class BinanceOrderRouter:
                 continue
 
             for idx, m in enumerate(passive):
-                if m.is_terminal or m.remaining_qty <= 0:
-                    continue
-                filt = filters.get(m.symbol)
-                base = anchor.get(m.symbol, 0.0)
-                if filt is None or base <= 0:
-                    continue
+                # [FIX F23] Mỗi lệnh một hộp cách ly: một cặp lỗi không được kéo
+                # theo phần còn lại của vòng báo giá lại.
                 try:
-                    bid, ask = self.client.best_bid_ask(m.symbol)
+                    self._requote_one(idx, m, passive, intents, filters, anchor,
+                                      max_chase_bps, report)
                 except Exception:
-                    continue
+                    logger.exception("[F23] Báo giá lại %s lỗi — bỏ qua cặp này", m.symbol)
 
-                target = bid if m.side == "BUY" else ask
-                if abs(target - (m.price or target)) < filt.tick_size:
-                    continue  # sổ chưa dịch đủ để đáng báo giá lại
+    def _requote_one(self, idx, m, passive, intents, filters, anchor,
+                     max_chase_bps, report) -> None:
+        """
+        Huỷ lệnh thụ động cũ và đặt lại ở BBO hiện tại cho MỘT cặp.
 
-                # Chặn đuổi giá quá xa mốc ban đầu.
-                drift_bps = abs(target - base) / base * 10000.0
-                if drift_bps > max_chase_bps:
-                    continue
+        Lệnh đặt ở BBO cũ sẽ không bao giờ khớp khi sổ dịch đi — đây là lý do lần
+        chạy đầu tiên có 0% khớp maker. Chỉ đuổi trong phạm vi `max_chase_bps` để
+        không rượt theo một cú chạy giá.
+        """
+        if m.is_terminal or m.remaining_qty <= 0:
+            return
+        filt = filters.get(m.symbol)
+        base = anchor.get(m.symbol, 0.0)
+        if filt is None or base <= 0:
+            return
+        try:
+            bid, ask = self.client.best_bid_ask(m.symbol)
+        except Exception:
+            return
 
-                self.cancel_all(m.symbol)
-                time.sleep(0.3)
-                self.poll_status(m, retries=1)
-                remaining = filt.round_qty(m.remaining_qty)
-                if remaining <= 0 or not filt.is_tradeable(remaining, target):
-                    continue
+        target = bid if m.side == "BUY" else ask
+        if abs(target - (m.price or target)) < filt.tick_size:
+            return  # sổ chưa dịch đủ để đáng báo giá lại
 
-                intent = intents.get(m.symbol)
-                new_order = RebalanceOrder(m.symbol, m.side, remaining,
-                                           filt.round_price(target),
-                                           intent.reason if intent else "điều chỉnh",
-                                           remaining * target)
-                replaced = self.submit(new_order, filt, post_only=True,
-                                       epoch_bucket=int(time.time()))
-                passive[idx] = replaced
-                report["requotes"] += 1
+        # Chặn đuổi giá quá xa mốc ban đầu.
+        if abs(target - base) / base * 10000.0 > max_chase_bps:
+            return
 
-        by_id = {m.client_order_id: m for m in passive}
+        # [FIX F21] Chỉ đặt lệnh mới khi đã XÁC NHẬN lệnh cũ bị huỷ. Nếu không,
+        # ta có thể tạo ra hai lệnh sống cùng lúc trên cùng một cặp.
+        if not self.cancel_all(m.symbol):
+            if m.symbol not in self.uncancelled:
+                self.uncancelled.append(m.symbol)
+            return
 
-        # Huỷ phần chưa khớp rồi tính lại khối lượng còn thiếu.
+        # [FIX F27] Phần còn thiếu tính theo Ý ĐỊNH GỐC trừ TỔNG đã khớp của cặp,
+        # không theo `m.remaining_qty` của riêng lệnh vừa bị huỷ.
+        remaining = filt.round_qty(self.remaining_for(m.symbol, intents))
+        if remaining <= 0 or not filt.is_tradeable(remaining, target):
+            return
+
+        intent = intents.get(m.symbol)
+        new_order = RebalanceOrder(m.symbol, m.side, remaining,
+                                   filt.round_price(target),
+                                   intent.reason if intent else "điều chỉnh",
+                                   remaining * target)
+        replaced = self.submit(new_order, filt, post_only=True,
+                               epoch_bucket=int(time.time()))
+        passive[idx] = replaced
+        self._cycle_orders.setdefault(m.symbol, []).append(replaced)
+        report["requotes"] += 1
+
+    def filled_for(self, symbol: str, refresh: bool = True) -> float:
+        """
+        Tổng khối lượng ĐÃ KHỚP của một cặp trong lượt này, cộng qua MỌI lệnh.
+
+        [FIX F27] Sự cố 11/09/2026: VETUSDT khớp 110.276 (lệnh bị huỷ) + 210.213
+        (lệnh đặt lại) + 100.080 (cắn giá) = 420.569, gấp đôi mục tiêu 210.213.
+        Nguyên nhân: mỗi lần báo giá lại, phần đã khớp của lệnh cũ bị bỏ quên, nên
+        lệnh mới được đặt cho TOÀN BỘ khối lượng gốc thay vì phần còn thiếu.
+        Toàn bộ danh mục kết thúc ở 3,69x đòn bẩy thay vì 2,0x.
+
+        Phần còn thiếu phải luôn tính theo Ý ĐỊNH GỐC trừ đi TỔNG đã khớp, không bao
+        giờ tính theo một đối tượng lệnh đơn lẻ.
+        """
+        total = 0.0
+        for m in self._cycle_orders.get(symbol, []):
+            if refresh and not m.is_terminal:
+                try:
+                    self.poll_status(m, retries=2, delay=0.3)
+                except Exception:
+                    logger.warning("[F27] Không truy vấn được %s khi cộng dồn khối lượng",
+                                   m.client_order_id)
+            total += m.filled_qty
+        return total
+
+    def remaining_for(self, symbol: str, intents: Dict[str, Any],
+                      refresh: bool = True) -> float:
+        """Khối lượng còn thiếu so với Ý ĐỊNH GỐC của cặp. [FIX F27]"""
+        intent = intents.get(symbol)
+        if intent is None:
+            return 0.0
+        return max(0.0, intent.qty - self.filled_for(symbol, refresh=refresh))
+
+    def _cleanup_and_fallback(self, passive, intents, filters,
+                              allow_taker_fallback, report) -> Dict[str, Any]:
+        """
+        Dọn lệnh treo rồi cắn giá phần còn thiếu. LUÔN chạy, kể cả khi vòng chờ lỗi.
+        """
+        # Huỷ phần chưa khớp — và ghi lại cặp nào KHÔNG xác nhận huỷ được. [FIX F21]
         for m in passive:
-            if not m.is_terminal:
-                self.cancel_all(m.symbol)
+            if m.is_terminal:
+                continue
+            if not self.cancel_all(m.symbol) and m.symbol not in self.uncancelled:
+                self.uncancelled.append(m.symbol)
+
         time.sleep(0.8)
-        for m in passive:
-            self.poll_status(m, retries=1)
-            report["passive_filled_notional"] += m.filled_qty * (m.price or 0.0)
+        # Cộng notional maker qua MỌI lệnh của lượt, không chỉ lệnh cuối. [FIX F27]
+        for sym, orders_ in self._cycle_orders.items():
+            for m in orders_:
+                try:
+                    self.poll_status(m, retries=1)
+                except Exception:
+                    logger.exception("[F23] Không truy vấn được %s sau khi huỷ", sym)
+                report["passive_filled_notional"] += m.filled_qty * (m.price or 0.0)
+
+        report["uncancelled"] = list(self.uncancelled)
+        if self.uncancelled:
+            logger.error("[F21] CÒN LỆNH SỐNG không xác nhận huỷ được: %s",
+                         ", ".join(self.uncancelled))
 
         if not allow_taker_fallback:
             report["unfilled"] = [
@@ -403,7 +535,8 @@ class BinanceOrderRouter:
             return report
 
         for m in passive:
-            remaining = m.remaining_qty
+            # [FIX F27] Cùng lý do: cắn giá chỉ cho phần còn thiếu THẬT của cặp.
+            remaining = self.remaining_for(m.symbol, intents)
             if remaining <= 0:
                 continue
             filt = filters.get(m.symbol)
@@ -427,19 +560,68 @@ class BinanceOrderRouter:
             except OrderRejected as exc:
                 report["unfilled"].append({"symbol": m.symbol, "remaining": remaining,
                                            "reason": str(exc)})
+            except Exception as exc:
+                # [FIX F22] Một cặp lỗi ở bước cắn giá cũng không được giết phần còn lại.
+                logger.exception("[F22] Cắn giá %s lỗi — tiếp tục các cặp còn lại", m.symbol)
+                report["unfilled"].append({"symbol": m.symbol, "remaining": remaining,
+                                           "reason": f"{type(exc).__name__}: {exc}"})
         return report
 
     # ------------------------------------------------------------------
     # Huỷ / dừng khẩn cấp
     # ------------------------------------------------------------------
-    def cancel_all(self, symbol: str) -> None:
+    def cancel_all(self, symbol: str, verify: bool = True,
+                   retries: int = 3, delay: float = 0.5) -> bool:
+        """
+        Huỷ mọi lệnh treo của một cặp và XÁC NHẬN sàn đã huỷ thật.
+
+        [FIX F21] Bản cũ gửi lệnh huỷ rồi nuốt mọi lỗi bằng một dòng log. Hậu quả đã
+        xảy ra thật trên testnet: lệnh post-only COTIUSDT đặt lúc 10:30:47 không bao
+        giờ bị huỷ, nằm chờ 3 giờ 39 phút rồi tự khớp lúc 14:10 — rất lâu sau khi
+        tiến trình đã thoát. Sổ nội bộ không hề biết, và danh mục ôm một vị thế
+        không ai theo dõi.
+
+        Một lệnh huỷ KHÔNG ĐƯỢC XÁC NHẬN phải được coi là lệnh vẫn còn sống. Hàm trả
+        về False trong trường hợp đó để phía gọi buộc phải xử lý, thay vì chạy tiếp
+        trong ảo tưởng rằng sổ đã sạch.
+        """
         if self.dry_run:
             logger.info("[DRY RUN] huỷ toàn bộ lệnh %s", symbol)
-            return
-        try:
-            self.client._request("DELETE", "/fapi/v1/allOpenOrders", {"symbol": symbol}, signed=True)
-        except BinanceAPIError as exc:
-            logger.error("Không huỷ được lệnh treo %s: %s", symbol, exc)
+            return True
+
+        for attempt in range(retries):
+            try:
+                self.client._request("DELETE", "/fapi/v1/allOpenOrders",
+                                     {"symbol": symbol}, signed=True)
+            except BinanceAPIError as exc:
+                # -2011 = không có lệnh nào để huỷ: đó là trạng thái ta muốn.
+                if getattr(exc, "code", None) == -2011:
+                    return True
+                logger.warning("Huỷ lệnh %s thất bại (lần %d): %s", symbol, attempt + 1, exc)
+            except Exception as exc:
+                # Lỗi mạng / timeout / DNS KHÔNG phải BinanceAPIError. Bản đầu của
+                # bản vá này chỉ bắt BinanceAPIError và một test hồi quy đã bắt được
+                # thiếu sót đó: một `ConnectionError` lúc huỷ sẽ thoát ra ngoài và
+                # giết cả lượt — đúng loại lỗi mà F22/F23 sinh ra để chặn.
+                logger.warning("Huỷ lệnh %s lỗi hạ tầng (lần %d): %s",
+                               symbol, attempt + 1, exc)
+
+            if not verify:
+                return True
+            try:
+                left = self.client.open_orders(symbol)
+            except Exception as exc:
+                logger.warning("Không kiểm chứng được lệnh treo %s: %s", symbol, exc)
+                left = None
+
+            if left is not None and len(left) == 0:
+                return True
+            if attempt < retries - 1:
+                time.sleep(delay)
+
+        logger.error("[F21] KHÔNG XÁC NHẬN được đã huỷ lệnh %s — phải coi như còn "
+                     "lệnh sống trên sàn", symbol)
+        return False
 
     def kill_switch(self, symbols: Optional[List[str]] = None) -> Dict[str, Any]:
         """

@@ -21,3 +21,5 @@ logs/
 *.db
 *.bin
 *.onnx
+*.lock
+.aegis_trading.lock

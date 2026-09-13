@@ -332,3 +332,142 @@ python scripts/validate_v3.py              # §6, §7  (CHỈ CHẠY MỘT LẦN
 python scripts/diagnose_oos.py             # chẩn đoán §6
 python -m pytest -q                        # 341 test
 ```
+
+
+---
+
+## 11. Áp dụng tài liệu nghiên cứu mới (11/09/2026) — KẾT QUẢ ÂM, có giải thích
+
+Hai phương pháp được lấy từ tài liệu, cài đầy đủ, test nhân quả đầy đủ, và **cả hai
+đều thua tầng gộp sẵn có**. Ghi lại để không ai tốn công làm lại.
+
+### 11.1 CTREND / hồi quy mặt cắt ngang (Han-Zhou-Zhu; JFQA 2025)
+
+Bài báo dùng 28 tín hiệu kỹ thuật trên **3.000+ coin**, gộp bằng hồi quy mặt cắt
+ngang rồi lấy trung bình hệ số, tinh chỉnh bằng elastic net. Báo cáo long-short
+quintile **3,87%/tuần**. Cài ở `research/xs_regression.py`.
+
+| Cấu hình | Sharpe (train) |
+|---|---|
+| **Tầng gộp hiện có — 26 tín hiệu** | **2,05** |
+| Tầng gộp hiện có — 5 họ | 1,32 |
+| Hồi quy XS, 26 tín hiệu, ols / ridge / elastic-net | 0,06 / 0,18 / 0,34 |
+| Hồi quy XS, 5 họ, cửa sổ beta 60 / 120 / 250 | 0,60 / 0,81 / **1,30** |
+
+**Vì sao thua, và đây là điều đáng giá nhất rút ra:** phương pháp đòi ước lượng một
+hệ số cho mỗi tín hiệu, tại mỗi kỳ, từ mặt cắt ngang của kỳ đó. Universe này có
+**trung vị 41 tài sản giao dịch được mỗi kỳ** trên tập train. Hồi quy 26 hệ số từ 41
+quan sát là bài toán gần bão hoà. Bằng chứng: kết quả cải thiện ĐƠN ĐIỆU khi cửa sổ
+trung bình hệ số dài ra (60→0,60; 120→0,81; 250→1,30) — dấu hiệu kinh điển của ước
+lượng quá nhiễu cần co mạnh. Mà co đủ mạnh thì hội tụ về gần chia đều, tức là quay
+lại chỗ xuất phát.
+
+Đã kiểm chứng giả thuyết "do độ phủ tín hiệu kém": **sai** — 40/41 tài sản có đủ cả
+26 tín hiệu. Ràng buộc là ĐỘ RỘNG MẶT CẮT NGANG, không phải dữ liệu thiếu.
+
+### 11.2 LambdaRankIC (arXiv 2605.00501)
+
+Tối ưu trực tiếp thứ hạng thay vì hồi quy lợi suất, dùng LightGBM `lambdarank`.
+Về lý thuyết rất hợp với hệ thống này, vì hàm mục tiêu chiết khấu theo vị trí nên
+dồn sức học cho hai ĐUÔI — đúng chỗ danh mục đặt lệnh, và đúng chỗ mà §2 cho thấy
+IC toàn mặt cắt ngang đánh lừa. Cài ở `research/rank_model.py`.
+
+Kết quả: **Sharpe 0,19** (26 tín hiệu) và **−0,22** (5 họ). Cùng nguyên nhân: ~24k
+hàng huấn luyện từ 41 tài sản × 580 kỳ là quá ít cho cây tăng cường, và mỗi kỳ chỉ
+có 41 phần tử để xếp hạng.
+
+### 11.3 Kết luận
+
+**Ràng buộc đang chặn hệ thống là ĐỘ RỘNG, không phải độ tinh vi của thuật toán.**
+Mọi phương pháp hiện đại trong tài liệu đều ngầm giả định một mặt cắt ngang rộng
+(hàng nghìn tài sản). Ở 41 tài sản/kỳ, ước lượng viên càng nhiều tham số càng thua
+ước lượng viên được co mạnh — và tầng gộp hiện có (5 con số, học từ chuỗi 580 quan
+sát) chính là một ước lượng viên co mạnh, phù hợp với kích thước mẫu thật sự có.
+
+Hai module được GIỮ LẠI kèm test đầy đủ: ràng buộc khiến chúng thua là kích thước
+universe, không phải sai sót cài đặt. Universe rộng ra thì chúng dùng được ngay.
+
+### 11.4 Hướng duy nhất còn lại có tiềm năng bậc độ lớn
+
+Tăng số tài sản xếp hạng mỗi kỳ. Ba cách, theo thứ tự công sức:
+1. Hạ ngưỡng thanh khoản / mở rộng universe Binance (41 → có thể 80-100 ở giai đoạn gần đây)
+2. Thêm sàn: Bybit, OKX perp — mỗi sàn thêm vài trăm cặp
+3. Dữ liệu sổ lệnh L2 cho tín hiệu vi cấu trúc (`governance/l2_depth.py` vẫn rỗng)
+
+Đây là dự án HẠ TẦNG, không phải đổi thuật toán. Và ngay cả khi thành công, định luật
+cơ bản nói IR tăng theo CĂN của độ rộng: gấp 4 lần số tài sản mới gấp đôi IR.
+
+
+---
+
+## 12. Basis trade / funding arbitrage (11/09/2026) — có edge, KHÔNG dùng được ở vốn này
+
+Lớp chiến lược thứ hai, hoàn toàn khác cross-sectional: short perp + long spot cùng
+tài sản, delta trung tính, thu funding. Tài liệu ghi nhận Sharpe 5-10, drawdown 0,6%.
+Module: `research/basis_trade.py`. Kiểm định: `scripts/validate_basis.py`.
+
+### 12.1 Đo được gì
+
+36 cặp có đủ cả perp lẫn spot. Basis (perp/spot − 1): trung vị −0,048%, độ lệch 0,116%.
+
+Lưới 36 cấu hình, **Sharpe holdout: trung vị 0,35 | min −1,38 | max 4,62 | 64% dương**.
+
+Cấu trúc rõ ràng và hợp lý: **càng nhiều vị thế càng ổn định**, vì basis trade là thu
+dòng tiền nhỏ đều và cần phân tán để triệt tiêu nhiễu basis.
+
+| số vị thế | Sharpe holdout (trung vị) | vốn tối thiểu |
+|---|---|---|
+| 3 | **−0,45** | $30 |
+| 5 | −0,37 | $50 |
+| 8 | +1,03 | $80 |
+| 12 | **+1,19** (max 4,62) | $120 |
+
+### 12.2 Ba sai lầm đã mắc và tự bắt trong quá trình này
+
+Ghi lại vì cả ba đều tạo ra kết quả đẹp giả tạo, và cả ba đều suýt được báo cáo:
+
+1. **Sharpe 20-60 giả.** Tính Sharpe của chính dòng funding (gần như luôn dương) sau
+   khi GIẢ ĐỊNH phòng hộ hoàn hảo — tức xoá rủi ro thật rồi đo rủi ro. Rủi ro của
+   basis trade nằm ở basis, không ở funding.
+2. **Nhìn trước.** Chọn top-k theo funding tại chính mốc t cho 25-43%/năm; dùng trung
+   bình trượt nhân quả chỉ còn 5-9%/năm.
+3. **Báo cáo một đỉnh nhọn.** Báo "Sharpe 3,88" từ MỘT cấu hình. Chạy hết lưới thì
+   trung vị chỉ 0,35. Đúng lỗi đã cảnh báo ở §6 rồi tự mắc lại.
+
+Và một sai lầm thứ tư về đòn bẩy: bảng "basis 20x = 55%/năm" là SAI. Chân spot phải
+trả đủ tiền mặt, không lên đòn bẩy được. Vay margin USDT (5-15%/năm) lớn hơn cả lợi
+suất 3,2%. Portfolio Margin yêu cầu vốn lớn.
+
+### 12.3 Kết luận trên UNIVERSE ĐẦY ĐỦ: EDGE ĐÃ CHẾT TỪ 2025
+
+Kết quả trên 36 cặp (trung vị Sharpe 0,35) là do chọn mẫu. Chạy lại trên **119 cặp**
+có đủ perp + spot:
+
+    Sharpe holdout: trung vị **−0,54** | min −1,33 | max 0,83 | **chỉ 17% dương**
+    lợi suất năm holdout: trung vị −2,4%
+
+Phân rã theo năm cho biết chính xác chuyện gì đã xảy ra:
+
+| năm | tổng | funding | basis | Sharpe |
+|---|---|---|---|---|
+| 2023 | +4,8% | +5,2% | −0,3% | **5,85** |
+| 2024 | +12,6% | +12,7% | +0,3% | **7,99** |
+| 2025 | −0,3% | **−2,2%** | +2,3% | −0,06 |
+| 2026 | −0,7% | **−1,4%** | +1,0% | −0,33 |
+
+**Funding đổi dấu.** Chiến lược này hoạt động xuất sắc 2023-2024 rồi chết. Stress chi
+phí xác nhận: Sharpe 0,05 ở 12bp/vòng, 0,00 ở 24bp — không còn gì để chi phí ăn.
+
+Điều đáng nói nhất: tài liệu ĐÃ NÓI TRƯỚC điều này. Câu trích ngay khi bắt đầu hướng
+nghiên cứu này: *"crypto carry Sharpe 6.45 (2020-2025), rơi còn 4.06 từ 2024, và ÂM
+trong 2025."* Đã đọc, rồi vẫn đi đo như thể nó không tồn tại — và suýt kết luận
+"chờ đủ $120 rồi bật".
+
+**Bài học phương pháp:** khi tài liệu nói một edge đã suy giảm, việc đầu tiên phải làm
+là PHÂN RÃ THEO NĂM, không phải đo trung bình toàn mẫu. Trung bình toàn mẫu của một
+edge đã chết vẫn dương, vì quá khứ kéo nó lên.
+
+**Kết luận:** đây KHÔNG phải ràng buộc vốn như §12.2 sơ bộ kết luận. Kể cả có $120
+hay $10.000 thì chiến lược này vẫn âm từ 2025. Module giữ lại kèm 13 test để nếu
+funding quay lại chế độ dương thì dùng được — nhưng phải KIỂM TRA LẠI THEO NĂM trước
+khi bật, không được tin con số toàn mẫu.

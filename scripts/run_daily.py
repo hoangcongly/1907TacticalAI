@@ -103,6 +103,8 @@ def main(argv=None) -> int:
     ap.add_argument("--costs", action="store_true", help="Báo cáo chi phí thực thi thực tế")
     ap.add_argument("--leverage", type=float, default=2.0)
     ap.add_argument("--skip-refresh", action="store_true", help="Bỏ qua tải dữ liệu mới")
+    ap.add_argument("--force", action="store_true",
+                    help="Tái cân bằng NGAY dù chưa đến hạn (chỉ dùng khi can thiệp thủ công)")
     ap.add_argument("--state", default="artifacts/live_state.json")
     ap.add_argument("--config", default=None,
                     help="File cấu hình chiến lược. Mặc định: artifacts/strategy_v3.json "
@@ -116,6 +118,17 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
 
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
+
+    # [FIX F28] Khoá chống chạy chồng — chi tiết ở `aegis.core.process_lock`.
+    # Thao tác chỉ đọc (--status, --costs) không cần khoá.
+    from aegis.core.process_lock import ProcessLockBusy, acquire_lock
+    read_only = a.status or a.costs
+    if not read_only:
+        try:
+            _lock = acquire_lock()
+        except ProcessLockBusy as exc:
+            print(f"🔒 {exc} — thoát để tránh đặt lệnh hai lần.")
+            return 0
 
     if a.mainnet and a.live:
         print("\n⚠️  SẮP GIAO DỊCH BẰNG TIỀN THẬT TRÊN MAINNET ⚠️")
@@ -190,7 +203,7 @@ def main(argv=None) -> int:
     from datetime import datetime
 
     def _execute_cycle():
-        res = pipe.run_once(skip_data_refresh=a.skip_refresh)
+        res = pipe.run_once(skip_data_refresh=a.skip_refresh, force=a.force)
 
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         print(f"[{now_str}] Hành động   : {res.get('action')}")
@@ -208,7 +221,43 @@ def main(argv=None) -> int:
             print(f"   {o['side']:<5}{o['symbol']:<14}{o['qty']:>12}  @ ${o['price']:<12} "
                   f"= ${o['notional']:>8.2f}  ({o['reason']})")
         if "submitted" in res:
-            print(f"Đã gửi      : {res['submitted']} | bị từ chối: {res['rejected']}")
+            print(f"Đã gửi      : {res.get('submitted', 0)} | cắn giá: "
+                  f"{res.get('taker_fallback', 0)} | chưa khớp: {res.get('unfilled', 0)}")
+        if res.get("plan_failures"):
+            print(f"⚠️  {len(res['plan_failures'])} lệnh KHÔNG đặt được: "
+                  f"{', '.join(f['symbol'] for f in res['plan_failures'])}")
+        if res.get("uncancelled"):
+            print(f"🔴 CÒN LỆNH SỐNG không xác nhận huỷ: {', '.join(res['uncancelled'])}")
+        if res.get("action") == "HEARTBEAT":
+            print(f"Đã qua      : {res['hours_since_rebalance']:.1f}h / "
+                  f"{res['rebalance_hours']:.0f}h — còn {res['hours_remaining']:.1f}h")
+            print(f"Vị thế      : {res['n_positions']} | "
+                  f"drawdown {res['drawdown']*100:.2f}%")
+            print("Muốn cân ngay: thêm cờ --force")
+        nt = res.get("neutrality")
+        if nt:
+            mark = "✅" if nt["ok"] else "🔴"
+            lev = f" | đòn bẩy {nt['leverage']:.2f}x" if nt.get("leverage") else ""
+            print(f"Sổ          : {mark} net {nt['net_ratio']*100:+.2f}% gross "
+                  f"(trần ±{nt['tolerance']*100:.0f}%) | gross ${nt['gross']:,.0f}{lev}")
+
+        # Tiến độ tới cổng cho phép bơm tiền thật — in ở MỌI lượt để không ai
+        # phải tự nhớ. Cổng chỉ nói đường ống đã ổn, không nói chiến lược có lãi.
+        try:
+            sys.path.insert(0, "scripts")
+            from readiness_gate import load_records
+            rs = [r for r in load_records("artifacts/execution_log.jsonl") if r.n_orders > 0]
+            streak = 0
+            for r in reversed(rs):
+                if r.clean:
+                    streak += 1
+                else:
+                    break
+            need = max(0, 3 - streak)
+            tag = "✅ ĐẠT" if need == 0 else f"còn {need} lượt (~{need*3} ngày)"
+            print(f"Cổng tiền thật: {streak}/3 lượt sạch liên tiếp — {tag}")
+        except Exception:
+            pass
 
         # Gửi thông báo Telegram nếu đã cấu hình
         try:

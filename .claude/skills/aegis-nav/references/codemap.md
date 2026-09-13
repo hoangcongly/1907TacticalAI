@@ -6,7 +6,7 @@ Cách dùng: tìm symbol -> đọc `file:line` -> mở thẳng bằng `sed -n 'S
 
 ---
 
-## 1. CHƯA TRIỂN KHAI (18 file — chỉ có docstring/stub)
+## 1. CHƯA TRIỂN KHAI (19 file — chỉ có docstring/stub)
 
 Không có logic. Đừng phí token đọc; đây là danh sách việc phải làm.
 
@@ -26,6 +26,7 @@ Không có logic. Đừng phí token đọc; đây là danh sách việc phải 
 | `src/aegis/governance/l2_depth.py` | 1 | Module K.5 — L2 Order Book Depth Source & fallback tắt limit-order khi mất fee |
 | `src/aegis/meta_labeling/__init__.py` | 4 | Meta-labeling module exports. |
 | `src/aegis/meta_labeling/sizing/bet_overlap.py` | 1 | Điều chỉnh quy trình vào lệnh khi các cược chồng lấp nhau trên trục thời gian. |
+| `src/aegis/monitoring/__init__.py` | 4 | Monitoring and alerting package for Aegis Trading System. |
 | `src/aegis/sentiment_client/client.py` | 1 | Giao tiếp với aegis-sentiment-service, ép PIT trước khi đưa vào features. |
 | `src/aegis/shadow/readiness_gate.py` | 1 | check_shadow_mode_readiness (Gate Kép: >= 30 sự kiện VÀ >= 2 tuần). |
 | `src/aegis/validation/flat_plateau.py` | 1 | Kiểm chứng tính ổn định Flat Plateau >= 80% xung quanh 81 cấu hình lân cận. |
@@ -33,7 +34,7 @@ Không có logic. Đừng phí token đọc; đây là danh sách việc phải 
 
 ---
 
-## 2. ĐÃ TRIỂN KHAI (75 file)
+## 2. ĐÃ TRIỂN KHAI (81 file)
 
 ### `src/aegis/core/config_loader.py` (177 dòng)
 _Tiện ích tải YAML configuration an toàn và quản lý cấu hình tập trung._
@@ -52,20 +53,21 @@ _Nạp thông tin xác thực sàn từ biến môi trường / file .env._
 - `class ExchangeCredentials` :37 — Khoá API của sàn. `__repr__` được che để khoá không lọt vào log/traceback.
 - `def load_binance_credentials` :49 — Đọc khoá Binance Futures từ môi trường.
 
-### `src/aegis/core/execution_log.py` (118 dòng)
+### `src/aegis/core/execution_log.py` (148 dòng)
 _Nhật ký thực thi — đo chi phí THẬT thay vì tin vào giả định của backtest._
 
-- `class ExecutionRecord` :26 — Một lượt tái cân bằng.
-- `  . filled_notional` :42
-- `  . maker_ratio` :46
-- `  . realized_cost_usd` :51
-- `  . realized_cost_bps` :55
-- `  . fill_ratio` :60
-- `class ExecutionLog` :66 — Ghi/đọc nhật ký thực thi dạng JSONL (append-only).
-- `  . __init__` :69
-- `  . append` :73
-- `  . read_all` :77
-- `  . summary` :93
+- `class ExecutionRecord` :30 — Một lượt tái cân bằng.
+- `  . clean` :56
+- `  . filled_notional` :72
+- `  . maker_ratio` :76
+- `  . realized_cost_usd` :81
+- `  . realized_cost_bps` :85
+- `  . fill_ratio` :90
+- `class ExecutionLog` :96 — Ghi/đọc nhật ký thực thi dạng JSONL (append-only).
+- `  . __init__` :99
+- `  . append` :103
+- `  . read_all` :107
+- `  . summary` :123
 
 ### `src/aegis/core/experiment_tracker.py` (181 dòng)
 _ExperimentTracker Singleton — Ghi nhận DSR trials và SHA-256 param hashes._
@@ -76,6 +78,13 @@ _ExperimentTracker Singleton — Ghi nhận DSR trials và SHA-256 param hashes.
 - `  . reset_instance` :128
 - `  . log_trial` :136
 - `  . get_total_trials` :163
+
+### `src/aegis/core/process_lock.py` (92 dòng)
+_[FIX F28] Khoá loại trừ cho mọi tiến trình chạm tiền._
+
+- `class ProcessLockBusy` :33 — Một tiến trình khác đang giữ khoá.
+- `def acquire_lock` :37 — Chiếm khoá độc quyền, KHÔNG chờ. Trả về đối tượng file phải giữ nguyên tham
+- `def exclusive_lock` :66 — Dùng theo kiểu `with`:
 
 ### `src/aegis/core/schemas.py` (272 dòng)
 _TRADE_RECORD_SCHEMA chuẩn hóa (v11.8): phân định rõ exit_idx_relative vs exit__
@@ -487,20 +496,44 @@ _Weighted Bootstrap Forest Classifier._
 - `  . predict_proba` :88
 - `  . predict` :116
 
-### `src/aegis/oms/order_router.py` (442 dòng)
+### `src/aegis/monitoring/ai_agent.py` (135 dòng)
+_Aegis AI Agent — Tích hợp Google Gemini 2.5 Flash làm bộ não định lượng cho Te_
+
+- `class GeminiAIAssistant` :32 — Giao tiếp với Google Gemini API.
+- `  . __init__` :35
+- `  . is_configured` :47
+- `  . generate_reply` :50
+- `def build_live_context_snapshot` :92 — Tạo bản chụp dữ liệu sống của tài khoản để nạp vào prompt của AI.
+
+### `src/aegis/monitoring/alerts.py` (226 dòng)
+_Hệ thống cảnh báo và gửi thông báo qua Telegram / Discord / Webhook._
+
+- `class TelegramNotifier` :21 — Bộ gửi thông báo qua Telegram Bot API.
+- `  . __init__` :24
+- `  . is_configured` :44
+- `  . send_message` :48
+- `  . send_order_alert` :81
+- `  . send_circuit_breaker_alert` :140
+- `  . send_single_order_alert` :165
+- `  . send_anomaly_alert` :197
+- `def send_telegram_alert` :219 — Hàm tiện ích nhanh gửi tin nhắn Telegram.
+
+### `src/aegis/oms/order_router.py` (659 dòng)
 _Điều hướng lệnh sang Binance USDⓈ-M Futures._
 
 - `class OrderRejected` :30 — Lệnh bị từ chối TRƯỚC khi gửi (vi phạm kiểm tra an toàn cục bộ).
 - `def make_client_order_id` :34 — Sinh client order id TẤT ĐỊNH.
 - `class BinanceOrderRouter` :46 — Gửi lệnh tới Binance Futures và theo dõi vòng đời qua OrderBook.
 - `  . __init__` :49
-- `  . configure_symbol` :67
-- `  . submit` :107
-- `  . poll_status` :201
-- `  . submit_plan` :230
-- `  . execute_with_fallback` :261
-- `  . cancel_all` :400
-- `  . kill_switch` :409
+- `  . configure_symbol` :84
+- `  . submit` :124
+- `  . poll_status` :237
+- `  . submit_plan` :266
+- `  . execute_with_fallback` :333
+- `  . filled_for` :471
+- `  . remaining_for` :495
+- `  . cancel_all` :573
+- `  . kill_switch` :626
 
 ### `src/aegis/oms/reconciliation.py` (141 dòng)
 _Đối chiếu trạng thái nội bộ với trạng thái THẬT trên sàn._
@@ -514,7 +547,7 @@ _Đối chiếu trạng thái nội bộ với trạng thái THẬT trên sàn._
 - `def reconcile` :69 — So trạng thái nội bộ với sàn.
 - `def assert_clean_or_raise` :127 — Chốt chặn khởi động: lệch sổ sách thì DỪNG, không tự đoán.
 
-### `src/aegis/oms/state_machine.py` (186 dòng)
+### `src/aegis/oms/state_machine.py` (187 dòng)
 _OMS State Machine — vòng đời lệnh và các chuyển trạng thái HỢP LỆ._
 
 - `class OrderState` :18 — Trạng thái lệnh. Trạng thái CUỐI không bao giờ rời đi được.
@@ -523,14 +556,14 @@ _OMS State Machine — vòng đời lệnh và các chuyển trạng thái HỢP
 - `  . is_terminal` :96
 - `  . remaining_qty` :100
 - `  . transition` :103
-- `  . apply_exchange_status` :150
-- `class OrderBook` :158 — Sổ theo dõi toàn bộ lệnh của phiên, tra cứu theo client_order_id.
-- `  . __init__` :161
-- `  . add` :164
-- `  . get` :170
-- `  . open_orders` :173
-- `  . all_orders` :176
-- `  . net_position` :179
+- `  . apply_exchange_status` :151
+- `class OrderBook` :159 — Sổ theo dõi toàn bộ lệnh của phiên, tra cứu theo client_order_id.
+- `  . __init__` :162
+- `  . add` :165
+- `  . get` :171
+- `  . open_orders` :174
+- `  . all_orders` :177
+- `  . net_position` :180
 
 ### `src/aegis/pipelines/cpcv_pipeline.py` (519 dòng)
 _Điều phối 15 folds CPCV theo đúng thứ tự 5 bước v11.8 (Mục 4.0)._
@@ -556,19 +589,22 @@ _research_pipeline.py — Institutional Full-Fit Production Pipeline (Task 7)._
 - `  . __init__` :58
 - `  . run` :64
 
-### `src/aegis/pipelines/xs_live_pipeline.py` (542 dòng)
+### `src/aegis/pipelines/xs_live_pipeline.py` (759 dòng)
 _Pipeline live cho chiến lược cross-sectional market-neutral._
 
 - `class LiveConfig` :58 — Cấu hình đã qua kiểm định holdout — xem artifacts/strategy_validated.json.
-- `  . from_artifacts` :98
-- `class CrossSectionalLivePipeline` :137 — Vòng lặp vận hành chiến lược cross-sectional.
-- `  . __init__` :140
-- `  . refresh_data` :160
-- `  . load_filters` :173
-- `  . resolve_universe` :187
-- `  . compute_target_weights` :271
-- `  . run_once` :370
-- `  . kill` :535
+- `  . from_artifacts` :100
+- `class CrossSectionalLivePipeline` :139 — Vòng lặp vận hành chiến lược cross-sectional.
+- `  . __init__` :142
+- `  . data_interval` :162
+- `  . refresh_data` :174
+- `  . load_filters` :191
+- `  . resolve_universe` :205
+- `  . compute_target_weights` :289
+- `  . notifier_enabled` :365
+- `  . check_neutrality` :411
+- `  . run_once` :480
+- `  . kill` :752
 
 ### `src/aegis/research/adaptive_combiner.py` (227 dòng)
 _Gộp tín hiệu THÍCH ỨNG theo cửa sổ trượt — quyết định trọng số bằng dữ liệu QU_
@@ -591,6 +627,13 @@ _Engine backtest cross-sectional thế hệ 2 — nhận TRỌNG SỐ dựng s�
 - `class BacktestV2Result` :204
 - `  . stats` :216
 - `def simulate` :259 — Mô phỏng danh mục từ chuỗi trọng số MỤC TIÊU.
+
+### `src/aegis/research/basis_trade.py` (118 dòng)
+_Basis trade (funding arbitrage): short perp + long spot cùng tài sản._
+
+- `class BasisSpec` :46 — Tham số basis trade.
+- `def basis_series` :57 — `perp/spot - 1`. Dương nghĩa là perp đắt hơn spot (trạng thái thường gặp).
+- `def backtest_basis` :63 — Mô phỏng basis trade. Trả về DataFrame các cột:
 
 ### `src/aegis/research/cross_sectional.py` (414 dòng)
 _Engine backtest cross-sectional (market-neutral) đa tài sản._
@@ -666,6 +709,13 @@ _Đòn bẩy, mục tiêu biến động, và XÁC SUẤT ĐẠT MỤC TIÊU —
 - `def target_probability_table` :210 — Bảng đánh đổi: mỗi mức đòn bẩy -> xác suất đạt mục tiêu, xác suất cháy, trung 
 - `def required_sharpe_for_target` :265 — Sharpe cần có để đạt mục tiêu với xác suất `confidence`, ở mức biến động cho t
 
+### `src/aegis/research/rank_model.py` (200 dòng)
+_Gộp tín hiệu bằng HỌC-ĐỂ-XẾP-HẠNG (LambdaRank) — tối ưu trực tiếp thứ hạng._
+
+- `class RankModelSpec` :38 — Tham số tầng xếp hạng.
+- `def build_dataset` :72 — Dựng bảng dữ liệu phẳng: mỗi hàng là (thời điểm, tài sản).
+- `def combine_lambdarank` :115 — Điểm số tổng hợp do model xếp hạng sinh ra, huấn luyện tiến về phía trước.
+
 ### `src/aegis/research/signal_library.py` (425 dòng)
 _Thư viện tín hiệu cross-sectional, tổ chức theo HỌ KINH TẾ._
 
@@ -689,6 +739,13 @@ _Chiến lược v2 — MỘT đường đi duy nhất từ dữ liệu tới tr
 - `  . score` :91
 - `  . target_weights` :115
 - `  . backtest` :127
+
+### `src/aegis/research/xs_regression.py` (197 dòng)
+_Gộp tín hiệu bằng HỒI QUY MẶT CẮT NGANG — phương pháp Han-Zhou-Zhu, bản crypto_
+
+- `class XSRegressionSpec` :47 — Tham số tầng gộp bằng hồi quy mặt cắt ngang.
+- `def cross_sectional_betas` :110 — Hệ số hồi quy mặt cắt ngang tại MỖI kỳ: index = thời gian, cột = tên tín hiệu.
+- `def combine_xs_regression` :158 — Điểm số tổng hợp = tín hiệu tại t nhân hệ số trung bình học từ các kỳ TRƯỚC t.
 
 ### `src/aegis/risk/circuit_breaker.py` (79 dòng)
 _3-Tier Drawdown Circuit Breakers (Module J)._

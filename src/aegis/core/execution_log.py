@@ -18,8 +18,12 @@ from typing import Any, Dict, List, Optional
 
 DEFAULT_LOG_PATH = "artifacts/execution_log.jsonl"
 
-MAKER_FEE = 0.0001
-TAKER_FEE = 0.0004
+# [FIX F31] Phí THẬT của Binance USDⓈ-M VIP0: maker 0.0200%, taker 0.0500%.
+# Hằng số cũ (1bp / 4bp) thấp hơn thực tế, nên chính module sinh ra để "đo chi phí
+# thật" lại báo chi phí thấp hơn thật ~35%. Một thước đo bị lệch còn nguy hiểm hơn
+# không đo, vì nó tạo cảm giác đã kiểm soát.
+MAKER_FEE = 0.0002
+TAKER_FEE = 0.0005
 
 
 @dataclass
@@ -37,6 +41,32 @@ class ExecutionRecord:
     net_exposure: float = 0.0
     testnet: bool = True
     note: Optional[str] = None
+
+    # --- trường phục vụ CỔNG CHẤT LƯỢNG (mặc định để tương thích bản ghi cũ) ---
+    plan_failures: int = 0        # lệnh trong kế hoạch KHÔNG đặt được [F22]
+    uncancelled: int = 0          # cặp còn lệnh sống không xác nhận huỷ [F21]
+    leverage: Optional[float] = None      # đòn bẩy gộp thật sau khi thực thi
+    target_leverage: Optional[float] = None
+    net_ok: Optional[bool] = None         # qua cổng trung lập [F25]
+    gross_ok: Optional[bool] = None       # qua cổng đòn bẩy [F29]
+    manual_intervention: bool = False     # con người phải vào sửa tay
+    exec_error: Optional[str] = None      # thực thi ném lỗi [F24]
+
+    @property
+    def clean(self) -> bool:
+        """
+        Lượt này có SẠCH không — định nghĩa duy nhất, dùng cho cổng chất lượng.
+
+        Sạch nghĩa là: mọi lệnh trong kế hoạch đều đặt được, không còn lệnh sống
+        ngoài tầm kiểm soát, danh mục đúng thiết kế cả về hướng lẫn đòn bẩy, và
+        không ai phải vào sửa tay. Thiếu bất kỳ điều nào thì lượt đó KHÔNG tính.
+        """
+        return (self.plan_failures == 0
+                and self.uncancelled == 0
+                and self.exec_error is None
+                and not self.manual_intervention
+                and self.net_ok is not False
+                and self.gross_ok is not False)
 
     @property
     def filled_notional(self) -> float:

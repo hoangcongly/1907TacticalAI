@@ -74,6 +74,8 @@ class LiveConfig:
     min_signal_coverage: int = 3      # đa số tín hiệu phải có dữ liệu
     min_history_bars: int = 120       # > lookback dài nhất (momentum_90)
     min_quote_volume_24h: float = 5e6
+    max_net_exposure: float = 0.02     # trần |net|/gross sau khi thực thi [FIX F25]
+    max_gross_error: float = 0.15      # sai lệch đòn bẩy gộp cho phép [FIX F29]
     signals: List[str] = field(default_factory=lambda: [
         "funding_carry", "momentum_90", "ofi_flow", "funding_mom",
     ])
@@ -157,17 +159,33 @@ class CrossSectionalLivePipeline:
         self._filters: Dict[str, SymbolFilters] = {}
 
     # ------------------------------------------------------------------ dữ liệu
+    def data_interval(self) -> str:
+        """
+        Khung thời gian PHẢI được làm mới — chính là khung engine đọc từ đĩa.
+
+        [FIX F26] Engine v3 nạp panel bằng `load_panel_v2(..., source_interval="1h")`
+        rồi tự tổng hợp lên 4h. Nhưng `refresh_data` cũ tải `config.interval` ("4h").
+        Hệ quả: file 1h KHÔNG BAO GIỜ được cập nhật, nên mọi lượt chạy v3 đều thấy
+        dữ liệu cũ và dừng ở chốt STALE_DATA — hệ thống tự khoá vĩnh viễn dù không
+        có gì hỏng. Lỗi này chỉ lộ ra khi chạy thật, vì backtest đọc file có sẵn.
+        """
+        return self.config.source_interval if self.config.engine == "v3" else self.config.interval
+
     def refresh_data(self, days: float = 30.0) -> int:
         """Tải nến mới nhất cho universe (gộp vào parquet đã có)."""
-        updated = 0
+        interval = self.data_interval()
+        updated, failed = 0, []
         for symbol in self.config.universe:
             try:
-                bars = download_klines(symbol, self.config.interval, days=days,
-                                       client=self.data_client)
-                save_klines(bars, symbol, self.config.interval)
+                bars = download_klines(symbol, interval, days=days, client=self.data_client)
+                save_klines(bars, symbol, interval)
                 updated += 1
             except Exception as exc:
-                logger.warning("Không cập nhật được %s: %s", symbol, exc)
+                logger.warning("Không cập nhật được %s (%s): %s", symbol, interval, exc)
+                failed.append(symbol)
+        if failed:
+            logger.warning("[F26] %d/%d cặp không cập nhật được dữ liệu %s",
+                           len(failed), len(self.config.universe), interval)
         return updated
 
     def load_filters(self) -> Dict[str, SymbolFilters]:
@@ -344,6 +362,98 @@ class CrossSectionalLivePipeline:
         return {s: float(w) for s, w in weights.iloc[-1].items() if abs(w) > 1e-12}, latest_ts
 
     # ------------------------------------------------------------------ rủi ro
+    def notifier_enabled(self) -> bool:
+        n = getattr(self.router, "notifier", None)
+        return bool(n and getattr(n, "is_configured", False) and not self.dry_run)
+
+    def _settle_positions(self, tries: int = 6, delay: float = 1.2,
+                          min_reads: int = 3) -> Dict[str, float]:
+        """
+        Đọc vị thế từ sàn tới khi ỔN ĐỊNH, thay vì chụp một lần rồi tin.
+
+        [FIX F24] Bản cũ `sleep(1.5)` rồi gọi `position_risk()` đúng một lần.
+        `/fapi/v2/positionRisk` của Binance nhất quán theo kiểu eventual — lệnh khớp
+        tại thời điểm T có thể chưa hiện ở T+1.5s. Chụp một lần là canh bạc; nếu
+        trượt, sổ nội bộ thiếu vị thế và lượt sau sẽ tự khoá vì lệch sổ sách.
+
+        `min_reads` là chi tiết KHÔNG được bỏ, và một test hồi quy đã chứng minh
+        điều đó: chỉ đòi "hai lần đọc liên tiếp giống nhau" thì khi sàn trễ đều đặn
+        vài nhịp, hai lần đọc đầu cùng thiếu một vị thế sẽ trùng nhau và hàm trả về
+        SỚM với kết quả thiếu — tái tạo lại đúng lỗi định sửa. Vì vậy phải đọc đủ
+        `min_reads` lần, trải qua ít nhất `min_reads * delay` giây, RỒI mới xét ổn định.
+
+        Đây vẫn là biện pháp giảm xác suất, không phải bảo đảm. Lá chắn cuối cùng
+        là bước đối chiếu đầu lượt sau (`reconcile`), và nó phải được giữ nguyên.
+        """
+        prev: Optional[Dict[str, float]] = None
+        reads = 0
+        for attempt in range(max(tries, min_reads)):
+            time.sleep(delay)
+            try:
+                cur = {
+                    p["symbol"]: float(p["positionAmt"])
+                    for p in self.client.position_risk()
+                    if abs(float(p.get("positionAmt", 0))) > 0
+                }
+            except Exception as exc:
+                logger.warning("[F24] Đọc vị thế lỗi (lần %d): %s", attempt + 1, exc)
+                continue
+            reads += 1
+            if reads >= min_reads and prev is not None and cur == prev:
+                return cur
+            prev = cur
+        if prev is None:
+            logger.error("[F24] KHÔNG đọc được vị thế từ sàn sau %d lần", tries)
+            return {}
+        logger.warning("[F24] Vị thế chưa ổn định sau %d lần đọc — dùng ảnh chụp cuối", reads)
+        return prev
+
+    def check_neutrality(self, positions: Dict[str, float], prices: Dict[str, float],
+                         tolerance: float = 0.02, equity: Optional[float] = None,
+                         target_leverage: Optional[float] = None,
+                         gross_tolerance: float = 0.15) -> Dict[str, Any]:
+        """
+        Cổng chặn LỆCH HƯỚNG — bất biến quan trọng nhất của chiến lược này.
+
+        [FIX F25] Ngày 11/09/2026 đo được sổ đang long ròng **+34.95% gross** trong
+        khi thiết kế là trung lập. Hệ thống chạy 27 giờ mà không có gì báo động, vì
+        không tồn tại phép kiểm nào trên đại lượng này sau khi thực thi.
+
+        Vì sao đây là lỗi giết chiến lược chứ không phải sai số nhỏ: toàn bộ cơ sở
+        của cross-sectional market-neutral là KHỬ beta thị trường, nhờ đó tín hiệu
+        yếu vẫn cho Sharpe cao. Sổ lệch 35% không còn là chiến lược đã kiểm định —
+        nó là một cược có hướng mà không ai chủ ý đặt, và mọi con số backtest mất
+        hiệu lực. Đo thực tế: trong 27h thị trường giảm 6.09%, riêng phần lệch hướng
+        mất 2.61% equity, trong khi phần chọn cặp lãi.
+        """
+        val = {s: q * prices.get(s, 0.0) for s, q in positions.items()}
+        gross = sum(abs(v) for v in val.values())
+        net = sum(val.values())
+        ratio = (net / gross) if gross > 1e-9 else 0.0
+
+        out = {
+            "gross": gross, "net": net, "net_ratio": ratio,
+            "tolerance": tolerance,
+            "net_ok": abs(ratio) <= tolerance,
+            "long_notional": sum(v for v in val.values() if v > 0),
+            "short_notional": sum(v for v in val.values() if v < 0),
+            "gross_ok": True, "leverage": None, "target_leverage": target_leverage,
+        }
+
+        # [FIX F29] KIỂM CẢ ĐÒN BẨY GỘP, không chỉ độ lệch hướng.
+        # Sự cố 11/09/2026: lỗi báo giá lại (F27) làm mọi vị thế nhân đôi, danh mục
+        # chạy 3,69x thay vì 2,0x. Cổng chặn lúc đó CHỈ kiểm net nên bắt được lệch
+        # +6,4% mà hoàn toàn không thấy rủi ro đã gần gấp đôi. Một sổ nhân đôi vẫn
+        # có thể trung lập hoàn hảo — hai đại lượng này độc lập nhau và phải kiểm
+        # riêng.
+        if equity and equity > 0 and target_leverage:
+            lev = gross / equity
+            out["leverage"] = lev
+            out["gross_ok"] = abs(lev - target_leverage) <= gross_tolerance * target_leverage
+
+        out["ok"] = out["net_ok"] and out["gross_ok"]
+        return out
+
     def _check_circuit_breaker(self, state: LiveState, equity: float, now_ms: int) -> Optional[str]:
         """Trả về lý do chặn giao dịch, hoặc None nếu được phép."""
         if state.is_dead:
@@ -367,8 +477,12 @@ class CrossSectionalLivePipeline:
         return 0.5 if state.drawdown(equity) >= TIER1_DD else 1.0
 
     # ------------------------------------------------------------------ vòng lặp
-    def run_once(self, skip_data_refresh: bool = False) -> Dict[str, Any]:
-        """Chạy một lượt tái cân bằng đầy đủ."""
+    def run_once(self, skip_data_refresh: bool = False, force: bool = False) -> Dict[str, Any]:
+        """
+        Chạy một lượt. Nếu CHƯA đến hạn tái cân bằng thì chỉ giám sát, không giao dịch.
+
+        `force=True` bỏ qua chốt nhịp — chỉ dùng khi con người chủ động can thiệp.
+        """
         now_ms = int(time.time() * 1000)
         state = self.store.load()
         result: Dict[str, Any] = {"timestamp_ms": now_ms, "dry_run": self.dry_run}
@@ -405,6 +519,42 @@ class CrossSectionalLivePipeline:
             self.store.save(state)
             result.update(action="HALT", reason="CIRCUIT_BREAKER", detail=blocked,
                           drawdown=state.drawdown(equity))
+            return result
+
+        # --- 2b. CHỐT NHỊP TÁI CÂN BẰNG [FIX F30] ---
+        # Chốt này trước đây CHỈ tồn tại trong chế độ daemon (`--loop`), không có ở
+        # đường chạy một-lượt mà `crontab` đang dùng. Hệ quả: cron chạy 07:00 hằng
+        # ngày sẽ tái cân bằng mỗi 24h, trong khi chiến lược được kiểm định ở chu kỳ
+        # 72h. Đó không phải "chạy dày hơn một chút" — tín hiệu được tính trên lưới
+        # 18 nến còn vị thế lại bị đặt lại mỗi ngày, nên nhịp tín hiệu và nhịp thực
+        # thi lệch nhau, và cấu hình đang chạy KHÔNG phải cấu hình nào đã kiểm định.
+        hours_since = (now_ms - state.last_rebalance_ms) / 3_600_000.0
+        due = force or state.rebalance_count == 0 or hours_since >= self.config.rebalance_hours
+        if not due:
+            prices_hb = {}
+            for symbol in state.positions:
+                try:
+                    bid, ask = self.client.best_bid_ask(symbol)
+                    if bid > 0 and ask > 0:
+                        prices_hb[symbol] = (bid + ask) / 2.0
+                except Exception as exc:
+                    logger.warning("Không lấy được BBO %s: %s", symbol, exc)
+
+            nt = self.check_neutrality(
+                state.positions, prices_hb, tolerance=self.config.max_net_exposure,
+                equity=equity, target_leverage=self.config.leverage,
+                gross_tolerance=self.config.max_gross_error)
+            self.store.save(state)
+            result.update(action="HEARTBEAT", reason="CHUA_DEN_HAN",
+                          hours_since_rebalance=round(hours_since, 2),
+                          rebalance_hours=self.config.rebalance_hours,
+                          hours_remaining=round(self.config.rebalance_hours - hours_since, 2),
+                          n_positions=len(state.positions), neutrality=nt,
+                          drawdown=state.drawdown(equity))
+            if not nt["ok"]:
+                logger.error("[F25/F29] Giám sát phát hiện sổ lệch thiết kế: net "
+                             "%+.2f%% gross, đòn bẩy %s", nt["net_ratio"] * 100,
+                             f"{nt['leverage']:.2f}x" if nt["leverage"] else "n/a")
             return result
 
         # --- 3. Dữ liệu ---
@@ -496,29 +646,84 @@ class CrossSectionalLivePipeline:
             passive = (bid - off) if o.side == "BUY" else (ask + off)
             o.price = f.round_price(passive) if f else passive
 
-        exec_report = self.router.execute_with_fallback(
-            plan.orders, filters,
-            passive_wait_s=self.config.passive_wait_s,
-            allow_taker_fallback=self.config.allow_taker_fallback,
-            requote=self.config.requote,
-            max_chase_bps=self.config.max_chase_bps,
-        )
+        # [FIX F24] ĐỒNG BỘ SỔ TỪ SÀN PHẢI LUÔN CHẠY, kể cả khi thực thi ném lỗi.
+        # Sự cố 10/09/2026: một ngoại lệ giữa chừng khiến bước lưu trạng thái không
+        # bao giờ tới được, dù lệnh ĐÃ khớp trên sàn. Kết quả là sổ nội bộ đứng yên
+        # ở lượt trước trong khi sàn đã đổi — và hệ thống tự khoá 27 giờ sau đó.
+        # Sổ nội bộ không bao giờ được phép "cũ hơn" sàn.
+        exec_report: Dict[str, Any] = {}
+        exec_error: Optional[str] = None
+        try:
+            exec_report = self.router.execute_with_fallback(
+                plan.orders, filters,
+                passive_wait_s=self.config.passive_wait_s,
+                allow_taker_fallback=self.config.allow_taker_fallback,
+                requote=self.config.requote,
+                max_chase_bps=self.config.max_chase_bps,
+            )
+        except Exception as exc:
+            logger.exception("[F24] Thực thi lỗi — vẫn đồng bộ sổ từ sàn")
+            exec_error = f"{type(exc).__name__}: {exc}"
+        finally:
+            state.positions = self._settle_positions()
+            state.last_rebalance_ms = now_ms
+            state.rebalance_count += 1
+            state.last_error = exec_error
+            self.store.save(state)
+
+        exec_report.setdefault("passive_submitted", 0)
+        exec_report.setdefault("passive_filled_notional", 0.0)
+        exec_report.setdefault("taker_orders", 0)
+        exec_report.setdefault("taker_notional", 0.0)
+        exec_report.setdefault("unfilled", [])
+        exec_report.setdefault("plan_failures", [])
+        exec_report.setdefault("uncancelled", [])
+
         result["execution"] = exec_report
         result["submitted"] = exec_report["passive_submitted"]
         result["taker_fallback"] = exec_report["taker_orders"]
         result["unfilled"] = len(exec_report["unfilled"])
+        result["plan_failures"] = exec_report["plan_failures"]
+        result["uncancelled"] = exec_report["uncancelled"]
+        if exec_error:
+            result["exec_error"] = exec_error
 
-        # --- 6. Lưu trạng thái ---
-        time.sleep(1.5)
-        state.positions = {
-            p["symbol"]: float(p["positionAmt"])
-            for p in self.client.position_risk()
-            if abs(float(p.get("positionAmt", 0))) > 0
-        }
-        state.last_rebalance_ms = now_ms
-        state.rebalance_count += 1
-        state.last_error = None
-        self.store.save(state)
+        # --- 6b. CỔNG CHẶN LỆCH HƯỚNG [FIX F25] ---
+        # Chạy SAU khi đã đồng bộ sổ, trên vị thế THẬT của sàn. Không sửa được ở
+        # lượt này thì ít nhất phải hét lên — im lặng là chế độ hỏng tệ nhất.
+        neutrality = self.check_neutrality(
+            state.positions, prices, tolerance=self.config.max_net_exposure,
+            equity=equity, target_leverage=self.config.leverage * multiplier,
+            gross_tolerance=self.config.max_gross_error)
+        result["neutrality"] = neutrality
+        if not neutrality["ok"]:
+            parts = []
+            if not neutrality["net_ok"]:
+                parts.append(
+                    f"LỆCH HƯỚNG {neutrality['net_ratio']*100:+.1f}% gross "
+                    f"(trần ±{neutrality['tolerance']*100:.0f}%) — "
+                    f"long ${neutrality['long_notional']:,.0f} vs "
+                    f"short ${abs(neutrality['short_notional']):,.0f}")
+            if not neutrality["gross_ok"]:
+                parts.append(
+                    f"ĐÒN BẨY SAI {neutrality['leverage']:.2f}x so với mục tiêu "
+                    f"{neutrality['target_leverage']:.2f}x — rủi ro không đúng dự kiến")
+            msg = " | ".join(parts) + ". Danh mục KHÔNG đúng thiết kế; mọi con số kiểm định mất hiệu lực."
+            logger.error("[F25] %s", msg)
+            state.last_error = (state.last_error + " | " if state.last_error else "") + msg
+            self.store.save(state)
+            result["action"] = "NEUTRALITY_BREACH"
+            result["neutrality_error"] = msg
+            if self.notifier_enabled():
+                self.router.notifier.send_anomaly_alert(
+                    title="Danh mục lệch khỏi trung lập", message=msg, level="ERROR")
+
+        if exec_report["plan_failures"]:
+            logger.error("[F22] %d lệnh không đặt được: %s", len(exec_report["plan_failures"]),
+                         ", ".join(f["symbol"] for f in exec_report["plan_failures"]))
+        if exec_report["uncancelled"]:
+            logger.error("[F21] Còn lệnh sống không xác nhận huỷ được: %s",
+                         ", ".join(exec_report["uncancelled"]))
 
         # Ghi nhật ký chi phí THẬT để về sau đối chiếu với giả định backtest.
         gross_live = sum(abs(q) * prices.get(sym, 0.0) for sym, q in state.positions.items())
@@ -532,6 +737,13 @@ class CrossSectionalLivePipeline:
             unfilled_count=len(exec_report["unfilled"]),
             net_exposure=(net_live / gross_live) if gross_live > 0 else 0.0,
             testnet=bool(getattr(self.client.credentials, "testnet", True)),
+            plan_failures=len(exec_report["plan_failures"]),
+            uncancelled=len(exec_report["uncancelled"]),
+            leverage=(gross_live / equity) if equity > 0 else None,
+            target_leverage=self.config.leverage * multiplier,
+            net_ok=bool(neutrality["net_ok"]),
+            gross_ok=bool(neutrality["gross_ok"]),
+            exec_error=exec_error,
         ))
 
         result["action"] = "REBALANCED"

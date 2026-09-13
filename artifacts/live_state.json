@@ -1,22 +1,25 @@
 {
   "schema_version": 1,
-  "peak_equity": 5240.38387373,
+  "peak_equity": 5205.5259330300005,
   "is_dead": false,
   "frozen_until_ms": 0,
   "positions": {
-    "BCHUSDT": -2.546,
-    "1000PEPEUSDT": -146389.0,
-    "RAYSOLUSDT": 623.8,
-    "DASHUSDT": 10.703,
-    "XRPUSDT": -464.9,
-    "USELESSUSDT": 1328.0,
-    "IOSTUSDT": 1383845.0,
-    "BULLAUSDT": 4825.0,
-    "ARBUSDT": 5471.1
+    "ONDOUSDT": -1916.0,
+    "ZECUSDT": 0.444,
+    "BCHUSDT": -2.859,
+    "PENGUUSDT": -92934.0,
+    "VETUSDT": 209607.0,
+    "VIRTUALUSDT": -1254.4,
+    "COTIUSDT": 29819.0,
+    "VTHOUSDT": 2566138.0,
+    "USELESSUSDT": 2787.0,
+    "BULLAUSDT": 6840.0,
+    "PAXGUSDT": -0.26,
+    "SANDUSDT": -34845.0
   },
-  "last_rebalance_ms": 1789026241502,
+  "last_rebalance_ms": 1789127216628,
   "rebalance_count": 1,
-  "last_equity": 5240.38387373,
+  "last_equity": 5205.5259330300005,
   "last_error": null,
-  "updated_ms": 1789048504820
+  "updated_ms": 1789137306589
 }

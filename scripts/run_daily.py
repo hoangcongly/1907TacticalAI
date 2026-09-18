@@ -15,7 +15,9 @@ import argparse
 from datetime import datetime
 import json
 import logging
+import os
 import pathlib
+import subprocess
 import sys
 import time
 
@@ -28,6 +30,71 @@ from aegis.core.state_store import StateStore
 from aegis.data.ingestion.binance_rest import BinanceFuturesREST
 from aegis.oms.order_router import BinanceOrderRouter
 from aegis.pipelines.xs_live_pipeline import CrossSectionalLivePipeline, LiveConfig
+
+
+# ---------------------------------------------------------------------------
+# [FIX F41] Nhịp tim ghi ra ĐĨA và báo động KHÔNG QUA MẠNG.
+#
+# Sự cố 16-18/09/2026: `.venv` biến mất -> mọi kết nối TLS chết -> daemon ném lỗi
+# ở MỌI chu trình suốt 58 lượt liên tiếp. Nhưng vòng lặp cũ bắt `Exception`, ghi
+# log, rồi ngủ tiếp mãi mãi, nên:
+#   - `launchctl list` vẫn khoe PID -> nhìn từ ngoài tưởng hệ thống đang chạy;
+#   - đường báo động duy nhất là Telegram, mà Telegram đi qua ĐÚNG cái TLS vừa
+#     chết -> hỏng là im lặng tuyệt đối.
+#
+# Đây là lỗi HỎNG TƯƠNG QUAN: kênh báo động dùng chung hạ tầng với thứ nó canh.
+# Một kênh báo động chỉ có giá trị khi nó KHÔNG phụ thuộc vào thứ đang hỏng.
+#
+# Ba lớp vá:
+#   1. `_write_health` — mỗi chu trình ghi dấu thời gian ra đĩa. Đĩa còn sống
+#      ngay cả khi mạng chết, nên đây là nguồn sự thật duy nhất tin được.
+#   2. `_local_alert` — thông báo macOS qua osascript, KHÔNG dùng mạng.
+#   3. Đếm hỏng liên tiếp; quá ngưỡng thì THOÁT với mã lỗi 1 thay vì ngủ tiếp.
+#      launchd sẽ khởi động lại; nếu vẫn hỏng, `launchctl list` hiện mã thoát
+#      khác 0 — nói THẬT rằng hệ thống đang chết, thay vì khoe PID của một xác.
+# ---------------------------------------------------------------------------
+HEALTH_FILE = ROOT / "logs" / "daemon_health.json"
+DOWN_FLAG = ROOT / "logs" / "DAEMON_DOWN.txt"
+MAX_CONSECUTIVE_FAILURES = 3
+
+
+def _write_health(status: str, detail: str = "", **extra) -> None:
+    """Ghi nhịp tim ra đĩa. Không bao giờ được ném lỗi — đây là lớp giám sát,
+    nó mà làm sập vòng lặp thì chính nó trở thành sự cố (bài học F40)."""
+    try:
+        HEALTH_FILE.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "ts": time.time(),
+            "ts_human": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "status": status,
+            "detail": detail,
+            "pid": os.getpid(),
+            **extra,
+        }
+        tmp = HEALTH_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+        tmp.replace(HEALTH_FILE)  # ghi nguyên tử: không để lại file nửa vời
+    except Exception:
+        pass
+
+
+def _local_alert(title: str, message: str) -> None:
+    """Báo động CỤC BỘ — không đi qua mạng, nên vẫn kêu khi mạng/TLS chết."""
+    try:
+        DOWN_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        DOWN_FLAG.write_text(
+            f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {title}\n{message}\n"
+        )
+    except Exception:
+        pass
+    try:
+        subprocess.run(
+            ["osascript", "-e",
+             f'display notification "{message[:200]}" with title "{title}"'],
+            check=False, capture_output=True, timeout=10,
+        )
+    except Exception:
+        pass
 
 
 
@@ -259,6 +326,74 @@ def main(argv=None) -> int:
         except Exception:
             pass
 
+        # --- BÁO CÁO CỔNG CHẤT LƯỢNG QUA TELEGRAM ---
+        # Lý do cần: hệ thống này đã từng im lặng hỏng suốt 2 ngày 16 giờ (F32/F33).
+        # Người vận hành không được phải TỰ NHỚ đi kiểm tra — kết quả mỗi lượt phải
+        # tự tìm đến. Chỉ gửi khi thực sự có tái cân bằng, không gửi ở lượt giám sát.
+        if res.get("action") == "REBALANCED":
+            try:
+                from aegis.monitoring.alerts import TelegramNotifier
+                _n = TelegramNotifier()
+                if _n.is_configured:
+                    sys.path.insert(0, "scripts")
+                    from readiness_gate import load_records, reasons
+                    _rs = [r for r in load_records("artifacts/execution_log.jsonl")
+                           if r.n_orders > 0]
+                    _last = _rs[-1] if _rs else None
+                    _streak = 0
+                    for r in reversed(_rs):
+                        if r.clean:
+                            _streak += 1
+                        else:
+                            break
+                    _nt = res.get("neutrality") or {}
+                    _ok = "✅ SẠCH" if (_last and _last.clean) else "❌ KHÔNG SẠCH"
+                    _why = "; ".join(reasons(_last)) if _last and not _last.clean else ""
+                    _lev = f"{_nt['leverage']:.2f}x" if _nt.get("leverage") else "n/a"
+                    _msg = (
+                        f"<b>Lượt tái cân bằng: {_ok}</b>\n"
+                        f"Equity ${res.get('equity', 0):,.2f} | {res.get('n_orders', 0)} lệnh "
+                        f"| chưa khớp {res.get('unfilled', 0)}\n"
+                        f"net {_nt.get('net_ratio', 0)*100:+.2f}% gross | đòn bẩy {_lev}\n"
+                        f"maker {(_last.maker_ratio*100 if _last else 0):.0f}% "
+                        f"| chi phí {(_last.realized_cost_bps if _last else 0):.2f}bp\n"
+                        f"<b>Cổng tiền thật: {_streak}/3 lượt sạch liên tiếp</b>")
+                    if _why:
+                        _msg += f"\n⚠️ {_why}"
+                    # Chi tiết từng vị thế — gửi thành tin riêng vì Telegram giới hạn
+                    # 4096 ký tự và danh mục 12 vị thế đã dài hơn mức đó khi gộp chung.
+                    try:
+                        from aegis.monitoring.position_report import build_position_report
+                        _pos = [x for x in pipe.client.position_risk()
+                                if abs(float(x.get("positionAmt", 0) or 0)) > 0]
+                        _bal = pipe.client.balance_usdt()
+                        _eq = _bal["wallet_balance"] + _bal["unrealized_pnl"]
+                        _stt = pipe.store.load()
+                        _nx = _stt.last_rebalance_ms + cfg.rebalance_hours * 3_600_000
+                        from aegis.monitoring.position_report import chunk_message
+                        _rep = build_position_report(
+                            _pos, _eq, _bal["wallet_balance"],
+                            max(_stt.peak_equity, _eq),
+                            next_rebalance=datetime.utcfromtimestamp(_nx / 1000).strftime(
+                                "%d/%m %H:%M UTC"),
+                            target_leverage=cfg.leverage)
+                        for _part in chunk_message(_rep):
+                            if not _n.send_message(_part):
+                                logging.error("Telegram TỪ CHỐI một phần báo cáo vị thế "
+                                              "— báo cáo không tới nơi đầy đủ")
+                    except Exception as exc:
+                        logging.warning("Không gửi được chi tiết vị thế: %s", exc)
+
+                    if _streak >= 3:
+                        _msg += ("\n\n🎯 <b>ĐÃ ĐẠT CỔNG</b> — đường ống đã ổn định.\n"
+                                 "Nhắc lại: cổng này KHÔNG nói chiến lược có lãi. "
+                                 "Lợi nhuận cần ~891 ngày mới có ý nghĩa thống kê.")
+                    else:
+                        _msg += f"\n(còn {3-_streak} lượt, ~{(3-_streak)*3} ngày)"
+                    _n.send_message(_msg)
+            except Exception as exc:
+                logging.warning("Không gửi được báo cáo cổng: %s", exc)
+
         # Gửi thông báo Telegram nếu đã cấu hình
         try:
             from aegis.monitoring.alerts import TelegramNotifier
@@ -303,6 +438,11 @@ def main(argv=None) -> int:
     except Exception:
         pass
 
+    # [FIX F41] Đếm số chu trình hỏng LIÊN TIẾP. Hỏng lẻ tẻ (mạng chập) thì bỏ qua;
+    # hỏng liên tiếp nghĩa là hạ tầng đã chết, phải kêu to rồi thoát.
+    consecutive_failures = 0
+    _write_health("STARTING", mode=mode, interval_mins=a.loop_interval_mins)
+
     while True:
         try:
             state = pipe.store.load()
@@ -326,11 +466,29 @@ def main(argv=None) -> int:
                         notifier.send_circuit_breaker_alert(
                             reason="CIRCUIT_BREAKER", detail=str(blocked), drawdown=dd, equity=equity
                         )
+
+            # [FIX F41] Chu trình chạy trọn vẹn -> xoá nợ và đóng dấu nhịp tim.
+            consecutive_failures = 0
+            _write_health("OK", hours_since_last=round(hours_since_last, 2))
+            if DOWN_FLAG.exists():
+                try:
+                    DOWN_FLAG.unlink()
+                except Exception:
+                    pass
         except KeyboardInterrupt:
             print("\nĐã nhận tín hiệu dừng bot.")
             break
         except Exception as exc:
-            logging.error("Lỗi trong chu trình daemon: %s", exc)
+            # [FIX F41] Không còn nuốt lỗi rồi ngủ tiếp vô hạn.
+            consecutive_failures += 1
+            logging.error(
+                "Lỗi trong chu trình daemon (%d/%d liên tiếp): %s",
+                consecutive_failures, MAX_CONSECUTIVE_FAILURES, exc,
+            )
+            _write_health("ERROR", detail=str(exc), consecutive_failures=consecutive_failures)
+
+            # Telegram vẫn thử — nhưng KHÔNG còn là kênh báo động duy nhất, vì nó
+            # đi qua cùng hạ tầng mạng với thứ vừa hỏng (chính là sự cố 16/09).
             try:
                 from aegis.monitoring.alerts import TelegramNotifier
                 notifier = TelegramNotifier()
@@ -338,6 +496,20 @@ def main(argv=None) -> int:
                     notifier.send_anomaly_alert(title="Lỗi tiến trình ngầm", message=str(exc), level="ERROR")
             except Exception:
                 pass
+
+            if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                msg = (
+                    f"Daemon hỏng {consecutive_failures} chu trình liên tiếp, đang THOÁT "
+                    f"để launchd khởi động lại. Lỗi cuối: {exc}"
+                )
+                logging.error(msg)
+                print(f"\n🛑 [F41] {msg}", flush=True)
+                _local_alert("🛑 AEGIS DAEMON CHẾT", msg)
+                _write_health("DEAD", detail=str(exc), consecutive_failures=consecutive_failures)
+                # Thoát khác 0: launchd tự khởi động lại (KeepAlive). Nếu vẫn hỏng,
+                # `launchctl list` hiện mã thoát khác 0 — nói THẬT là đang chết,
+                # thay vì khoe PID của một tiến trình không làm gì.
+                return 1
 
         time.sleep(a.loop_interval_mins * 60)
 

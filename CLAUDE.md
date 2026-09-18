@@ -1,7 +1,7 @@
 # Aegis Trading System
 
 Hệ thống giao dịch **perpetual futures USDⓈ-M** (KHÔNG phải margin spot).
-Python 3.10+, `src/aegis/`, ~12k dòng, 371 test.
+Python 3.10+, `src/aegis/`, ~20k dòng, 558 test.
 
 ## 🆕 Nâng cấp v3 (2026-09-10) — ĐỌC `docs/upgrade_v3_report.md` TRƯỚC KHI SỬA CHIẾN LƯỢC
 Ba điều bắt buộc biết trước khi chạm vào code chiến lược:
@@ -23,6 +23,463 @@ Ba điều bắt buộc biết trước khi chạm vào code chiến lược:
    lưới về holdout trước sẽ khởi động lại tầng gộp thích ứng — handicap mà live không
    gặp. Sai lệch đo được: Sharpe 0.71 (sai) so với 1.28 (đúng).
 
+## 🆕 14/09/2026 — MỤC TIÊU CÓ HẠN CHÓT (`research/goal_dp.py`)
+
+Câu hỏi "vốn 1 triệu, lời 50 nghìn trong 7 ngày" là bài toán **tối đa P(chạm đích
+trước hạn chót)**, KHÁC hẳn tối đa Sharpe và khác cả Kelly. Kelly không quan tâm hạn
+chót; mục tiêu có hạn chót không thưởng thêm xu nào cho việc vượt đích. Hệ quả: đòn
+bẩy tối ưu phụ thuộc VỐN HIỆN TẠI và THỜI GIAN CÒN LẠI.
+
+| | P(đạt +5% trong 7 ngày) | ghi chú |
+|---|---|---|
+| Trần dạng đóng, đòn bẩy CỐ ĐỊNH | **43,6%** | `Phi(S*sqrt(T) - sqrt(2*ln(1+g)))`, đạt tại 3,55x |
+| 2,0x đang chạy | 38,5% | |
+| Chính sách DP, chấm trên holdout | **77,8%** | ngoài thị trường 65% thời gian, 3,76x khi vào |
+| — trong đó do HÌNH HỌC (edge = 0) | 72,9% | đích gần, sàn cháy xa |
+| — trong đó do EDGE | **4,8%** | |
+
+**Điều quan trọng nhất: xác suất thắng cao KHÔNG có nghĩa kỳ vọng dương.** Chấm lại
+chính sách trên holdout đã trừ trung bình (edge = 0) vẫn ra 72,9%, với kỳ vọng +0,17%
+tức bằng 0. Hình dạng của nó là BÁN BẢO HIỂM: thắng nhỏ thường xuyên, thua lớn hiếm
+khi (P(cháy -30%) = 11,4%).
+
+**Hai con số cũ bị đo sai, nay đã sửa:**
+- **maxDD thật 45,5%**, không phải 36,9% — lưới 72h không thấy sụt giảm trong kỳ.
+- **Sharpe ở độ phân giải sàn nhìn thấy là 1,10**, không phải 1,28.
+
+Tầng phủ live (`risk/goal_overlay.py`) mặc định **`derisk_only=True`** — chỉ được
+GIẢM rủi ro. Phần "bạo phát" của DP (tăng đòn bẩy khi đang thua và sắp hết giờ) đúng
+về toán nhưng nguy hiểm nhất đúng lúc đường ống xấu nhất, nên phải bật tường minh sau
+khi `readiness_gate.py` mở.
+
+## 🆕 14/09/2026 — HỌ TÍN HIỆU THỨ 6: VỊ THẾ (open interest + long/short)
+
+26 tín hiệu cũ đều dựng từ GIÁ, KHỐI LƯỢNG, FUNDING. Không cái nào thấy AI ĐANG CẦM GÌ.
+Với perp, vị thế là biến trạng thái quan trọng nhất mà giá không chứa: squeeze và thanh
+lý dây chuyền sinh ra từ việc quá nhiều người đứng cùng một bên với đòn bẩy.
+
+Nguồn: kho dump `data.binance.vision/.../metrics` — 5 phút một điểm, từ 2021, miễn phí,
+KHÔNG bị giới hạn 30 ngày như endpoint `/futures/data/`. Tải bằng
+`scripts/download_metrics.py` -> `data/binance_metrics/`.
+
+**KẾT QUẢ: tín hiệu TỐT, tích hợp THẤT BẠI. KHÔNG đưa vào V3.**
+
+3/10 tín hiệu vượt ngưỡng t = 2,0 và cả ba có hiệu ứng LỚN HƠN `carry_level` (tín hiệu
+lõi): `oi_price_confirm` (+0,473%, t=2,01), `crowd_ls` (−0,441%, t=−2,27),
+`crowd_ls_momentum` (−0,439%, t=−2,04). Trực giao (|corr| ≤ 0,269).
+
+Nhưng thêm vào thì Sharpe đầu-cuối **1,77 -> 1,36**. Mọi tập con đều tệ hơn, kể cả khi
+chỉ giữ 3 cái vượt ngưỡng và chọn chúng TRÊN CHÍNH cửa sổ đo (thiên vị có lợi).
+
+Cơ chế: `combine_adaptive` ràng buộc gross = 1,0 trên các HỌ, nên họ thứ 6 bắt buộc lấy
+trọng số khỏi 5 họ đã chứng minh. Chênh decile đo thông tin khi tín hiệu ĐỨNG RIÊNG;
+trực giao 73% vẫn có thể dư thừa CÓ ĐIỀU KIỆN. Chi tiết + 2 giả thuyết đã bác bỏ:
+`references/plan.md`.
+
+⚠️ **V3 bị ĐÓNG BĂNG ở đúng 26 tín hiệu** (`V3_SIGNALS`). `adaptive_weights` chuẩn hoá
+theo SỐ họ nên thêm một họ — kể cả họ toàn NaN — vẫn làm dịch trọng số warm-up. Thêm
+tín hiệu vào registry KHÔNG được phép âm thầm đổi bản đã kiểm định. Đánh giá bằng
+`scripts/positioning_study.py`.
+
+## 💥 18/09/2026 — GẤP ĐÔI TIỀN LỜI: `n_positions=12` ĐƯỢC CHỐT DƯỚI MỘT UNIVERSE KHÔNG CÒN TỒN TẠI
+
+**Kết quả: 20.393 -> 46.811 VND/tuần (2,30x) ở vốn $38 KHÔNG ĐỔI, và ở 0,79 Kelly
+so với 0,75 hiện tại — tức không tăng tỷ lệ quá liều.** Cấu hình:
+`artifacts/strategy_v3_wide.json` (n_positions 12 -> **50**, max_weight 0,20 -> **0,02**,
+đòn bẩy 2,0x -> **7,89x**).
+
+### Lỗi gốc: một con số trung vị bị dùng như một hằng số
+
+Mọi quyết định về độ rộng trong repo đều dựa trên "universe chỉ có ~41 tài sản/kỳ".
+Con số 41 là **TRUNG VỊ CỦA TOÀN LỊCH SỬ 2020-2026**, bị kéo xuống bởi những năm perp
+crypto còn rất ít cặp:
+
+| 2020 | 2021 | 2022 | 2023 | 2024 | 2025 | **2026** |
+|---|---|---|---|---|---|---|
+| 20 | 37 | **41** | 51 | 78 | 111 | **127** |
+
+Hệ thống sẽ giao dịch trong môi trường **127 cặp**. Chấm một cấu hình cần độ rộng bằng
+trung bình toàn lịch sử là bắt nó gánh những năm mà nó KHÔNG THỂ tồn tại, rồi kết luận
+nó không hoạt động. `IR = IC x sqrt(breadth)`: từ 41 lên 127 là hệ số **1,76x**.
+
+### Điểm giao cắt có thật và đơn điệu
+
+| kỷ nguyên | n=12 | n=50 | thắng |
+|---|---|---|---|
+| toàn bộ (2020+) | 1,74 | 1,53 | n=12 |
+| >=40 cặp (2021-12) | 1,32 | 1,01 | n=12 |
+| >=60 cặp (2023-11) | 1,61 | **1,93** | **n=50** |
+| >=80 cặp (2024-09) | 1,37 | **1,80** | **n=50** |
+| >=100 cặp (2025-02) | 1,50 | **1,87** | **n=50** |
+| >=120 cặp (2025-08) | 1,75 | **2,19** | **n=50** |
+
+Giao cắt ở ~60 cặp, khoảng cách NỚI RỘNG theo độ rộng. Có cơ chế, không phải lát cắt may.
+
+### Mảnh thứ hai, và nó lớn hơn mảnh thứ nhất: TRỌNG SỐ ĐỀU
+
+`max_weight = 0,20` cho phép MỘT vị thế chiếm 20% gross. Với 12 vị thế thì hợp lý; với
+50 vị thế thì một cặp được phép nặng bằng 10 cặp khác. Siết về **0,02 = 1/50, tức trọng
+số đều**:
+
+| n=50, kỷ nguyên >=100 | Sharpe | vol | Kelly | xKelly | VND/tuần |
+|---|---|---|---|---|---|
+| max_w = 0,20 | 1,83 | 26% | 7,03x | 0,94 | 32.187 |
+| **max_w = 0,02 (đều)** | **2,26** | **22%** | **10,00x** | **0,66** | **43.249** |
+
+Đây KHÔNG phải tham số dò ra: `1/n` là trọng số đều, một lựa chọn cấu trúc. Quét quanh
+nó cho **cao nguyên trơn** (0,022 -> 2,14 | 0,020 -> 2,26 | 0,015 -> 2,31 | 0,010 -> 2,11),
+không phải điểm nhọn.
+
+⚠️ `_cap_and_scale` kẹp trần rồi chuẩn hoá về gross 1,0, nên khi trần đặt ĐÚNG BẰNG
+trung bình (1/n) vài trọng số vượt nhẹ (đo trên live: dải 0,0148-0,0202). Đó là hành vi
+hội tụ bình thường, không phải lỗi.
+
+### Độ ổn định — chữ ký mạnh nhất đo được trong repo
+
+| n=50 đều | Sharpe | trung vị fold | %fold dương | fold tệ nhất | maxDD |
+|---|---|---|---|---|---|
+| >=60 cặp (344 kỳ) | 2,36 | 2,31 | 83% | −0,69 | 61% |
+| >=100 cặp (187 kỳ) | 2,26 | 2,10 | **100%** | **+0,17** | 61% |
+| >=120 cặp (127 kỳ) | 2,33 | 2,05 | **100%** | **+0,45** | 61% |
+
+**Fold tệ nhất DƯƠNG.** Cấu hình hiện tại: 67% dương, tệ nhất −1,76.
+
+### Vì sao phải đổi n VÀ đòn bẩy CÙNG LÚC
+
+Ở cùng 2,0x thì n=12 THẮNG (105% so với 86%/năm) — vì ở đòn bẩy thấp, cấu hình
+lời-cao/biến-động-cao có lợi. Lợi thế của n=50 nằm ở chỗ biến động 22% cho phép nó
+CHỊU được đòn bẩy mà n=12 không chịu nổi. **Đổi mỗi `n_positions` mà giữ 2,0x sẽ làm
+hệ thống TỆ ĐI**, và sẽ bị hiểu nhầm là phát hiện này sai.
+
+7,89x chọn theo ràng buộc vật lý: $38 x 7,89 / 50 = **$6,00/vị thế**, đúng bằng
+min_notional $5 x an toàn 1,2. Không phải số tối ưu hoá, là số vừa khít.
+
+### Ba hướng đã thử và THUA trong cùng chiến dịch này — đừng làm lại
+
+1. **Họ tín hiệu vị thế**: nghi ngờ nó bị đóng oan do hiện vật kiến trúc
+   (`equal = 1/len(names)` cấp trọng số cho họ rỗng). **Bác bỏ**: thêm 3 và 10 họ TOÀN
+   NaN cho Sharpe **1,7425 y hệt** tới 4 chữ số. Kiến trúc sạch; ghi chú cảnh báo cũ
+   trong CLAUDE.md đã lỗi thời. Họ vị thế thua THẬT.
+2. **Hồi quy mặt cắt ngang**: nghi ngờ nó bị đóng vì 26 hệ số / 41 quan sát là suy
+   biến, và 127 quan sát sẽ khác. **Bác bỏ**: kể cả ở độ rộng cao, Sharpe 0,27-0,72 so
+   với 1,83 của tầng gộp thích ứng. Thử ols / ridge / elastic_net đều thua.
+3. **Nới universe** (`min_coverage` 0,15 -> 0,05, 127 -> 161 cặp): nhiễu, không thắng
+   rõ trong Kelly. n=50 ở min_cov 0,15 vẫn tốt hơn.
+
+### ⚠️ Giới hạn của bằng chứng này
+
+Đây là **ĐỘ ỔN ĐỊNH qua các giai đoạn con**, KHÔNG phải kiểm định ngoài mẫu. Holdout đã
+dùng 2 lần cho v3 — chạm lần ba là tự chấm bài mình, nên `strategy_v3_wide.json` đã
+XOÁ hẳn khối `holdout`/`train` (chúng thuộc về n=12, mang sang là gian lận). Kiểm định
+sạch duy nhất còn lại: **giao dịch giấy tiến về phía trước**.
+
+maxDD mô phỏng **62% -> 69%**. Gấp đôi tiền không miễn phí.
+
+```bash
+python scripts/breadth_era_study.py      # tái lập bảng độ rộng theo kỷ nguyên
+python scripts/preflight.py --config artifacts/strategy_v3_wide.json
+```
+
+## 🧪 18/09/2026 — HAI HƯỚNG NỮA ĐÓNG: TẬP TRUNG DANH MỤC và CHU KỲ TÁI CÂN BẰNG
+
+Giả thuyết được đề xuất: *ít lệnh hơn, chỉ vào lệnh uy tín nhất, rồi đẩy đòn bẩy lên
+20–100x.* Đã đo cả ba vế. **Cả ba đóng, và hai vế đầu mâu thuẫn với vế thứ ba.**
+
+**1. Tập trung danh mục (`breadth_study.py --grid 4,5,6,8,10,12`)**
+
+| n | trung vị Sharpe | %fold dương | fold tệ nhất | **Kelly** | VND/tuần |
+|---|---|---|---|---|---|
+| 4 | 1,31 | 88% | **−0,15** | **1,44x** | 12.379 |
+| 6 | 1,34 | 88% | **−0,46** | **1,94x** | 12.944 |
+| 12 | **1,61** | **100%** | **+0,30** | **3,54x** | **18.987** |
+
+Càng tập trung thì đòn bẩy an toàn càng **THẤP**: Kelly = μ/σ², bỏ đa dạng hoá làm σ
+tăng nên mẫu số phình nhanh hơn tử số. **"Ít lệnh hơn VÀ đòn bẩy cao hơn" tự mâu
+thuẫn — vế đầu phá vế sau.** `n_positions >= 4` là chặn cứng trong `portfolio.py`
+(sổ "trung lập" 2 chân không còn là trung lập).
+
+**2. Chu kỳ tái cân bằng (`scripts/rebalance_period_study.py` — script MỚI)**
+
+| chu kỳ | trung vị | %dương | tệ nhất | VND/tuần |
+|---|---|---|---|---|
+| 24h | 1,35 | 75% | −0,10 | 16.231 |
+| 48h | 1,66 | 88% | −0,15 | 20.762 |
+| **72h** | **1,61** | **100%** | **+0,30** | **21.896** |
+| 96h | 1,06 | 75% | −0,35 | 8.147 |
+| 144h | 1,24 | 100% | +0,05 | 11.421 |
+
+**72h đã là tối ưu.** ⚠️ `lab_grid.json` cho 96h -> Sharpe 1,92 và suýt dẫn tới kết
+luận sai: lưới đó chấm **chỉ trên train** và trên **StrategyV2** (top_frac, 4 tín
+hiệu, beta_neutral=True), không phải v3. Trên v3 thì 96h là cấu hình **tệ nhất**
+trong lưới. Kết quả của một cấu hình khác không chuyển thẳng sang được.
+
+**3. Đòn bẩy 20–100x — chấm trên CẢ HAI cơ sở để kết luận không phụ thuộc cách đo:**
+
+| | holdout (thận trọng) | toàn dòng thời gian |
+|---|---|---|
+| Sharpe / vol | 1,28 / 55,2% | 1,72 / 46% |
+| Kelly | 2,32x | 3,73x |
+| 2,0x đang chạy | **0,86 Kelly** | 0,54 Kelly |
+| g(L) = 0 tại | 4,65x | 7,47x |
+| **g(20x)** | **−4.676%/năm** | **−2.652%/năm** |
+| **g(100x)** | **−145.231%/năm** | **−97.900%/năm** |
+
+20x cháy khi giá lệch 5%; 100x cháy khi lệch 1%. Ở 20x, biến động **58,6%/NGÀY**.
+
+**Điều đáng nhớ hơn các con số:** VỐN nhân lợi nhuận **tuyến tính** và không kèm hình
+phạt. ĐÒN BẨY nhân lợi nhuận tuyến tính nhưng nhân rủi ro **bậc hai** — `g = μL −
+(σL)²/2`. Vì thế gấp đôi vốn luôn gấp đôi tiền, còn gấp đôi đòn bẩy thì không, và quá
+2×Kelly thì thêm đòn bẩy LÀM GIẢM tiền. Đây là lý do ràng buộc thật luôn là vốn.
+
+⚠️ **Dư địa đòn bẩy còn lại phụ thuộc tin cơ sở nào.** Holdout nói 2,0x đã là 0,86
+Kelly — gần như hết dư địa. Toàn dòng thời gian nói 0,54 Kelly — còn tới ~2,8x. Cơ sở
+thứ hai GỒM CẢ đoạn đã dùng để chọn cấu hình, nên nó rộng rãi có thiên vị. Đừng nâng
+quá 2,4x nếu chưa có giao dịch giấy tiến về phía trước xác nhận.
+
+## 🔴 F44 — TRẦN ĐUỔI GIÁ CỐ ĐỊNH 15bp LÀ NÚT THẮT THẬT CỦA TỶ LỆ MAKER. ĐÃ VÁ.
+
+Ghi chú 14/09 nói maker 0,378 -> 0,85 đáng **+0,06 Sharpe, +7,7% lợi nhuận**, rồi vá
+bằng cách nâng `passive_wait_s` 300 -> 900s. **Vá sai chỗ.** Thực đo: 48,8% -> 54,3%.
+
+Đo trên 60 cặp thật (σ nến 1h, quy về cửa sổ chờ theo căn bậc hai thời gian):
+
+| | |
+|---|---|
+| dịch giá trung vị trong 900s | **64,4 bp** |
+| trần đuổi cũ (cố định) | 15,0 bp |
+| số cặp vượt trần | **100%** |
+| cặp mạnh nhất (BTRUSDT, σ=5,22%/h) | 261 bp |
+
+Ở mức dịch trung vị, trần 15bp bị chạm sau **~50 giây của cửa sổ 900 giây**. Lệnh
+đóng băng ngoài thị trường suốt 94% thời gian chờ rồi rơi xuống taker. **Nút thắt
+chưa bao giờ là THỜI GIAN** — nên kéo dài thời gian chờ không thể sửa được nó.
+
+**Điều sắc nhất, và nó lật ngược lý do tồn tại của trần này:** khi
+`allow_taker_fallback=True`, vượt trần KHÔNG làm hệ thống bỏ lệnh — nó vẫn giao dịch,
+chỉ là bằng taker ở đúng mức giá đã trôi đó. Cả hai đường đều trả khoản trôi giá như
+nhau; đường taker trả THÊM spread + 3bp phí. Trần đuổi vì thế không bảo vệ khỏi bất
+cứ thứ gì, nó thuần tuý làm giao dịch đắt hơn. Nó chỉ có nghĩa nếu vượt trần đồng
+nghĩa BỎ HẲN lệnh — mà bỏ lệnh thì phá trung lập, tức tệ hơn nhiều.
+
+**Vá:** trần co giãn theo biến động RIÊNG của từng cặp trong đúng cửa sổ chờ —
+`max(max_chase_bps, chase_sigma_mult x σ_cửa-sổ)`, `chase_sigma_mult = 1.5`. Đo trên
+12 cặp đang giữ: trung vị trần mới **124,7bp (rộng hơn 8,3x)**, nhưng PAXGUSDT (vàng)
+chỉ 20,9bp còn BULLAUSDT (σ=4,43%/h) 448,7bp. **Một con số duy nhất không thể đúng
+cho cả hai** — đó mới là lỗi gốc, không phải giá trị 15 to hay nhỏ.
+
+Cặp nào không đo được σ thì dùng trần sàn: thiếu dữ liệu phải ngả về phía THẬN TRỌNG.
+Khoá bằng `tests/oms/test_chase_cap_volatility_f44.py` (8 test).
+
+⚠️ Đây là cải thiện theo CƠ CHẾ, chưa phải theo backtest khớp lệnh. Bộ đếm
+`requote_blocked_by_chase_cap` + `max_drift_bps_seen` đã có sẵn trong `ExecutionRecord`
+— lượt sạch tới sẽ xác nhận bằng số thật. Đừng ghi nhận +7,7% cho tới khi có số đó.
+
+## 🔴 F43 — CẮT THEO SỨC CHỨA VỐN BIẾN QUỸ TRUNG LẬP THÀNH CƯỢC MỘT CHIỀU. ĐÃ VÁ.
+
+`xs_live_pipeline` cắt danh mục khi vốn không đủ `n_positions` vị thế. Bản cũ lấy
+top-N theo **|trọng số| bất kể dấu** — chú thích ghi "giữ mạnh nhất ở cả hai chiều"
+nhưng code không hề làm thế.
+
+**Chưa từng cắn vì testnet có $6.226 nên `cap` luôn >> 12. Nó cắn đúng lúc chạm tiền
+thật.** Vốn $38 ở 2x cho `cap` = 12 — vừa khít. Sụt 8% xuống $35 là `cap` = 11, và
+cắt lẻ thì hai chân không thể bằng nhau. DD kỳ vọng 24,7%/năm nên đây là đường đi
+MẶC ĐỊNH của tài khoản thật, không phải biên hiếm.
+
+Mô phỏng 20.000 lượt với độ mạnh tín hiệu ngẫu nhiên (trần ±2%):
+
+| vốn | cap | P(vi phạm trần) | net xấu nhất |
+|---|---|---|---|
+| $35 | 11 | **100%** | 9,1% |
+| $28 | 9 | **100%** | 33,3% |
+| $25 | 8 | 55% | 50,0% |
+| $20 | 6 | 57% | **100%** |
+
+Net 100% nghĩa là danh mục **một chiều hoàn toàn ở đòn bẩy 2x** — đúng thứ chiến lược
+này sinh ra để không bao giờ làm.
+
+**Vá:** cắt cân hai chân (`cap // 2` mỗi chân, giữ tín hiệu mạnh nhất từng chân), rồi
+co giãn mỗi chân về đúng nửa gross -> net = 0 **chính xác** (test khoá ở 1e-12, không
+phải ở trần ±2%: phép cắt là thao tác toán học thuần, để ngưỡng lỏng là tự cho phép
+một chỗ rò mới núp dưới trần). Không đủ 1 cặp mỗi chân thì **HALT** — giao dịch một
+chiều còn tệ hơn không giao dịch.
+
+Cố tình KHÔNG dùng `project_neutral`: phép chiếu trực giao trừ đi trung bình nên có
+thể ĐẢO DẤU một trọng số nhỏ, biến một cặp long thành short ngược với tín hiệu sinh
+ra nó. Co giãn theo chân giữ nguyên mọi dấu và mọi thứ hạng trong chân.
+
+Khoá bằng `tests/pipelines/test_capacity_truncation_f43.py` (18 test, quét toàn dải
+vốn $12-$38).
+
+## 🔴 F42 — DẢI KHÔNG GIAO DỊCH PHÁ TRUNG LẬP. ĐÂY LÀ THỨ GIỮ CỔNG ĐÓNG. ĐÃ VÁ.
+
+`portfolio.py` dựng trọng số trung lập **chính xác 0,000%** (đo trên sổ thật 18/09).
+Rồi `build_rebalance_plan` áp `DEFAULT_NO_TRADE_BAND = 0.20` để khỏi trả phí cho
+điều chỉnh vụn — nhưng cặp bị bỏ qua **giữ khối lượng CŨ, không phải khối lượng
+ĐÍCH**. Mỗi lần bỏ qua là sai số tới 20% cỡ vị thế, và các sai số đó KHÔNG tự triệt
+tiêu theo chiều.
+
+**RÒ NGẪU NHIÊN — đó là lý do nó thoát mọi test cũ.** Lượt nào các cặp bị bỏ qua
+tình cờ ngược chiều thì sổ sạch; cùng chiều thì sổ lệch:
+
+| lượt | các cặp bị bỏ | net | kết quả |
+|---|---|---|---|
+| 18/09 | NGƯỢC chiều (SAND short, VTHO long) | +0,56% | ✅ sạch |
+| 16/09 | CÙNG chiều | −2,96% | ❌ bẩn |
+| 11/09 | cùng cơ chế | −3,16% | ❌ bẩn |
+
+**Hệ quả là toàn bộ dự án đứng ở cửa.** Cổng cần 3 lượt sạch LIÊN TIẾP, và
+`E[lượt] = 1/p + 1/p² + 1/p³`:
+
+| tỉ lệ lượt sạch | thời gian tới cổng |
+|---|---|
+| 17% (lịch sử thật: 1 sạch / 6 lượt) | **2,1 NĂM** |
+| 50% | 42 ngày |
+| 90% (sau vá) | **11 ngày** |
+
+⚠️ **"9 ngày" từng báo là SÀN TUYỆT ĐỐI, không phải kỳ vọng.** Nó chỉ đúng nếu 3
+lượt liên tiếp đều sạch. Báo cáo con số tốt nhất như thể nó là con số kỳ vọng đã
+che mất việc cổng này thực tế không bao giờ tới.
+
+**Vá:** giữ nguyên dải (nó tiết kiệm phí thật), thêm `_repair_neutrality()` — nếu kế
+hoạch lệch quá `max_net_exposure` thì NHẬN LẠI các lệnh đã bỏ ở chân nặng, lệnh kéo
+mạnh nhất trước, tới khi về trong trần. Lượt vốn đã sạch thì không phát sinh lệnh nào
+(kiểm chứng trên sổ thật 18/09: 0 lệnh cân thừa). Trần lấy từ `LiveConfig.max_net_exposure`,
+**cùng một con số** cổng F25 dùng để chấm sau thực thi — trước đây tầng kế hoạch hoàn
+toàn mù về trung lập và mãi tới bước 6b, khi lệnh ĐÃ nằm trên sàn, mới có thứ đo nó.
+
+**Lỗi thứ hai, lộ ra khi viết test cho lỗi thứ nhất:** điều chỉnh làm tròn về 0 thì
+`continue` thẳng, nên vị thế **biến mất khỏi `gross`/`net` của kế hoạch**. Đo thử 12
+vị thế thì 9 cái bốc hơi — gross đọc ra $5.000 thay vì $20.000, net/gross ra **+100%
+thay vì 0%**. Sổ kế toán của kế hoạch phải tả đúng danh mục SẼ tồn tại, không chỉ
+những cặp có phát lệnh.
+
+Khoá bằng `tests/execution/test_neutrality_no_trade_band_f42.py` (3 test, ở tầng KẾ
+HOẠCH — tức trước khi mất một đồng phí nào).
+
+**Bài học:** F25 chấm trung lập SAU thực thi. Một cổng chỉ biết hét sau khi lệnh đã
+lên sàn thì không ngăn được gì — nó chỉ ghi biên bản. Mọi bất biến phải được chặn ở
+tầng còn sửa được miễn phí.
+
+## 🔴 F41 — DAEMON CHẾT 2 NGÀY 3 GIỜ MÀ `launchctl list` VẪN KHOE PID. ĐÃ VÁ.
+
+16/09 18:40 -> 18/09 21:35: `.venv` biến mất -> `certifi/cacert.pem` không còn ->
+MỌI kết nối TLS chết. Daemon ném lỗi **58 chu trình liên tiếp**, không gọi nổi sàn,
+không đặt nổi lệnh. Nhưng `launchctl list` vẫn hiện PID bình thường suốt 2 ngày.
+
+**Hai lỗi thiết kế cộng hưởng:**
+1. `run_daily.py` bắt `Exception` -> ghi log -> `sleep` -> lặp **vô hạn**. Hỏng vĩnh
+   viễn và hỏng thoáng qua được đối xử y hệt nhau.
+2. Kênh báo động duy nhất là Telegram, mà Telegram đi qua **đúng cái TLS vừa chết**.
+   Đây là HỎNG TƯƠNG QUAN: kênh báo động dùng chung hạ tầng với thứ nó canh, nên
+   đúng lúc cần kêu nhất thì nó câm.
+
+**Thiệt hại thật = 0 đồng, và đó là MAY, không phải nhờ thiết kế.** Cửa sổ chết nằm
+trọn trong một chu kỳ giữ 72h (lượt cuối 16/09 15:43, lượt kế 19/09 15:43) nên không
+lỡ lượt nào. Dựng lại đường vốn: đáy $5,734.61 lúc 16/09 21:00 = DD 5,74%, còn cách
+van TIER1 (10%) 4,3 điểm phần trăm. Mất là mất **BẢO HIỂM**, không mất lợi nhuận —
+giá rơi thêm 4,3pp nữa thì van cắt nửa vị thế đã không ai bấm.
+
+**Vá:**
+- `_write_health()` ghi nhịp tim ra `logs/daemon_health.json` mỗi chu trình. Đĩa còn
+  sống khi mạng đã chết, nên đây là nguồn sự thật duy nhất tin được.
+- `_local_alert()` báo động qua `osascript` + cờ `logs/DAEMON_DOWN.txt` — **không đi
+  qua mạng**.
+- Hỏng >= 3 chu trình liên tiếp thì `return 1` để launchd khởi động lại; nếu vẫn
+  hỏng, `launchctl list` hiện mã thoát khác 0 — nói THẬT thay vì khoe PID của xác.
+- `scripts/healthcheck.py` — **một lệnh** trả lời XANH/ĐỎ bằng tuổi nhịp tim.
+
+**Vá luôn nguyên nhân venv không tái lập được:** `pyarrow`, `requests`, `joblib`
+trước đây chỉ cài tay vào `.venv`, không khai báo trong `pyproject.toml`. Dựng lại
+venv ra một môi trường THIẾU chúng: không pyarrow -> không đọc nổi parquet ->
+`universe` về **0 cặp**. Và `.gitignore` có `venv/` nhưng thiếu `.venv/`, nên `.venv`
+là untracked — `git clean -fd` xoá sạch. Cả hai đã sửa.
+
+**Bài học:** `launchctl list` chỉ chứng minh tiến trình CÒN TỒN TẠI, không chứng minh
+nó CÒN LÀM VIỆC. Mọi kênh giám sát phải trả lời được câu "nó hỏng thế nào khi chính
+hạ tầng của nó hỏng" — cùng câu hỏi đã học ở F40.
+
+```bash
+python scripts/healthcheck.py    # ⭐ CHẠY ĐẦU TIÊN mỗi lần vào xem hệ thống
+```
+
+## 🔴 F40 — min notional bị giả định ĐỒNG NHẤT $5. Sẽ cắn ở lượt MAINNET ĐẦU TIÊN. ĐÃ VÁ.
+
+`max_positions_for_capital` giả định mọi cặp cần $5. Mainnet: 122/128 cặp đúng $5,
+nhưng **ETH/LTC/LINK/ETC/BCH cần $20 và BTCUSDT cần $50**. Vốn $38 ở 2x cho $6,34/vị
+thế — sáu cặp đó không mua nổi. Nếu một cái lọt top-6, lệnh bị bỏ âm thầm, danh mục
+**mất một chân** và hết trung lập — đúng cơ chế F25 (sổ lệch +35%).
+
+Chưa từng cắn vì mới chạy testnet. Sẽ cắn đúng lúc có tiền thật.
+
+⚠️ Bẫy thứ hai, phát hiện khi viết test cho bản vá thứ nhất: chia cho `n_positions`
+CỨNG làm ngưỡng tụt theo vốn; vốn $35 -> ngưỡng $4,86 -> **quét sạch universe** ->
+`resolve_universe` ném lỗi "còn 0 cặp". Sụt 8% vốn là chết đường chạy, và thủ phạm là
+chính lớp bảo vệ vừa thêm. Nay dùng số vị thế đã điều chỉnh theo vốn, ngưỡng luôn >= $5.
+
+**Một bộ lọc an toàn có thể tự trở thành nguyên nhân sự cố.** Mọi lớp bảo vệ mới phải
+được hỏi "nó hỏng thế nào khi điều kiện xấu đi", không chỉ "nó chặn đúng thứ cần chặn".
+
+## 🔴 F38 — live duyệt `SIGNAL_REGISTRY` thay vì bộ đã kiểm định. ĐÃ VÁ.
+
+Registry là nơi CHỨA mọi tín hiệu từng viết, không phải danh sách đang giao dịch. Thêm
+họ mới vào registry sẽ âm thầm đổi thứ live đặt lệnh. **Test parity trọng số không bắt
+được** — nó dựng cả hai phía bằng cùng một danh sách. Cùng khe hở F37 lọt qua: công
+thức thì khoá, cấu hình thì không. Nay có 2 test parity ở tầng CẤU HÌNH.
+
+## 🔴 14/09/2026 — F37: LIVE ĐANG CHẠY 62 CẶP THAY VÌ 127. ĐÃ VÁ.
+
+`data/universe.history_lengths` đếm nến trong file `{sym}_4h.parquet`, nhưng hệ thống
+dựng khung 4h **TỪ file 1h** (`load_panel_v2(source_interval="1h")`). Bộ lọc universe
+vì thế đo một thứ còn đường chạy dùng một thứ khác — họ lỗi F3, lớp áo khác.
+
+**89/170 cặp bị loại OAN.** CRVUSDT có 52.869 nến 1h (=13.217 nến 4h) nhưng file 4h
+chỉ còn 186 dòng sót từ lần tải cũ -> bị loại vì "thiếu lịch sử".
+
+| rổ | cặp | Sharpe | ann | trung vị fold |
+|---|---|---|---|---|
+| CŨ (lỗi F37) | 60 | **1,20** | 45,5% | 1,04 |
+| MỚI (đã vá) | 101 | **1,56** | 64,8% | 1,31 |
+| nghiên cứu | 127 | 1,74 | 79,4% | 1,61 |
+
+**0,36 Sharpe = +69% lợi nhuận tuần** (~10.450 -> ~17.660 VND). Sau khi vá,
+`build_universe` trên MAINNET trả về **đúng 127 cặp** — khớp chính xác cấu hình đã
+kiểm định. Trước khi vá thì không.
+
+⚠️ **F37 nằm trên đường tiền và chỉ có hiệu lực sau khi NẠP LẠI daemon.**
+
+**Bài học đắt hơn bản thân lỗi:** cả chiến dịch nghiên cứu hôm nay (5 hướng) tìm được
++7,7%. Một lỗi đúng/sai phát hiện tình cờ khi viết `scripts/preflight.py` đáng +69%.
+Ở hệ thống chưa từng kiểm tra đầu-cuối, alpha lớn nhất nằm ở chỗ nó KHÔNG chạy đúng
+thứ mình tưởng — không nằm ở mô hình.
+
+## 💰 14/09/2026 — KỲ VỌNG LỢI NHUẬN THẬT, và vì sao nó là con số đó
+
+Tăng trưởng BỀN VỮNG tối đa ở đòn bẩy Kelly là `S²/2`/năm. Đảo ngược cho vốn 1 triệu:
+
+| muốn mỗi tuần | cần Sharpe năm | hiện có |
+|---|---|---|
+| 1,0% (10.000 VND) | 1,02 | ✅ |
+| 2,0% (20.000 VND) | 1,44 | ⚠️ |
+| 3,0% (30.000 VND) | 1,75 | ❌ |
+| 5,0% (50.000 VND) | **2,25** | ❌ (đang 1,10) |
+
+**Sharpe holdout ở lưới 4h = 1,10 -> bền vững ~11.700 VND/tuần.** Muốn 50.000 phải
+nhân đôi Sharpe. Đã quét 6 hướng để tìm phần nhân đôi đó:
+
+**5 hướng ĐÓNG — đừng làm lại** (chi tiết + số liệu ở `references/plan.md`):
+độ rộng `n_positions` · mục tiêu biến động + van drawdown · mở rộng bể chọn
+(`min_coverage`) · cân theo độ mạnh bằng chứng · **vùng đệm thứ hạng `exit_frac`**.
+
+⚠️ Riêng `exit_frac`: ghi chú cũ nói "giảm turnover mà không mất Sharpe" là từ cấu
+hình **v1**. Trên v3 nó làm Sharpe **1,74 -> 1,48**. Đừng bật theo ghi chú cũ.
+
+**1 hướng XÁC NHẬN — chi phí:** maker 0,378 -> 0,85 đáng **+0,06 Sharpe, +7,7% lợi
+nhuận**. Đã làm: van trung lập trong lúc khớp thụ động (`order_router.fill_imbalance`),
+`passive_wait_s` 300s -> **900s**, và chẩn đoán tỷ lệ maker vào `ExecutionRecord` +
+`readiness_gate.py` để lượt sạch tới tự chỉ ra nút thắt.
+
+⚠️ **Các thay đổi trên nằm trên ĐƯỜNG TIỀN và chỉ có hiệu lực sau khi NẠP LẠI daemon.**
+
 ## 🧭 Điều hướng — ĐỌC TRƯỚC KHI TÌM CODE
 Repo này có skill điều hướng riêng. **Đừng grep dò dẫm** — nạp nó rồi tra bảng:
 
@@ -36,9 +493,13 @@ reference nạp theo nhu cầu: `defects.md` (lỗi F1–F16), `money-path.md` (
 `plan.md` (kế hoạch P0/P1/P2).
 
 ## ⚠️ Trạng thái thật của hệ thống
-- **341 test xanh KHÔNG có nghĩa chiến lược sinh lời.** Test khoá tính ĐÚNG (nhân quả,
+- **558 test xanh KHÔNG có nghĩa chiến lược sinh lời.** Test khoá tính ĐÚNG (nhân quả,
   kế toán, bất biến danh mục), không khoá được EDGE. Edge chỉ đo được ngoài mẫu.
-- F1–F13 và **F21–F31** đã vá; F14–F16 còn lại (`references/defects.md`).
+- F1–F44 đã vá. (Ghi chú cũ nói F14–F16 còn lại là SAI — `references/defects.md`
+  ghi rõ cả ba đã vá từ lâu ở `live_pipeline.py` và `cpcv_pipeline.py`.)
+- **F35 (14/09)**: `StrategyV2.backtest(mask=...)` cắt lưới TRƯỚC khi tính -> khởi động
+  lại tầng gộp -> Sharpe holdout đọc nhầm 0,71 thay vì 1,28. `validate_v3.py` đã né lỗi
+  này từ 10/09 nhưng **bản vá chỉ nằm trong script, không nằm trong thư viện**.
 - **Sự cố thực thi 10/09/2026** sinh ra F21–F26: một ngoại lệ không bắt trong
   `submit_plan` làm hỏng cả lượt, để lại lệnh post-only sống 3h39 trên sàn và danh
   mục lệch **+35%** khỏi trung lập suốt 27 giờ.
@@ -66,12 +527,29 @@ bất biến này (sai số < 1e-9). Viết lại công thức ở tầng live =
 
 ## Lệnh
 ```bash
-python -m pytest -q                    # 371 test, ~135s
+python -m pytest -q                    # 558 test, ~167s
+python scripts/healthcheck.py          # ⭐ CHẠY ĐẦU TIÊN — daemon còn SỐNG hay đã chết
+python scripts/download_metrics.py     # tải dữ liệu vị thế (OI + long/short)
+python scripts/positioning_study.py    # họ vị thế có đáng thêm không
+python scripts/preflight.py            # ⭐ CHẠY TRƯỚC MỖI LƯỢT — chặn lượt hỏng trước khi nó hỏng
+python scripts/breadth_study.py        # độ rộng danh mục (kết quả: ĐÓNG)
+python scripts/risk_overlay_study.py   # mục tiêu biến động (kết quả: ĐÓNG)
+python scripts/export_returns_v3.py    # tái tạo v3 + KIỂM CHỨNG parity, cache lợi suất
+python scripts/goal_plan.py            # mục tiêu +5%/7 ngày: trả lời bằng số
+python scripts/build_goal_policy.py    # giải sẵn chính sách DP ra artifact
 python scripts/attribution.py          # quy kết từng nâng cấp (train)
 python scripts/stability.py            # chọn cấu hình theo ĐỘ ỔN ĐỊNH, không theo đỉnh
 python scripts/diagnose_oos.py         # chẩn đoán suy giảm ngoài mẫu
 python scripts/refresh_spreads.py      # đo lại spread sổ lệnh thật
 python scripts/readiness_gate.py       # ĐÃ ĐƯỢC PHÉP BƠM TIỀN THẬT CHƯA?
+launchctl list | grep aegis            # 2 job: com.aegis.trading + com.aegis.telegram
+tail -f logs/aegis_daemon.log          # heartbeat mỗi 30 phút
+
+# SAU MỖI LẦN VÁ CODE ĐƯỜNG TIỀN, BẮT BUỘC khởi động lại daemon:
+for j in trading telegram; do
+  launchctl unload ~/Library/LaunchAgents/com.aegis.$j.plist
+  launchctl load   ~/Library/LaunchAgents/com.aegis.$j.plist
+done
 python scripts/gen_codemap.py          # sinh lại bản đồ code sau refactor
 python scripts/check_docs.py           # kiểm tra tham chiếu file:line trong docs còn đúng
 make agent-sync                        # chạy cả hai (làm sau mỗi lần refactor)

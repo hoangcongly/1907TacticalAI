@@ -20,6 +20,8 @@ import numpy as np
 
 # Không giao dịch nếu lệch trọng số nhỏ hơn ngưỡng này — chống churn phí vô ích.
 DEFAULT_NO_TRADE_BAND = 0.20
+#: Trần |net|/gross của KẾ HOẠCH, khớp `LiveConfig.max_net_exposure` [FIX F42].
+DEFAULT_NEUTRALITY_TOLERANCE = 0.02
 
 
 @dataclass
@@ -119,6 +121,7 @@ def build_rebalance_plan(
     equity: float,
     leverage: float = 1.0,
     no_trade_band: float = DEFAULT_NO_TRADE_BAND,
+    neutrality_tolerance: float = DEFAULT_NEUTRALITY_TOLERANCE,
 ) -> RebalancePlan:
     """
     Dựng danh sách lệnh đưa danh mục hiện tại về trọng số mục tiêu.
@@ -147,6 +150,10 @@ def build_rebalance_plan(
         norm = {s: w / total_abs for s, w in target_weights.items()}
 
     plan = RebalancePlan()
+
+    # [FIX F42] các cặp bị DẢI KHÔNG GIAO DỊCH bỏ qua, có thể phải nhận lại.
+
+    band_skipped: List[tuple] = []
     symbols = set(norm) | set(current_qty)
 
     for symbol in sorted(symbols):
@@ -176,6 +183,15 @@ def build_rebalance_plan(
 
         delta = filt.round_qty(delta)
         if delta == 0.0:
+            # [FIX F42] Điều chỉnh làm tròn về 0 nghĩa là vị thế ĐỨNG YÊN ở khối
+            # lượng cũ — nó vẫn nằm trong danh mục và vẫn mang rủi ro. Bản cũ
+            # `continue` thẳng, nên nó BIẾN MẤT khỏi gross/net của kế hoạch: đo thử
+            # 12 vị thế thì 9 cái bốc hơi, gross còn 5.000 thay vì 20.000 và tỉ lệ
+            # net/gross đọc ra +100% thay vì 0%. Sổ kế toán của kế hoạch phải tả
+            # đúng danh mục SẼ tồn tại, không phải chỉ những cặp có phát lệnh.
+            if target_qty != 0.0:
+                plan.gross_notional += abs(held) * price
+                plan.net_notional += held * price
             continue
 
         is_closing = (held != 0.0 and target_qty == 0.0) or (abs(target_qty) < abs(held) and held * target_qty >= 0)
@@ -188,6 +204,8 @@ def build_rebalance_plan(
                 if target_qty != 0.0:
                     plan.gross_notional += abs(held) * price
                     plan.net_notional += held * price
+                    # [FIX F42] Giữ lại để bước cân lại còn nhận về được nếu sổ lệch.
+                    band_skipped.append((symbol, delta, price, target_qty, held, filt))
                 continue
 
         # Lệnh MỞ phải tự vượt min_notional; lệnh ĐÓNG thì luôn được phép.
@@ -209,7 +227,72 @@ def build_rebalance_plan(
             plan.gross_notional += abs(target_qty) * price
             plan.net_notional += target_qty * price
 
+    _repair_neutrality(plan, band_skipped, neutrality_tolerance)
     return plan
+
+
+def _repair_neutrality(
+    plan: RebalancePlan,
+    band_skipped: List[tuple],
+    tolerance: float,
+) -> None:
+    """
+    [FIX F42] Nhận lại các lệnh bị DẢI KHÔNG GIAO DỊCH bỏ qua, cho tới khi kế hoạch
+    về trong trần trung lập.
+
+    VÌ SAO CẦN: `combine_adaptive` -> `portfolio.py` dựng trọng số trung lập CHÍNH XÁC
+    (đo được: net/gross = 0,000%). Dải không giao dịch phá đúng bất biến đó: cặp bị bỏ
+    qua giữ khối lượng CŨ chứ không phải khối lượng ĐÍCH, nên mỗi lần bỏ qua là một sai
+    số tới 20% cỡ vị thế — và các sai số này KHÔNG tự triệt tiêu theo chiều.
+
+    Đây là RÒ NGẪU NHIÊN: lượt nào các cặp bị bỏ qua tình cờ ngược chiều thì sổ sạch;
+    lượt nào chúng cùng chiều thì sổ lệch. Đo thật:
+        lượt 18/09: bỏ 2 cặp NGƯỢC chiều (SAND short, VTHO long) -> net +0,56% ✅
+        lượt 16/09: bỏ các cặp CÙNG chiều                        -> net -2,96% ❌
+        lượt 11/09: cùng cơ chế                                  -> net -3,16% ❌
+    Vì thế tỉ lệ lượt sạch chỉ ~50%, và cổng "3 lượt sạch liên tiếp" không bao giờ
+    tới: ở p=50% kỳ vọng là 42 ngày, ở p=17% (lịch sử) là 2,1 NĂM.
+
+    CÁCH VÁ: giữ nguyên dải (nó tiết kiệm phí thật), nhưng nếu kế hoạch lệch quá trần
+    thì nhận lại các lệnh ở CHÂN NẶNG — lệnh kéo net về 0 nhiều nhất trước — cho tới
+    khi đạt trần. Lượt nào vốn đã sạch thì không phát sinh lệnh nào.
+
+    Cố tình KHÔNG sửa bằng cách thu nhỏ chân nặng ngoài kế hoạch: làm thế là bịa ra
+    trọng số không đến từ `portfolio.py`, tái lập đúng họ lỗi F3 (viết lại công thức
+    ở tầng live).
+    """
+    if not band_skipped or plan.gross_notional <= 0:
+        return
+    if abs(plan.net_notional) / plan.gross_notional <= tolerance:
+        return  # vốn đã sạch — không trả thêm một đồng phí nào
+
+    # Ứng viên phải KÉO NET VỀ 0, tức ngược dấu với net đang lệch.
+    cands = [c for c in band_skipped if c[1] * plan.net_notional < 0]
+    # Lệnh kéo mạnh nhất trước: ít lệnh nhất, ít phí nhất.
+    cands.sort(key=lambda c: -abs(c[1] * c[2]))
+
+    for symbol, delta, price, target_qty, held, filt in cands:
+        if abs(plan.net_notional) / plan.gross_notional <= tolerance:
+            break
+        # Nhận lại thì phải tự vượt min_notional như mọi lệnh MỞ khác.
+        if not filt.is_tradeable(delta, price):
+            continue
+        # Chỉ nhận nếu thực sự làm sổ BỚT lệch — tránh nhận vào rồi vọt quá đầu kia.
+        if abs(plan.net_notional + delta * price) >= abs(plan.net_notional):
+            continue
+
+        plan.orders.append(RebalanceOrder(
+            symbol=symbol,
+            side="BUY" if delta > 0 else "SELL",
+            qty=abs(delta),
+            price=filt.round_price(price),
+            reason="cân trung lập",
+            notional=abs(delta) * price,
+        ))
+        # Cặp này nay theo khối lượng ĐÍCH, không còn theo khối lượng CŨ.
+        plan.gross_notional += abs(target_qty) * price - abs(held) * price
+        plan.net_notional += delta * price
+        plan.skipped.pop(symbol, None)
 
 
 def max_positions_for_capital(

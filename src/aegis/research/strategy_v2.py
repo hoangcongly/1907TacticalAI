@@ -135,15 +135,27 @@ class StrategyV2:
         """
         Chạy toàn bộ chuỗi tầng và trả về thống kê trước/sau đòn bẩy.
 
-        `mask` cắt theo train/holdout SAU khi tín hiệu đã tính trên toàn chuỗi —
-        hợp lệ vì mọi tín hiệu đều nhân quả, và tránh mất vài trăm nến warm-up ở
-        đầu đoạn được cắt.
+        `mask` cắt train/holdout SAU khi TOÀN BỘ chuỗi tầng đã chạy trên toàn dòng
+        thời gian — xem ghi chú [FIX F35] trong thân hàm để biết vì sao thứ tự này
+        tuyệt đối không được đảo.
         """
         close = panel["close"]
+        # [FIX F35] TÍNH TRÊN TOÀN DÒNG THỜI GIAN, CẮT SAU — thứ tự này là bất biến.
+        #
+        # Bản cũ cắt `marks` về đoạn `mask` TRƯỚC rồi mới gọi `target_weights`. Tầng
+        # gộp thích ứng (`adaptive_combiner.adaptive_weights`) phụ thuộc ĐƯỜNG ĐI: nó
+        # đi tới từ chỉ số 0 với `prev = 0` và trần `max_step` mỗi kỳ. Cắt trước nghĩa
+        # là nó khởi động lại từ con số 0 ở đầu đoạn được đo — `min_periods` kỳ đầu
+        # chạy trọng số đều, và cửa sổ học không bao giờ đầy.
+        #
+        # Live KHÔNG gặp handicap đó: live luôn có toàn bộ lịch sử trong tay. Nên con
+        # số đo theo cách cũ không mô tả điều live sẽ trải qua. Sai lệch đã đo trên
+        # chính dữ liệu này: Sharpe holdout 0,71 (sai) so với 1,28 (đúng) — đủ lớn để
+        # kết luận ngược hẳn về việc chiến lược có sống ngoài mẫu hay không.
+        #
+        # Cắt SAU là hợp lệ vì mọi tín hiệu đều nhân quả: đổi dữ liệu sau một mốc bất
+        # kỳ không làm đổi một chữ số nào của lợi suất trước mốc đó.
         marks = close.index[::self.cfg.rebalance_every]
-        if mask is not None:
-            marks = marks[np.isin(marks, close.index[mask])]
-
         W = self.target_weights(panel, funding, marks)
 
         if cost is None:
@@ -155,6 +167,13 @@ class StrategyV2:
 
         res = simulate(W, close.reindex(marks), funding.reindex(marks), cost,
                        bar_hours=self.cfg.period_hours(), rebalance_every=1)
+
+        if mask is not None:
+            keep = np.isin(res.returns.index, close.index[mask])
+            for fld in ("returns", "gross_returns", "cost_drag", "funding_pnl",
+                        "turnover", "n_positions", "net_exposure", "gross_exposure"):
+                setattr(res, fld, getattr(res, fld)[keep])
+
         ppy = self.cfg.periods_per_year()
         out = {"unlevered": res.stats(ppy), "result": res, "weights": W,
                "cost_bps_mean": res.meta["cost_bps_mean"], "periods_per_year": ppy}

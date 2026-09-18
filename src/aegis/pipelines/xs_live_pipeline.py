@@ -20,6 +20,7 @@ dữ liệu cũ nguy hiểm hơn nhiều so với việc bỏ lỡ một lượt
 
 import json
 import logging
+import math
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -42,9 +43,11 @@ from aegis.research.cross_sectional import (
     combine_signals_zscore, rank_to_weights, rank_to_weights_buffered,
     signal_funding_carry, signal_funding_momentum, signal_momentum, signal_ofi,
 )
-from aegis.data.panel_v2 import load_funding_panel_v2, load_panel_v2
+from aegis.data.panel_v2 import interval_hours, load_funding_panel_v2, load_panel_v2
 from aegis.research.adaptive_combiner import CombinerSpec, combine_adaptive
 from aegis.research.signal_library import SIGNAL_REGISTRY, build_signal
+from aegis.research.strategy_v3 import V3_SIGNALS
+from aegis.risk.goal_overlay import GoalOverlay, GoalOverlayConfig
 from aegis.risk.portfolio import PortfolioSpec, build_weights
 
 logger = logging.getLogger(__name__)
@@ -67,10 +70,37 @@ class LiveConfig:
     min_notional_safety: float = 1.2
     passive_offset_ticks: int = 1     # đệm khỏi BBO để lệnh post-only không bị -5022
     exit_frac: float = 0.15           # vùng đệm thứ hạng: giữ tới khi rơi khỏi top này
-    passive_wait_s: float = 300.0     # chờ khớp maker trước khi cắn giá
+    #: Thời gian chờ khớp maker trước khi cắn giá.
+    #:
+    #: 300s -> 900s (14/09/2026). Con số 300 cũ là một cách chặn rủi ro GIÁN TIẾP:
+    #: vòng chờ hoàn toàn mù về trung lập, nên phải để ngắn. Nay `neutrality_tolerance`
+    #: chặn trực tiếp đúng rủi ro đó, nên chờ lâu hơn AN TOÀN HƠN bản cũ chứ không
+    #: kém an toàn hơn — và tỷ lệ maker đo được mới chỉ 0,378-0,49, tức chi phí đang
+    #: cao gấp đôi mức có thể đạt.
+    #:
+    #: Trong chu kỳ 72h, 15 phút là 0,3% thời gian. Đổi lại: maker 0,378 -> 0,85 đáng
+    #: +0,06 Sharpe và +7,7% lợi nhuận (đo ở `scripts/risk_overlay_study.py` và bảng
+    #: nhạy chi phí). Chỉ có hiệu lực sau khi NẠP LẠI daemon.
+    passive_wait_s: float = 900.0
     allow_taker_fallback: bool = True # đảm bảo về đúng trạng thái trung lập
     requote: bool = True              # bám theo BBO để lệnh maker khớp được
-    max_chase_bps: float = 15.0       # trần đuổi giá, chống rượt theo cú chạy
+    max_chase_bps: float = 15.0       # trần đuổi giá SÀN, dùng khi không đo được biến động
+    #: [FIX F44] Bội số biến động cho trần đuổi giá theo từng cặp.
+    #:
+    #: Trần CỐ ĐỊNH 15bp sai về bản chất: rất rộng với BTC, cực hẹp với một altcoin
+    #: σ=5%/giờ. Đo trên 60 cặp thật, dịch giá trung vị trong cửa sổ chờ 900s là
+    #: 64,4bp -> 100% số cặp vượt trần, và trần bị chạm sau ~50 giây của 900 giây.
+    #: Lệnh đóng băng ngoài thị trường 94% thời gian chờ rồi rơi xuống taker.
+    #:
+    #: Trần mới = max(`max_chase_bps`, `chase_sigma_mult` x σ của cặp trong cửa sổ chờ).
+    #: 1,5σ nghĩa là "đuổi theo nhiễu bình thường, dừng khi là cú chạy thật" — cùng
+    #: một ý nghĩa ở mọi cặp, điều mà một con số duy nhất không làm được.
+    chase_sigma_mult: float = 1.5
+    #: Ngưỡng lệch trung lập trong lúc khớp thụ động. Vượt là thoát chờ và cắn giá
+    #: cho cân ngay. Đây là thứ cho phép `passive_wait_s` dài ra một cách AN TOÀN:
+    #: rủi ro thật (khớp lệch một chiều) bị chặn trực tiếp thay vì bị chặn gián tiếp
+    #: bằng một cái đồng hồ ngắn. Xem `order_router.execute_with_fallback`.
+    neutrality_tolerance: float = 0.10
     min_signal_coverage: int = 3      # đa số tín hiệu phải có dữ liệu
     min_history_bars: int = 120       # > lookback dài nhất (momentum_90)
     min_quote_volume_24h: float = 5e6
@@ -95,6 +125,23 @@ class LiveConfig:
     combiner_t_threshold: float = 2.0
     combiner_max_abs_weight: float = 0.20
     combiner_max_step: float = 0.05
+    #: Danh sách tín hiệu v3. `None` = đúng bộ 26 đã kiểm định (`V3_SIGNALS`).
+    #:
+    #: [FIX F38] Bản trước duyệt thẳng `SIGNAL_REGISTRY`. Registry là nơi CHỨA mọi tín
+    #: hiệu từng viết, kể cả tín hiệu đang thử nghiệm — nó không phải danh sách "những
+    #: gì đang giao dịch". Thêm một họ mới vào registry (hoàn toàn hợp lệ khi nghiên
+    #: cứu) sẽ âm thầm đổi thứ LIVE đặt lệnh, và `adaptive_weights` chuẩn hoá theo số
+    #: họ nên mọi trọng số dịch đi. Không crash, không cảnh báo.
+    #:
+    #: Đây đúng là cơ chế của F3 và F37: research và live đọc hai nguồn sự thật khác
+    #: nhau cho cùng một quyết định. Nay cả hai đọc `V3_SIGNALS`.
+    v3_signals: Optional[List[str]] = None
+
+    # --- Tầng phủ đòn bẩy theo mục tiêu (research/goal_dp.py) ---
+    # None = tắt hoàn toàn, hành vi y hệt trước khi có tầng này. Bật nó KHÔNG đổi
+    # thành phần danh mục, chỉ co giãn gross — nhờ vậy bất biến parity research/live
+    # (`tests/pipelines/test_research_live_parity_v3.py`) vẫn nguyên vẹn.
+    goal_overlay: Optional[GoalOverlayConfig] = None
 
     @classmethod
     def from_artifacts(cls, path: str = "artifacts/strategy_validated.json",
@@ -154,6 +201,7 @@ class CrossSectionalLivePipeline:
         self.router = router or BinanceOrderRouter(client=self.client, dry_run=dry_run)
         self.store = state_store or StateStore()
         self.exec_log = execution_log or ExecutionLog()
+        self._goal_overlay: Optional[GoalOverlay] = None   # nạp lười ở lần dùng đầu
         # Dữ liệu thị trường LUÔN lấy từ mainnet: sổ lệnh testnet là thanh khoản giả.
         self.data_client = BinanceFuturesREST.public_mainnet()
         self._filters: Dict[str, SymbolFilters] = {}
@@ -202,20 +250,50 @@ class CrossSectionalLivePipeline:
         return self._filters
 
     # ------------------------------------------------------------------ tín hiệu
-    def resolve_universe(self) -> List[str]:
+    def resolve_universe(self, equity: Optional[float] = None) -> List[str]:
         """
-        Lọc universe xuống các cặp THỰC SỰ giao dịch được trên sàn thực thi.
+        Lọc universe xuống các cặp THỰC SỰ giao dịch được VÀ vốn mua nổi.
 
         Phải làm TRƯỚC khi tính trọng số. Nếu để tới lúc gửi lệnh mới phát hiện cặp
         không tồn tại, lệnh bị bỏ âm thầm và danh mục mất cân bằng long/short —
         biến chiến lược market-neutral thành một cược có hướng ngoài ý muốn.
+
+        [FIX F40] Cùng lập luận đó áp cho MIN NOTIONAL, và trước đây thì không. Min
+        notional không đồng nhất: mainnet có 122/128 cặp ở $5 nhưng ETH/LTC/LINK/ETC/BCH
+        ở $20 và BTC ở $50. Vốn $38 ở 2x cho $6,34 mỗi vị thế — sáu cặp đó không mua
+        nổi, và nếu một trong chúng lọt vào top thì lệnh bị bỏ, danh mục mất một chân.
+
+        `equity = None` thì bỏ qua bộ lọc vốn (dùng khi chỉ cần danh sách, không đặt lệnh).
         """
+        max_notional = None
+        if equity and equity > 0:
+            # Dùng số vị thế ĐÃ ĐIỀU CHỈNH THEO VỐN, không dùng `n_positions` danh nghĩa.
+            #
+            # Nếu chia cho `n_positions` cứng, ngưỡng tụt theo vốn và có thể rơi XUỐNG
+            # DƯỚI $5 — mức mà gần như mọi cặp đều cần. Khi đó bộ lọc quét sạch universe
+            # và `resolve_universe` ném lỗi "còn 0 cặp". Một cú sụt 8% vốn sẽ làm chết
+            # đường chạy: bộ lọc an toàn tự biến thành nguyên nhân sự cố.
+            #
+            # `max_positions_for_capital` đã trả lời đúng câu hỏi "vốn này nuôi nổi mấy
+            # vị thế". Dùng nó thì ngưỡng LUÔN >= $5 theo đại số:
+            #   n_eff = floor(E*L / (5*safety))  =>  E*L/n_eff >= 5*safety
+            #   ngưỡng = (E*L/n_eff)/safety >= 5
+            # Tức cặp $5 không bao giờ bị loại nhầm, dù vốn nhỏ tới đâu.
+            n_eff = min(self.config.n_positions,
+                        max_positions_for_capital(
+                            equity, self.config.leverage, min_notional=5.0,
+                            safety=self.config.min_notional_safety))
+            if n_eff >= 1:
+                max_notional = (equity * self.config.leverage / n_eff
+                                / max(1.0, self.config.min_notional_safety))
+
         keep, rejected = build_universe(
             candidates=self.config.universe,
             interval=self.config.interval,
             filt=UniverseFilter(
                 min_history_bars=self.config.min_history_bars,
                 min_quote_volume_24h=self.config.min_quote_volume_24h,
+                max_min_notional=max_notional,
             ),
             execution_client=self.client,
             data_client=self.data_client,
@@ -226,7 +304,8 @@ class CrossSectionalLivePipeline:
             raise RuntimeError(f"Universe sau lọc chỉ còn {len(keep)} cặp — quá ít để market-neutral")
         return keep
 
-    def _compute_target_weights_v3(self) -> tuple[Dict[str, float], int]:
+    def _compute_target_weights_v3(self, equity: Optional[float] = None
+                                   ) -> tuple[Dict[str, float], int]:
         """
         Trọng số mục tiêu theo chiến lược v3 — GỌI ĐÚNG các hàm research dùng.
 
@@ -241,7 +320,7 @@ class CrossSectionalLivePipeline:
         `combiner_lookback` mốc tái cân bằng). Nạp thiếu thì tín hiệu KHÁC, và cách
         duy nhất an toàn là ném lỗi chứ không chạy tiếp với dữ liệu ngắn.
         """
-        universe = self.resolve_universe()
+        universe = self.resolve_universe(equity)
         panel = load_panel_v2(universe, self.config.interval,
                               source_interval=self.config.source_interval,
                               min_coverage=0.15)
@@ -254,7 +333,14 @@ class CrossSectionalLivePipeline:
                 f"Chỉ có {len(close)} nến {self.config.interval}, cần >= {need} để tín hiệu v3 "
                 f"khớp với research. Chạy scripts/download_wide_universe.py trước.")
 
-        sigs = {n: build_signal(n, panel, funding) for n in SIGNAL_REGISTRY}
+        # [FIX F38] Bộ tín hiệu ĐÃ KIỂM ĐỊNH, không phải "mọi thứ có trong registry".
+        names = tuple(self.config.v3_signals) if self.config.v3_signals else V3_SIGNALS
+        missing = [n for n in names if n not in SIGNAL_REGISTRY]
+        if missing:
+            raise RuntimeError(
+                f"Cấu hình yêu cầu tín hiệu không có trong registry: {missing}. "
+                f"Không chạy tiếp với bộ tín hiệu khác bộ đã kiểm định.")
+        sigs = {n: build_signal(n, panel, funding) for n in names}
 
         marks = close.index[::self.config.rebalance_bars]
         close_m = close.reindex(marks)
@@ -287,7 +373,8 @@ class CrossSectionalLivePipeline:
         return weights, int(close.index[-1])
 
     def compute_target_weights(
-        self, current_positions: Optional[Dict[str, float]] = None
+        self, current_positions: Optional[Dict[str, float]] = None,
+        equity: Optional[float] = None,
     ) -> tuple[Dict[str, float], int]:
         """
         Tính 4 tín hiệu đã kiểm định, gộp đều, trả về trọng số mục tiêu.
@@ -295,9 +382,9 @@ class CrossSectionalLivePipeline:
         Trả kèm timestamp của nến mới nhất để bước sau kiểm tra độ tươi dữ liệu.
         """
         if self.config.engine == "v3":
-            return self._compute_target_weights_v3()
+            return self._compute_target_weights_v3(equity)
 
-        universe = self.resolve_universe()
+        universe = self.resolve_universe(equity)
         panel = load_panel(universe, self.config.interval, min_coverage=0.15)
         close, ofi = panel["close"], panel["ofi"]
         funding = load_funding_panel(universe, close.index).reindex(columns=close.columns)
@@ -365,6 +452,37 @@ class CrossSectionalLivePipeline:
     def notifier_enabled(self) -> bool:
         n = getattr(self.router, "notifier", None)
         return bool(n and getattr(n, "is_configured", False) and not self.dry_run)
+
+    def _chase_caps(self, orders) -> Dict[str, float]:
+        """
+        [FIX F44] Trần đuổi giá RIÊNG cho từng cặp, co giãn theo biến động của chính nó.
+
+        Vì sao cần: trần cố định 15bp bị 100% số cặp vượt qua trong cửa sổ chờ 900s
+        (dịch giá trung vị 64,4bp, cặp mạnh nhất 261bp). Lệnh bị đóng băng ngoài thị
+        trường rồi rơi xuống taker — đó là nút thắt thật của tỷ lệ maker 54%, KHÔNG
+        phải thời gian chờ.
+
+        σ lấy từ nến 1h đã có sẵn trên đĩa, quy về cửa sổ chờ theo căn bậc hai thời
+        gian. Cặp nào không đo được thì dùng trần sàn — thiếu dữ liệu phải ngả về
+        phía THẬN TRỌNG, không phải phía nới rộng.
+        """
+        caps: Dict[str, float] = {}
+        scale = math.sqrt(max(1.0, self.config.passive_wait_s) / 3600.0)
+        for o in orders:
+            try:
+                kl = self.client.klines(o.symbol, "1h", limit=200)
+                closes = np.array([float(k[4]) for k in kl], dtype=float)
+                if len(closes) < 50:
+                    continue
+                sigma_1h = float(np.std(np.diff(np.log(closes))))
+                if not np.isfinite(sigma_1h) or sigma_1h <= 0:
+                    continue
+                caps[o.symbol] = max(self.config.max_chase_bps,
+                                     self.config.chase_sigma_mult * sigma_1h * scale * 1e4)
+            except Exception as exc:
+                logger.warning("[F44] Không đo được biến động %s (%s) — dùng trần sàn %.1fbp",
+                               o.symbol, exc, self.config.max_chase_bps)
+        return caps
 
     def _settle_positions(self, tries: int = 6, delay: float = 1.2,
                           min_reads: int = 3) -> Dict[str, float]:
@@ -473,8 +591,52 @@ class CrossSectionalLivePipeline:
             logger.warning("TIER 1: drawdown %.1f%% — giảm nửa vị thế", dd * 100)
         return None
 
-    def _position_multiplier(self, state: LiveState, equity: float) -> float:
-        return 0.5 if state.drawdown(equity) >= TIER1_DD else 1.0
+    def _position_multiplier(self, state: LiveState, equity: float,
+                             now_ms: Optional[int] = None) -> tuple[float, Dict[str, Any]]:
+        """
+        Hệ số nhân áp lên đòn bẩy gộp, kèm lý do đầy đủ để kiểm toán sau sự cố.
+
+        Hai van chạy song song và ta lấy van CHẶT HƠN:
+
+          * van drawdown (cũ)  — cắt nửa vị thế khi sụt quá TIER1_DD. Đây là van an
+            toàn vận hành: nó không biết gì về mục tiêu, chỉ biết hệ thống đang xấu.
+          * tầng phủ mục tiêu  — tra chính sách DP đã giải sẵn (`goal_overlay.py`).
+
+        LẤY MIN CHỨ KHÔNG NHÂN, và đó là lựa chọn có giá phải trả. DP đã tính ngưỡng
+        cháy vào bài toán rồi, nên chồng thêm van drawdown là phạt hai lần và làm chính
+        sách kém tối ưu hơn con số đo trong nghiên cứu. Đổi lại ta có một bảo đảm cứng:
+        bật tầng phủ KHÔNG BAO GIỜ làm hệ thống liều hơn hành vi hiện tại ở cùng mức
+        drawdown. Với đường ống mới đạt 1/3 lượt sạch, bảo đảm đó đáng giá hơn phần tối
+        ưu bị mất.
+        """
+        dd_mult = 0.5 if state.drawdown(equity) >= TIER1_DD else 1.0
+        info: Dict[str, Any] = {"dd_multiplier": dd_mult, "goal_overlay": None}
+
+        cfg = self.config.goal_overlay
+        if cfg is None or not cfg.enabled:
+            return dd_mult, info
+
+        if self._goal_overlay is None:
+            try:
+                self._goal_overlay = GoalOverlay.from_config(cfg)
+            except FileNotFoundError as exc:
+                # Thiếu artifact chính sách là lỗi CẤU HÌNH, không phải lý do để im lặng
+                # chạy tiếp với hành vi khác điều người vận hành nghĩ mình đã bật.
+                logger.error("Tầng phủ mục tiêu bật nhưng thiếu chính sách: %s", exc)
+                info["goal_overlay"] = {"error": str(exc)}
+                return dd_mult, info
+
+        now_ms = now_ms if now_ms is not None else int(time.time() * 1000)
+        g = self._goal_overlay.multiplier(
+            equity=equity, now_ms=now_ms, base_leverage=self.config.leverage,
+            current_leverage=self.config.leverage * dd_mult,
+            period_hours=interval_hours(self.config.interval))
+        info["goal_overlay"] = g
+
+        mult = min(dd_mult, float(g["multiplier"]))
+        logger.info("Hệ số vị thế %.2f (drawdown %.2f, mục tiêu %.2f) — %s",
+                    mult, dd_mult, g["multiplier"], g["reason"])
+        return mult, info
 
     # ------------------------------------------------------------------ vòng lặp
     def run_once(self, skip_data_refresh: bool = False, force: bool = False) -> Dict[str, Any]:
@@ -530,6 +692,35 @@ class CrossSectionalLivePipeline:
         # thi lệch nhau, và cấu hình đang chạy KHÔNG phải cấu hình nào đã kiểm định.
         hours_since = (now_ms - state.last_rebalance_ms) / 3_600_000.0
         due = force or state.rebalance_count == 0 or hours_since >= self.config.rebalance_hours
+
+        # --- Cò GIẢM RỦI RO NGOÀI CHU KỲ (tầng phủ mục tiêu) -------------------
+        # Chính sách DP chỉ có giá trị nếu hành động kịp lúc. Luật "đạt đích thì đóng
+        # sạch" mà phải chờ tới mốc 72h kế tiếp thì có thể muộn gần ba ngày — và trong
+        # ba ngày đó khoản lãi vừa chạm đích hoàn toàn có thể bốc hơi. Đo được: biến
+        # động 4h của chiến lược là 0,90%, tức 72h là ~3,7% — lớn hơn cả mục tiêu 5%
+        # theo bất kỳ nghĩa nào đáng quan tâm.
+        #
+        # Vì vậy khi tầng phủ đòi hệ số 0 (đạt đích hoặc hết hạn) mà sổ vẫn còn vị thế,
+        # ta MỞ chốt nhịp ngay trong lượt giám sát này.
+        #
+        # BẤT ĐỐI XỨNG LÀ CÓ CHỦ Ý: cò này chỉ kích hoạt theo hướng ĐÓNG vị thế, không
+        # bao giờ theo hướng mở thêm. Tái cân bằng ngoài nhịp để GIẢM rủi ro thì tệ
+        # nhất cũng chỉ tốn phí đóng; tái cân bằng ngoài nhịp để TĂNG rủi ro sẽ làm
+        # nhịp tín hiệu (18 nến) lệch khỏi nhịp thực thi — đúng thứ mà ghi chú ngay
+        # phía trên cảnh báo, và đúng thứ biến "cấu hình đang chạy" thành một cấu hình
+        # chưa từng được kiểm định.
+        derisk_now = False
+        if not due and state.positions and self.config.goal_overlay is not None:
+            mult_probe, probe_info = self._position_multiplier(state, equity, now_ms)
+            result["multiplier_probe"] = probe_info
+            if mult_probe <= 1e-9:
+                derisk_now, due = True, True
+                g = (probe_info.get("goal_overlay") or {})
+                logger.warning("GIẢM RỦI RO NGOÀI CHU KỲ sau %.1fh (chu kỳ %.0fh) — %s",
+                               hours_since, self.config.rebalance_hours,
+                               g.get("reason", "tầng phủ mục tiêu yêu cầu"))
+                result["derisk_out_of_cycle"] = True
+
         if not due:
             prices_hb = {}
             for symbol in state.positions:
@@ -558,27 +749,101 @@ class CrossSectionalLivePipeline:
             return result
 
         # --- 3. Dữ liệu ---
-        if not skip_data_refresh:
-            result["symbols_updated"] = self.refresh_data(days=30.0)
+        # ĐƯỜNG GIẢM RỦI RO KHÔNG ĐI QUA TẦNG DỮ LIỆU.
+        #
+        # Khi tầng phủ mục tiêu đòi hệ số 0, trọng số đích đã biết trước và bằng RỖNG —
+        # đóng sạch. Không có tín hiệu nào cần tính, không có universe nào cần lọc,
+        # không có panel nào cần nạp.
+        #
+        # Đây không phải tối ưu tốc độ mà là tối ưu ĐỘ TIN CẬY. Chốt lời phải là thao
+        # tác đáng tin cậy nhất trong hệ thống, vì nó là thao tác duy nhất biến lãi
+        # trên giấy thành lãi đã thực hiện. Bắt nó đi qua `compute_target_weights` là
+        # gắn nó vào dữ liệu mới, vào bộ lọc universe, vào toàn bộ những thứ có thể
+        # hỏng — và chúng có thể hỏng, đã hỏng: universe sau lọc còn 0 cặp thì hàm đó
+        # NÉM LỖI chứ không trả về trạng thái dừng. Lúc đó vị thế vẫn mở nguyên.
+        if derisk_now:
+            weights, latest_ts = {}, now_ms
+            result["data_age_hours"] = None
+            logger.info("Đường giảm rủi ro: bỏ qua tầng dữ liệu, trọng số đích = rỗng")
+        else:
+            if not skip_data_refresh:
+                result["symbols_updated"] = self.refresh_data(days=30.0)
 
-        weights, latest_ts = self.compute_target_weights(current_positions=exchange_pos)
-        age_hours = (now_ms - latest_ts) / 3_600_000
-        result["data_age_hours"] = round(age_hours, 2)
-        if age_hours > self.config.max_data_age_hours:
-            result.update(action="HALT", reason="STALE_DATA",
-                          detail=f"nến mới nhất đã {age_hours:.1f}h tuổi "
-                                 f"(trần {self.config.max_data_age_hours}h)")
-            self.store.save(state)
-            return result
+            weights, latest_ts = self.compute_target_weights(
+                current_positions=exchange_pos, equity=equity)
+            age_hours = (now_ms - latest_ts) / 3_600_000
+            result["data_age_hours"] = round(age_hours, 2)
+            if age_hours > self.config.max_data_age_hours:
+                result.update(action="HALT", reason="STALE_DATA",
+                              detail=f"nến mới nhất đã {age_hours:.1f}h tuổi "
+                                     f"(trần {self.config.max_data_age_hours}h)")
+                self.store.save(state)
+                return result
 
         # --- 4. Sức chứa vốn ---
         cap = max_positions_for_capital(equity, self.config.leverage,
                                         min_notional=5.0, safety=self.config.min_notional_safety)
         if len(weights) > cap:
-            # Giữ lại các vị thế có tín hiệu MẠNH NHẤT ở cả hai chiều.
-            ranked = sorted(weights.items(), key=lambda kv: -abs(kv[1]))
-            weights = dict(ranked[:cap])
-            logger.warning("Vốn chỉ đủ %d vị thế — cắt từ %d xuống", cap, len(ranked))
+            # [FIX F43] Cắt phải CÂN HAI CHÂN. Bản cũ lấy top-N theo |trọng số| bất kể
+            # dấu — chú thích ghi "ở cả hai chiều" nhưng code không hề làm thế.
+            #
+            # Vì sao chưa từng cắn: testnet có $6.226 nên `cap` luôn >> 12. Nó sẽ cắn
+            # đúng lúc chạm tài khoản thật. Với vốn $38 ở 2x, `cap` = 12 — vừa khít.
+            # Sụt 8% xuống $35 là `cap` = 11, và cắt lẻ thì hai chân không thể bằng nhau.
+            #
+            # Mô phỏng 20.000 lượt với độ mạnh tín hiệu ngẫu nhiên:
+            #   vốn $35 (cap 11): 100% lượt vi phạm trần, net 9,1%
+            #   vốn $28 (cap  9): 100% lượt vi phạm, xấu nhất 33,3%
+            #   vốn $20 (cap  6):  57% lượt vi phạm, xấu nhất **100%**
+            # Net 100% nghĩa là danh mục MỘT CHIỀU hoàn toàn ở đòn bẩy 2x — đúng thứ
+            # chiến lược này được thiết kế để không bao giờ làm. DD kỳ vọng 24,7%/năm
+            # nên vốn $38 chạm $35 là chuyện gần như chắc chắn, không phải biên hiếm.
+            longs = sorted(((s_, w_) for s_, w_ in weights.items() if w_ > 0),
+                           key=lambda kv: -kv[1])
+            shorts = sorted(((s_, w_) for s_, w_ in weights.items() if w_ < 0),
+                            key=lambda kv: kv[1])
+            per_side = min(cap // 2, len(longs), len(shorts))
+            if per_side <= 0:
+                # Không đủ vốn cho dù MỘT cặp mỗi chân. Giao dịch một chiều còn tệ hơn
+                # không giao dịch: nó biến quỹ market-neutral thành cược hướng có đòn bẩy.
+                result.update(action="HALT", reason="INSUFFICIENT_CAPITAL",
+                              detail=f"vốn ${equity:,.2f} ở {self.config.leverage}x chỉ đủ "
+                                     f"{cap} vị thế — không đủ 1 cặp mỗi chân, "
+                                     f"không thể giữ trung lập")
+                logger.error("[F43] %s", result["detail"])
+                self.store.save(state)
+                return result
+            n_before = len(weights)
+            kept_l = longs[:per_side]
+            kept_s = shorts[:per_side]
+
+            # Cân SỐ CẶP thôi chưa đủ: hai chân bằng số cặp vẫn có thể khác tổng
+            # notional, vì trọng số theo hạng có độ lớn khác nhau. Co giãn mỗi chân
+            # về đúng nửa gross -> net = 0 CHÍNH XÁC.
+            #
+            # Cố tình KHÔNG dùng `project_neutral`: phép chiếu trực giao trừ đi trung
+            # bình nên có thể ĐẢO DẤU một trọng số nhỏ, biến một cặp long thành short
+            # ngược với tín hiệu sinh ra nó. Co giãn theo chân giữ nguyên mọi dấu và
+            # mọi thứ hạng trong chân — can thiệp nhỏ nhất đạt đúng mục tiêu.
+            sum_l = sum(w_ for _, w_ in kept_l)
+            sum_s = -sum(w_ for _, w_ in kept_s)
+            if sum_l <= 0 or sum_s <= 0:
+                result.update(action="HALT", reason="DEGENERATE_WEIGHTS",
+                              detail=f"sau khi cắt: tổng long {sum_l:.6f}, tổng short "
+                                     f"{sum_s:.6f} — không dựng được sổ trung lập")
+                logger.error("[F43] %s", result["detail"])
+                self.store.save(state)
+                return result
+            half = (sum_l + sum_s) / 2.0
+            weights = {s_: w_ * (half / sum_l) for s_, w_ in kept_l}
+            weights.update({s_: w_ * (half / sum_s) for s_, w_ in kept_s})
+
+            net_after = sum(weights.values())
+            gross_after = sum(abs(w_) for w_ in weights.values())
+            logger.warning("[F43] Vốn chỉ đủ %d vị thế — cắt %d xuống %d "
+                           "(%d long / %d short) | net sau cắt %+.2e gross",
+                           cap, n_before, len(weights), per_side, per_side,
+                           net_after / gross_after if gross_after else 0.0)
         result["n_targets"] = len(weights)
         result["capacity"] = cap
 
@@ -597,14 +862,37 @@ class CrossSectionalLivePipeline:
             except Exception as exc:
                 logger.warning("Không lấy được BBO %s: %s", symbol, exc)
 
-        multiplier = self._position_multiplier(state, equity)
+        multiplier, mult_info = self._position_multiplier(state, equity, now_ms)
+        result["multiplier_detail"] = mult_info
+
+        # `build_rebalance_plan` từ chối leverage <= 0 — đúng, vì gross notional của
+        # một danh mục CÓ vị thế mà bằng 0 thì vô nghĩa. Nhưng hệ số 0 ở đây nghĩa là
+        # "đóng sạch", và lúc đó trọng số đích RỖNG nên chẳng có gì để định cỡ: mọi
+        # giá trị leverage dương đều sinh ra đúng một kế hoạch — đóng hết.
+        #
+        # Bắt lỗi này bằng test tích hợp chứ không phải khi vận hành là điều may: nếu
+        # để nguyên, lệnh chốt lời sẽ NÉM LỖI đúng vào lúc nó cần chạy nhất, và vị thế
+        # ở lại nguyên trên sàn.
+        plan_leverage = self.config.leverage * multiplier
+        if plan_leverage <= 1e-9:
+            if weights:
+                raise RuntimeError(
+                    f"Hệ số vị thế {multiplier} nhưng vẫn có {len(weights)} trọng số đích — "
+                    f"mâu thuẫn, không đoán ý định.")
+            plan_leverage = self.config.leverage      # danh nghĩa; không có gì để định cỡ
+
         plan: RebalancePlan = build_rebalance_plan(
             target_weights=weights,
             current_qty=exchange_pos,
             prices=prices,
             filters=self.load_filters(),
             equity=equity,
-            leverage=self.config.leverage * multiplier,
+            leverage=plan_leverage,
+            # [FIX F42] Trần trung lập phải là CÙNG MỘT con số mà cổng F25 dùng để
+            # chấm sau khi thực thi. Trước đây kế hoạch hoàn toàn mù về trung lập:
+            # dải không giao dịch phá net exposure, và mãi tới bước 6b — khi lệnh ĐÃ
+            # nằm trên sàn — mới có thứ đo nó. Chặn trước rẻ hơn hét sau.
+            neutrality_tolerance=self.config.max_net_exposure,
         )
         result.update(n_orders=len(plan.orders), turnover=plan.total_turnover,
                       gross_notional=plan.gross_notional, skipped=len(plan.skipped),
@@ -660,6 +948,8 @@ class CrossSectionalLivePipeline:
                 allow_taker_fallback=self.config.allow_taker_fallback,
                 requote=self.config.requote,
                 max_chase_bps=self.config.max_chase_bps,
+                chase_caps=self._chase_caps(plan.orders),   # [FIX F44]
+                neutrality_tolerance=self.config.neutrality_tolerance,
             )
         except Exception as exc:
             logger.exception("[F24] Thực thi lỗi — vẫn đồng bộ sổ từ sàn")
@@ -744,6 +1034,15 @@ class CrossSectionalLivePipeline:
             net_ok=bool(neutrality["net_ok"]),
             gross_ok=bool(neutrality["gross_ok"]),
             exec_error=exec_error,
+            # Chẩn đoán tỷ lệ maker — xem ghi chú trong `core/execution_log.py`.
+            passive_timed_out=int(exec_report.get("passive_timed_out", 0)),
+            requote_blocked_by_chase_cap=int(
+                exec_report.get("requote_blocked_by_chase_cap", 0)),
+            requote_skipped_no_move=int(exec_report.get("requote_skipped_no_move", 0)),
+            requotes=int(exec_report.get("requotes", 0)),
+            max_drift_bps_seen=float(exec_report.get("max_drift_bps_seen", 0.0)),
+            fill_drift=float((exec_report.get("fill_imbalance") or {}).get("drift", 0.0)),
+            early_exit=exec_report.get("early_exit"),
         ))
 
         result["action"] = "REBALANCED"

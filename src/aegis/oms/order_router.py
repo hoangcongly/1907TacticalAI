@@ -339,6 +339,9 @@ class BinanceOrderRouter:
         allow_taker_fallback: bool = True,
         requote: bool = True,
         max_chase_bps: float = 15.0,
+        chase_caps: Optional[Dict[str, float]] = None,
+        neutrality_tolerance: float = 0.10,
+        min_gross_for_neutrality_check: float = 0.0,
     ) -> Dict[str, Any]:
         """
         Đặt lệnh maker trước, phần không khớp thì cắn giá sau.
@@ -353,6 +356,24 @@ class BinanceOrderRouter:
           - Nhưng lệch trung lập nguy hiểm hơn nhiều so với trả thêm phí.
         Nên: chờ `passive_wait_s` để ăn phí maker, rồi cắn giá phần còn lại để
         đảm bảo danh mục về đúng trạng thái mục tiêu.
+
+        VAN TRUNG LẬP (`neutrality_tolerance`) — vì sao nó gỡ được đánh đổi trên:
+        Bản đầu chỉ đếm THỜI GIAN, hoàn toàn mù về việc sổ đang khớp cân hay lệch.
+        Vì mù nên `passive_wait_s` buộc phải để ngắn (300s) — chờ lâu mà không nhìn
+        thì rủi ro lệch hướng tích luỹ không kiểm soát.
+
+        Nhưng nguy hiểm KHÔNG nằm ở chờ lâu, nó nằm ở KHỚP LỆCH MỘT CHIỀU: chân long
+        khớp còn chân short treo thì danh mục thành cược có hướng — đúng sự cố khiến
+        sổ lệch 33-35% khỏi trung lập. Nếu ta ĐO được độ lệch đó liên tục thì có thể
+        chờ lâu hơn nhiều mà vẫn an toàn hơn hiện tại, vì rủi ro thật đang bị chặn
+        trực tiếp thay vì bị chặn gián tiếp bằng một cái đồng hồ.
+
+        Van đo độ lệch so với đường thực thi THEO TỶ LỆ, không so với 0: kế hoạch có
+        thể vốn dĩ có net khác 0 (khi vốn tăng, mọi vị thế nở ra cùng lúc). So với 0
+        sẽ báo động giả ngay từ lệnh đầu tiên.
+
+        Chạm ngưỡng thì thoát vòng chờ SỚM và rơi xuống phần dọn dẹp + cắn giá, tức
+        khôi phục trung lập ngay — đắt hơn về phí, rẻ hơn nhiều về rủi ro.
         """
         report: Dict[str, Any] = {
             "passive_submitted": 0, "passive_filled_notional": 0.0,
@@ -383,7 +404,9 @@ class BinanceOrderRouter:
 
         try:
             self._passive_wait_loop(passive, intents, filters, deadline, poll_interval_s,
-                                    requote, max_chase_bps, anchor, report)
+                                    requote, max_chase_bps, anchor, report,
+                                    neutrality_tolerance, min_gross_for_neutrality_check,
+                                    chase_caps or {})
         except Exception:
             # [FIX F23] Dù vòng chờ hỏng vì bất kỳ lý do gì, phần DỌN DẸP bên dưới
             # vẫn phải chạy. Bỏ qua dọn dẹp đồng nghĩa để lệnh post-only sống trên
@@ -393,9 +416,42 @@ class BinanceOrderRouter:
 
         return self._cleanup_and_fallback(passive, intents, filters, allow_taker_fallback, report)
 
+    def fill_imbalance(self, plan_net: float, plan_gross: float) -> Dict[str, float]:
+        """
+        Độ lệch trung lập của phần ĐÃ KHỚP so với đường thực thi theo tỷ lệ.
+
+        Một kế hoạch khớp đúng tỷ lệ (mọi cặp khớp cùng %) giữ nguyên tính trung lập
+        ở mọi thời điểm. Lệch khỏi đường đó — chân này khớp nhanh hơn chân kia — mới
+        là thứ tạo ra cược có hướng ngoài ý muốn.
+
+        Trả về `drift` = (net đã khớp - net kỳ vọng ở cùng tỷ lệ) / gross đã khớp.
+        """
+        net = gross = 0.0
+        for orders in self._cycle_orders.values():
+            for m in orders:
+                px = m.avg_fill_price or m.price or 0.0
+                n = m.filled_qty * px
+                if n <= 0:
+                    continue
+                net += n if m.side == "BUY" else -n
+                gross += n
+        if gross <= 1e-9:
+            return {"drift": 0.0, "filled_gross": 0.0, "filled_net": 0.0, "progress": 0.0}
+        progress = gross / plan_gross if plan_gross > 1e-9 else 0.0
+        expected_net = plan_net * progress
+        return {"drift": (net - expected_net) / gross, "filled_gross": gross,
+                "filled_net": net, "progress": progress}
+
     def _passive_wait_loop(self, passive, intents, filters, deadline, poll_interval_s,
-                           requote, max_chase_bps, anchor, report) -> None:
-        """Chờ khớp thụ động, định kỳ báo giá lại theo BBO hiện tại."""
+                           requote, max_chase_bps, anchor, report,
+                           neutrality_tolerance=0.10,
+                           min_gross_for_neutrality_check=0.0,
+                           chase_caps=None) -> None:
+        """Chờ khớp thụ động, định kỳ báo giá lại, và canh độ lệch trung lập."""
+        plan_net = sum((o.notional if o.side == "BUY" else -o.notional)
+                       for o in intents.values())
+        plan_gross = sum(abs(o.notional) for o in intents.values())
+
         while time.time() < deadline:
             time.sleep(min(poll_interval_s, max(0.0, deadline - time.time())))
             for m in passive:
@@ -404,6 +460,21 @@ class BinanceOrderRouter:
             if all(m.is_terminal for m in passive):
                 break
 
+            # VAN TRUNG LẬP — kiểm TRƯỚC khi báo giá lại. Báo giá lại huỷ rồi đặt lại,
+            # nên nếu sổ đang lệch thì việc cần làm là THOÁT và cắn giá cho cân, không
+            # phải kiên nhẫn thêm một vòng nữa ở giá thụ động.
+            imb = self.fill_imbalance(plan_net, plan_gross)
+            report["fill_imbalance"] = imb
+            if (neutrality_tolerance > 0
+                    and imb["filled_gross"] >= min_gross_for_neutrality_check
+                    and abs(imb["drift"]) > neutrality_tolerance):
+                report["early_exit"] = "neutrality_drift"
+                logger.warning(
+                    "[VAN TRUNG LẬP] khớp lệch %+.1f%% gross (ngưỡng %.0f%%) sau khi "
+                    "hoàn thành %.0f%% kế hoạch — thoát chờ thụ động, cắn giá cho cân",
+                    imb["drift"] * 100, neutrality_tolerance * 100, imb["progress"] * 100)
+                return
+
             if not requote:
                 continue
 
@@ -411,8 +482,9 @@ class BinanceOrderRouter:
                 # [FIX F23] Mỗi lệnh một hộp cách ly: một cặp lỗi không được kéo
                 # theo phần còn lại của vòng báo giá lại.
                 try:
+                    cap_bps = (chase_caps or {}).get(m.symbol, max_chase_bps)
                     self._requote_one(idx, m, passive, intents, filters, anchor,
-                                      max_chase_bps, report)
+                                      cap_bps, report)
                 except Exception:
                     logger.exception("[F23] Báo giá lại %s lỗi — bỏ qua cặp này", m.symbol)
 
@@ -438,10 +510,37 @@ class BinanceOrderRouter:
 
         target = bid if m.side == "BUY" else ask
         if abs(target - (m.price or target)) < filt.tick_size:
+            report["requote_skipped_no_move"] = report.get("requote_skipped_no_move", 0) + 1
             return  # sổ chưa dịch đủ để đáng báo giá lại
 
         # Chặn đuổi giá quá xa mốc ban đầu.
-        if abs(target - base) / base * 10000.0 > max_chase_bps:
+        #
+        # ĐO ĐẠC, KHÔNG ĐOÁN: trần này bảo vệ khỏi SUY GIẢM TÍN HIỆU (mua đúng đỉnh),
+        # không phải khỏi phí — đuổi giá thụ động luôn rẻ hơn cắn giá tại cùng thời
+        # điểm. Nhưng nếu nó chặn quá sớm thì lệnh nằm ở giá cũ tới hết giờ rồi rơi
+        # xuống taker, và ta mất tỷ lệ maker mà không biết vì sao.
+        #
+        # [FIX F44] CÂU HỎI ĐÓ NAY ĐÃ CÓ CÂU TRẢ LỜI, VÀ LÀ VẾ THỨ HAI.
+        # Đo trên 60 cặp thật (σ nến 1h, quy về cửa sổ chờ 900s):
+        #     dịch giá trung vị trong 900s : 64,4 bp
+        #     trần đuổi cũ (cố định)       : 15,0 bp
+        #     -> 100% số cặp vượt trần; cặp mạnh nhất dịch 261 bp
+        # Ở mức dịch trung vị, trần 15bp bị chạm sau ~50 GIÂY của cửa sổ 900 giây.
+        # Lệnh bị đóng băng ngoài thị trường suốt 94% thời gian chờ rồi rơi xuống
+        # taker. Đó là lý do nâng `passive_wait_s` 300 -> 900s gần như vô ích:
+        # 48,8% -> 54,3% maker. Nút thắt chưa bao giờ là THỜI GIAN.
+        #
+        # Vì sao trần cố định sai về bản chất: 15bp là rất rộng với BTC và cực hẹp
+        # với một altcoin σ=5%/giờ. Một con số duy nhất không thể đúng cho cả hai.
+        # Nay trần co giãn theo BIẾN ĐỘNG RIÊNG của từng cặp trong đúng cửa sổ chờ
+        # (`chase_caps`), nên "đuổi trong phạm vi nhiễu bình thường" mang cùng một
+        # ý nghĩa ở mọi cặp. Vượt ngoài nhiễu vẫn bị chặn — đó mới là cú chạy giá
+        # thật mà trần này sinh ra để tránh.
+        drift_bps = abs(target - base) / base * 10000.0
+        if drift_bps > max_chase_bps:
+            report["requote_blocked_by_chase_cap"] = \
+                report.get("requote_blocked_by_chase_cap", 0) + 1
+            report["max_drift_bps_seen"] = max(report.get("max_drift_bps_seen", 0.0), drift_bps)
             return
 
         # [FIX F21] Chỉ đặt lệnh mới khi đã XÁC NHẬN lệnh cũ bị huỷ. Nếu không,
@@ -522,6 +621,9 @@ class BinanceOrderRouter:
                     logger.exception("[F23] Không truy vấn được %s sau khi huỷ", sym)
                 report["passive_filled_notional"] += m.filled_qty * (m.price or 0.0)
 
+        # Chẩn đoán tỷ lệ maker: lệnh nào hết giờ mà chưa khớp, và vì sao.
+        report["passive_timed_out"] = sum(
+            1 for m in passive if not m.is_terminal or m.remaining_qty > 0)
         report["uncancelled"] = list(self.uncancelled)
         if self.uncancelled:
             logger.error("[F21] CÒN LỆNH SỐNG không xác nhận huỷ được: %s",

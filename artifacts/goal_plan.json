@@ -1,0 +1,259 @@
+{
+  "capital_required_vnd": 4280514.539596288,
+  "sharpe_required": 2.2525934106316052,
+  "capital_feasibility": [
+    {
+      "capital_vnd": 1000000.0,
+      "lev_floor": 1.578,
+      "half_kelly": 0.8656132820222855,
+      "feasible": false
+    },
+    {
+      "capital_vnd": 2000000.0,
+      "lev_floor": 0.789,
+      "half_kelly": 0.8656132820222855,
+      "feasible": true
+    },
+    {
+      "capital_vnd": 3000000.0,
+      "lev_floor": 0.526,
+      "half_kelly": 0.8656132820222855,
+      "feasible": true
+    },
+    {
+      "capital_vnd": 5000000.0,
+      "lev_floor": 0.3156,
+      "half_kelly": 0.8656132820222855,
+      "feasible": true
+    }
+  ],
+  "executable_leverage_floor": 1.578,
+  "target_return": 0.05,
+  "days": 7.0,
+  "horizon_periods": 42,
+  "capital_vnd": 1000000.0,
+  "capital_usd": 38.02281368821293,
+  "sharpe_train_fine": 1.828087480853593,
+  "sharpe_holdout_fine": 1.0989845378852798,
+  "ann_vol_holdout": 0.6348011061693634,
+  "ceiling_constant": {
+    "p_max_constant": 0.43636740483276126,
+    "leverage_star": 3.553373628667841,
+    "z_score": -0.16018567970850628,
+    "edge_term": 0.15219282201474615,
+    "goal_cost_term": 0.31237850172325243,
+    "horizon_vol": 0.08791040131638593
+  },
+  "ceiling_dynamic": {
+    "p_max_dynamic": 0.9656649428139881,
+    "z_score": 1.820584015961825
+  },
+  "dp_in_sample_p": 0.8104932664591387,
+  "holdout_eval": [
+    {
+      "policy": "cố định 1.00x",
+      "p_target": 0.276325,
+      "p_ruin": 0.00065,
+      "p_loss": 0.464625,
+      "median": 0.0061509841,
+      "mean": 0.0128718818,
+      "p05": -0.1170314651,
+      "p95": 0.1666237401,
+      "avg_leverage": 1.0,
+      "avg_leverage_on": 1.0,
+      "frac_flat": 0.0,
+      "max_leverage": 1.0,
+      "leverage_turns": 0.0
+    },
+    {
+      "policy": "cố định 2.00x",
+      "p_target": 0.3848,
+      "p_ruin": 0.034275,
+      "p_loss": 0.47925,
+      "median": 0.0072724592,
+      "mean": 0.0268031459,
+      "p05": -0.2392963938,
+      "p95": 0.3445838384,
+      "avg_leverage": 2.0,
+      "avg_leverage_on": 2.0,
+      "frac_flat": 0.0,
+      "max_leverage": 2.0,
+      "leverage_turns": 0.0
+    },
+    {
+      "policy": "cố định 3.00x",
+      "p_target": 0.414825,
+      "p_ruin": 0.100725,
+      "p_loss": 0.494625,
+      "median": 0.002778026,
+      "mean": 0.0447385,
+      "p05": -0.3,
+      "p95": 0.5321982605,
+      "avg_leverage": 3.0,
+      "avg_leverage_on": 3.0,
+      "frac_flat": 0.0,
+      "max_leverage": 3.0,
+      "leverage_turns": 0.0
+    },
+    {
+      "policy": "cố định 4.00x",
+      "p_target": 0.4208,
+      "p_ruin": 0.186325,
+      "p_loss": 0.51225,
+      "median": -0.0091119385,
+      "mean": 0.0649638221,
+      "p05": -0.3,
+      "p95": 0.7280179707,
+      "avg_leverage": 4.0,
+      "avg_leverage_on": 4.0,
+      "frac_flat": 0.0,
+      "max_leverage": 4.0,
+      "leverage_turns": 0.0
+    },
+    {
+      "policy": "cố định 5.00x",
+      "p_target": 0.4139,
+      "p_ruin": 0.28195,
+      "p_loss": 0.534625,
+      "median": -0.032845465,
+      "mean": 0.0845400673,
+      "p05": -0.3,
+      "p95": 0.9276394884,
+      "avg_leverage": 5.0,
+      "avg_leverage_on": 5.0,
+      "frac_flat": 0.0,
+      "max_leverage": 5.0,
+      "leverage_turns": 0.0
+    },
+    {
+      "policy": "DP mục tiêu",
+      "p_target": 0.777675,
+      "p_ruin": 0.11365,
+      "p_loss": 0.18335,
+      "median": 0.0576910843,
+      "mean": 0.0170859207,
+      "p05": -0.3,
+      "p95": 0.1377509794,
+      "avg_leverage": 1.3196018501,
+      "avg_leverage_on": 3.7614630766,
+      "frac_flat": 0.6491785714,
+      "max_leverage": 4.9429666667,
+      "leverage_turns": 6.866875
+    }
+  ],
+  "zero_edge_stress": [
+    {
+      "policy": "cố định 2.00x",
+      "p_target": 0.314425,
+      "p_ruin": 0.040525,
+      "p_loss": 0.553875,
+      "median": -0.0193653831,
+      "mean": 0.0001405211,
+      "p05": -0.2633856588,
+      "p95": 0.3092926586,
+      "avg_leverage": 2.0,
+      "avg_leverage_on": 2.0,
+      "frac_flat": 0.0,
+      "max_leverage": 2.0,
+      "leverage_turns": 0.0
+    },
+    {
+      "policy": "DP mục tiêu",
+      "p_target": 0.72945,
+      "p_ruin": 0.148,
+      "p_loss": 0.23155,
+      "median": 0.056835298,
+      "mean": 0.0016673233,
+      "p05": -0.3,
+      "p95": 0.1398737273,
+      "avg_leverage": 1.4467314983,
+      "avg_leverage_on": 3.864950517,
+      "frac_flat": 0.6256791667,
+      "max_leverage": 4.9470404762,
+      "leverage_turns": 6.93895
+    }
+  ],
+  "frontier": [
+    {
+      "ruin_floor": 0.85,
+      "max_leverage": 3.0,
+      "p_target": 0.704375,
+      "p_ruin": 0.213275,
+      "p_loss": 0.27315,
+      "median": 0.055289115829504576,
+      "mean": 0.015424086596705022,
+      "avg_leverage": 0.9849872575000002
+    },
+    {
+      "ruin_floor": 0.85,
+      "max_leverage": 5.0,
+      "p_target": 0.733725,
+      "p_ruin": 0.23725,
+      "p_loss": 0.2489,
+      "median": 0.05607415338753707,
+      "mean": 0.018079516208479696,
+      "avg_leverage": 0.9663388050595236
+    },
+    {
+      "ruin_floor": 0.8,
+      "max_leverage": 3.0,
+      "p_target": 0.698975,
+      "p_ruin": 0.136275,
+      "p_loss": 0.250375,
+      "median": 0.05521092542682915,
+      "mean": 0.014748256914644653,
+      "avg_leverage": 1.1122897276785715
+    },
+    {
+      "ruin_floor": 0.8,
+      "max_leverage": 5.0,
+      "p_target": 0.74115,
+      "p_ruin": 0.18835,
+      "p_loss": 0.214175,
+      "median": 0.05636262905912015,
+      "mean": 0.01751912198127581,
+      "avg_leverage": 1.093753185238095
+    },
+    {
+      "ruin_floor": 0.7,
+      "max_leverage": 3.0,
+      "p_target": 0.71025,
+      "p_ruin": 0.050125,
+      "p_loss": 0.24205,
+      "median": 0.05564733289895374,
+      "mean": 0.013192641041593456,
+      "avg_leverage": 1.2306919098214286
+    },
+    {
+      "ruin_floor": 0.7,
+      "max_leverage": 5.0,
+      "p_target": 0.777675,
+      "p_ruin": 0.11365,
+      "p_loss": 0.18335,
+      "median": 0.057691084292280204,
+      "mean": 0.017085920661476184,
+      "avg_leverage": 1.3196018500595237
+    },
+    {
+      "ruin_floor": 0.6,
+      "max_leverage": 3.0,
+      "p_target": 0.73605,
+      "p_ruin": 0.017075,
+      "p_loss": 0.242375,
+      "median": 0.056389700961329225,
+      "mean": 0.012445398005329844,
+      "avg_leverage": 1.2703916760714284
+    },
+    {
+      "ruin_floor": 0.6,
+      "max_leverage": 5.0,
+      "p_target": 0.805625,
+      "p_ruin": 0.057975,
+      "p_loss": 0.178125,
+      "median": 0.05836174892314472,
+      "mean": 0.01552771428619426,
+      "avg_leverage": 1.4621070546428572
+    }
+  ],
+  "note": "DP giải trên train, chấm trên holdout. Xác suất chủ yếu đến từ hình học mục tiêu (đích gần, sàn xa), không phải từ edge — xem mục 3."
+}

@@ -245,3 +245,166 @@ kết cục *trung vị* của chiến lược đòn bẩy cao là cháy tài kh
 **Thứ tự đúng:** P0 → paper trên dữ liệu THẬT 2–4 tuần → đo edge thật →
 chỉ khi edge dương đã chứng minh mới nạp tiền, và nạp đủ để sizing có ý nghĩa.
 Tiền đến từ việc mở rộng vốn trên edge đã chứng minh, không từ siết đòn bẩy trên $38.
+
+
+# ═══ CẬP NHẬT 14/09/2026 — MỤC TIÊU CÓ HẠN CHÓT ═══
+
+Mục tiêu "vốn 1.000.000 VND, lời 50.000 VND trong 7 ngày" KHÔNG phải bài toán tối đa
+Sharpe và cũng không phải Kelly. Nó là bài toán **tối đa P(chạm đích trước hạn chót)**,
+và lời giải của nó khác hẳn: đòn bẩy tối ưu phụ thuộc VỐN HIỆN TẠI và THỜI GIAN CÒN
+LẠI, không phải một hằng số.
+
+Công cụ: `research/goal_dp.py` (lý thuyết + quy hoạch động), `risk/goal_overlay.py`
+(đưa vào live), `scripts/goal_plan.py` (trả lời), `scripts/build_goal_policy.py` (giải
+sẵn ra artifact).
+
+## Ba con số cần nhớ
+
+| | P(đạt +5% trong 7 ngày) |
+|---|---|
+| Trần dạng đóng với đòn bẩy CỐ ĐỊNH | **43,6%** (tại L\* = 3,55x) |
+| Đòn bẩy 2,0x đang chạy | 38,5% |
+| Chính sách DP, chấm trên holdout | **77,8%** |
+
+`P_max_const = Phi( S*sqrt(T) - sqrt(2*ln(1+g)) )`. Số hạng thứ hai KHÔNG chứa S:
+cái giá của mục tiêu là hằng số trừ thẳng vào z-score. **Tăng đòn bẩy không bao giờ
+vượt được 43,6%** — nó nhân cả mu lẫn sigma.
+
+## Điều quan trọng nhất, và dễ tự lừa nhất
+
+Trong 77,8% đó, **72,9 điểm là HÌNH HỌC** (đích +5% gần hơn sàn cháy -30% rất nhiều)
+và chỉ **4,8 điểm là do EDGE**. Kiểm chứng: chấm lại chính sách trên chuỗi holdout đã
+TRỪ TRUNG BÌNH (edge = 0, giữ nguyên biến động và cụm) vẫn ra 72,9%.
+
+Nghĩa là chiến lược này biến một trò chơi gần công bằng thành "thắng nhỏ 73% số lần,
+thua lớn 15% số lần" — hình dạng của việc BÁN BẢO HIỂM. Kỳ vọng ở kịch bản edge=0 là
++0,17%, tức bằng 0 trong sai số. Xác suất thắng cao KHÔNG đồng nghĩa kỳ vọng dương.
+
+## Hai con số bị đo sai trước đây, nay đã sửa
+
+* **maxDD thật là 45,5%, không phải 36,9%.** Lưới 72h chỉ thấy giá đóng ba ngày một
+  lần nên không nhìn thấy sụt giảm trong kỳ — nhưng sàn, margin và van drawdown chạy
+  mỗi 30 phút thì thấy. Dùng `strategy_v3.run_v3_fine`.
+* **Sharpe ở độ phân giải sàn thật sự nhìn thấy là 1,10**, không phải 1,28.
+
+## Ràng buộc đặt được lệnh — chỗ lý thuyết gãy nếu bỏ qua
+
+Bản DP đầu tiên chọn trung bình 1,27x, tương đương **$4,01/vị thế — dưới min notional
+$5**, tức tối ưu trên giấy mà sàn từ chối từng lệnh. Lưới hành động phải là
+`{0} ∪ [1,58x, 5x]`: "đóng sạch đứng ngoài" đặt được, "0,25x" thì không.
+Sau khi sửa, chính sách đứng ngoài **65% thời gian** và chạy **3,76x khi vào** = $11,92
+mỗi vị thế. Đó là lời giải "bạo phát" kinh điển: không cược thì thôi, cược thì cược lớn.
+
+# ═══ 14/09/2026 — CHIẾN DỊCH TÌM SHARPE: 5 HƯỚNG ĐÓNG, 1 HƯỚNG XÁC NHẬN ═══
+
+## Con số neo mọi thứ
+
+Tốc độ tăng trưởng BỀN VỮNG tối đa ở đòn bẩy Kelly là `S²/2` mỗi năm. Đảo ngược:
+
+| muốn mỗi tuần | cần Sharpe năm |
+|---|---|
+| 1,0% (10.000 VND) | 1,02 |
+| 2,0% (20.000 VND) | 1,44 |
+| 3,0% (30.000 VND) | 1,75 |
+| **5,0% (50.000 VND)** | **2,25** |
+
+Sharpe holdout đo ở lưới 4h (độ phân giải sàn nhìn thấy) là **1,10** -> bền vững
+**~11.700 VND/tuần**. Muốn 50.000 VND/tuần phải NHÂN ĐÔI Sharpe. Đó là toàn bộ cuộc
+chơi; mọi thứ khác chỉ là hệ quả.
+
+## Đã thử và KHÔNG có tác dụng — ĐỪNG LÀM LẠI
+
+| hướng | kết quả | vì sao |
+|---|---|---|
+| **Độ rộng** `n_positions` 8→40 | Sharpe không tăng; n=12 tốt nhất về độ ổn định (100% fold dương, tệ nhất +0,30) | Tín hiệu nằm ở HAI CỰC của mặt cắt ngang. Pha loãng vào hạng 13-40 là pha loãng edge: vol giảm đơn điệu nhưng lợi suất giảm nhanh hơn. Thêm nữa, n cao ÉP gross cao (n=40 cần 5,26x) — đúng lúc không nên. `scripts/breadth_study.py` |
+| **Mục tiêu biến động + van drawdown** | Sharpe 1,74 -> 1,75. Van drawdown luôn làm tệ đi | `zscore_riskparity` ĐÃ chia đều rủi ro theo biến động ở cấp TÀI SẢN. Chồng thêm tầng cấp danh mục là thừa. `scripts/risk_overlay_study.py` |
+| **Mở rộng bể chọn** (`min_coverage` 0,15→0,10, 127→152 cặp) | Trung vị fold 1,61→1,91 NHƯNG toàn bộ mức tăng nằm ở fold CUỐI (25/11: 1,66→2,23), mọi fold khác ±0,10 | Hạ ngưỡng chỉ nạp thêm cặp MỚI NIÊM YẾT — chúng chỉ tồn tại ở giai đoạn gần đây, và giai đoạn đó nằm trong holdout. Hiệu ứng giai đoạn, không phải cải tiến bền. **Cần kiểm chứng tiến về phía trước mới được áp dụng.** |
+| **Cân vị thế theo ĐỘ MẠNH bằng chứng** | Không có quan hệ. Ngũ phân vị bằng chứng YẾU nhất (Q1) lại có Sharpe CAO nhất (2,02 so với 1,26 ở Q5) | Độ mạnh bằng chứng quá khứ không dự báo lợi suất tương lai. Cân theo nó sẽ làm TỆ ĐI. |
+| **Vùng đệm thứ hạng** (`exit_frac`) | Sharpe 1,74 -> 1,48 ở `exit_frac=0,15` | ⚠️ Ghi chú cũ "giảm turnover 19% mà không mất Sharpe" là từ cấu hình **v1** (4 tín hiệu, trọng số nhị phân, 61 cặp). KHÔNG chuyển sang v3 được. Turnover giảm 13% thật, chi phí giảm thật, nhưng lợi suất giảm nhiều hơn. **Ai bật theo ghi chú cũ sẽ tự làm hại mình.** |
+
+## Hướng DUY NHẤT xác nhận có tác dụng: CHI PHÍ
+
+| tỷ lệ maker | bp/chiều | Sharpe | chi phí/năm | VND/tuần (nửa Kelly) |
+|---|---|---|---|---|
+| 0% | 6,81 | 1,67 | 8,79% | 20.416 |
+| **0,378 (đo được)** | 4,99 | 1,73 | 6,43% | 21.711 |
+| 0,50 (giả định) | 4,41 | 1,74 | 5,67% | 22.137 |
+| **0,85 (mục tiêu)** | **2,72** | **1,79** | **3,49%** | **23.384** |
+| 1,00 | 2,00 | 1,81 | 2,56% | 23.930 |
+
+**+0,06 Sharpe, +7,7% lợi nhuận.** Thật, chắc chắn, và thực hiện được bằng kỹ thuật
+thực thi chứ không cần tín hiệu mới.
+
+## Đã làm để lấy phần đó
+
+1. **Van trung lập trong lúc khớp thụ động** (`order_router.fill_imbalance`). Vòng chờ
+   cũ hoàn toàn MÙ về trung lập nên `passive_wait_s` buộc phải ngắn (300s). Nguy hiểm
+   thật không nằm ở chờ lâu mà ở KHỚP LỆCH MỘT CHIỀU. Đo trực tiếp độ lệch so với
+   đường thực thi theo tỷ lệ -> chờ lâu hơn mà AN TOÀN HƠN bản cũ.
+2. **`passive_wait_s` 300s -> 900s.** Trong chu kỳ 72h, 15 phút là 0,3% thời gian.
+3. **Chẩn đoán tỷ lệ maker** vào `ExecutionRecord` + `readiness_gate.py`: đếm lệnh hết
+   giờ, lần bị trần đuổi giá chặn, độ trôi tối đa. Lượt sạch tới sẽ TỰ TRẢ LỜI "maker
+   thấp vì chờ chưa đủ hay vì `max_chase_bps` quá hẹp" — hai nguyên nhân cần hai bản
+   vá khác nhau, và đoán sai thì vá sai.
+
+# ═══ 14/09/2026 (phần 2) — HỌ VỊ THẾ: TÍN HIỆU TỐT, TÍCH HỢP THẤT BẠI ═══
+
+## Đã làm
+
+Tải dữ liệu vị thế từ `data.binance.vision/.../metrics` — 5 phút/điểm, từ 2021, miễn
+phí, KHÔNG bị giới hạn 30 ngày như endpoint `/futures/data/`. Sáu trường: open interest
+(đơn vị + USD), tỷ lệ long/short của top trader (theo số tài khoản VÀ theo vị thế), tỷ
+lệ long/short toàn sàn, tỷ lệ khối lượng taker. `scripts/download_metrics.py`.
+
+Dựng 10 tín hiệu trong họ `positioning` (`signal_library.py`), đánh giá bằng
+`scripts/positioning_study.py`.
+
+## Từng tín hiệu: TỐT (đo trên TRAIN 2023-02 -> 2024-11, 212 kỳ, 87 cặp)
+
+| tín hiệu | chênh decile | t-stat | Sharpe/năm |
+|---|---|---|---|
+| `oi_price_confirm` | **+0,473%** | **2,01** | 1,53 |
+| `crowd_ls` | **−0,441%** | **−2,27** | 1,78 |
+| `crowd_ls_momentum` | **−0,439%** | **−2,04** | 1,62 |
+| `smart_count_vs_size` | +0,325% | 1,91 | 1,59 |
+| — mốc so sánh: `carry_level` | +0,243% | 1,22 | 0,80 |
+| — mốc so sánh: `mom_slow` | +0,568% | 2,80 | 1,42 |
+
+Ba tín hiệu vượt ngưỡng t = 2,0, và cả ba có hiệu ứng LỚN HƠN `carry_level` — một
+trong những tín hiệu lõi. Trực giao: |tương quan| lớn nhất với họ cũ chỉ 0,269.
+
+t-stat tăng đơn điệu theo độ phủ mặt cắt ngang: 39 cặp -> 0/10 đạt ngưỡng; 70 -> 1/10;
+87 -> 3/10. Tức chúng là tín hiệu thật, chỉ cần đủ độ rộng để đo.
+
+## Đầu-cuối: THẤT BẠI. KHÔNG ĐƯA VÀO.
+
+| bộ tín hiệu | Sharpe | ann | trung vị fold | %fold dương |
+|---|---|---|---|---|
+| 26 đã kiểm định | **1,77** | 75,0% | 1,02 | 83% |
+| 26 + 3 vượt ngưỡng | 1,36 | 56,9% | 0,80 | 67% |
+| 26 + 5 mạnh nhất | 1,39 | 58,2% | 1,02 | 67% |
+| 26 + cả 10 | 1,36 | 57,3% | 0,98 | 67% |
+
+Mọi tập con đều tệ hơn. Hai giả thuyết đã KIỂM CHỨNG VÀ BÁC BỎ:
+
+* *"Do phủ lệch — cặp có metrics chấm 6 họ, cặp không có chấm 5 họ."*
+  Cắt rổ về đúng 87 cặp có metrics: vẫn tệ (0,80 -> 0,63).
+* *"Do 7 tín hiệu yếu pha loãng."* Chỉ giữ 3 tín hiệu vượt ngưỡng — chọn TRÊN CHÍNH
+  cửa sổ đo, tức thiên vị theo hướng có lợi — vẫn tệ (1,77 -> 1,36).
+
+## Vì sao — cơ chế, không phải phỏng đoán
+
+`combine_adaptive` ràng buộc **gross = 1,0** trên các họ. Thêm họ thứ 6 BẮT BUỘC lấy
+trọng số khỏi 5 họ đã chứng minh. Để có lời, họ mới phải đóng góp NHIỀU HƠN phần nó
+chiếm chỗ — chứ không chỉ cần "dương khi đứng riêng".
+
+Chênh lệch decile đo thông tin của một tín hiệu KHI ĐỨNG MỘT MÌNH. Tương quan 0,269
+với momentum là dấu hiệu: vị thế đám đông phần lớn đã nằm sẵn trong động lượng. Tín
+hiệu trực giao 73% vẫn có thể dư thừa CÓ ĐIỀU KIỆN.
+
+## Việc còn để ngỏ (không làm bây giờ)
+
+Dữ liệu và 10 tín hiệu ĐÃ NẰM TRONG REPO và có test. Ba hướng nếu quay lại:
+1. Tải đủ 170 cặp (đang dở ~110) rồi đo lại — t-stat tăng đơn điệu theo độ phủ.
+2. Gộp ở tầng TÍN HIỆU thay vì tầng HỌ, để một tín hiệu mạnh không bị trần 1/6 của họ.
+3. Chiến lược PHỤ riêng chạy song song, thay vì nhét vào bộ gộp hiện có.

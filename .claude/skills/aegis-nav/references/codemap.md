@@ -34,7 +34,7 @@ Không có logic. Đừng phí token đọc; đây là danh sách việc phải 
 
 ---
 
-## 2. ĐÃ TRIỂN KHAI (81 file)
+## 2. ĐÃ TRIỂN KHAI (85 file)
 
 ### `src/aegis/core/config_loader.py` (177 dòng)
 _Tiện ích tải YAML configuration an toàn và quản lý cấu hình tập trung._
@@ -53,21 +53,21 @@ _Nạp thông tin xác thực sàn từ biến môi trường / file .env._
 - `class ExchangeCredentials` :37 — Khoá API của sàn. `__repr__` được che để khoá không lọt vào log/traceback.
 - `def load_binance_credentials` :49 — Đọc khoá Binance Futures từ môi trường.
 
-### `src/aegis/core/execution_log.py` (148 dòng)
+### `src/aegis/core/execution_log.py` (164 dòng)
 _Nhật ký thực thi — đo chi phí THẬT thay vì tin vào giả định của backtest._
 
 - `class ExecutionRecord` :30 — Một lượt tái cân bằng.
-- `  . clean` :56
-- `  . filled_notional` :72
-- `  . maker_ratio` :76
-- `  . realized_cost_usd` :81
-- `  . realized_cost_bps` :85
-- `  . fill_ratio` :90
-- `class ExecutionLog` :96 — Ghi/đọc nhật ký thực thi dạng JSONL (append-only).
-- `  . __init__` :99
-- `  . append` :103
-- `  . read_all` :107
-- `  . summary` :123
+- `  . clean` :72
+- `  . filled_notional` :88
+- `  . maker_ratio` :92
+- `  . realized_cost_usd` :97
+- `  . realized_cost_bps` :101
+- `  . fill_ratio` :106
+- `class ExecutionLog` :112 — Ghi/đọc nhật ký thực thi dạng JSONL (append-only).
+- `  . __init__` :115
+- `  . append` :119
+- `  . read_all` :123
+- `  . summary` :139
 
 ### `src/aegis/core/experiment_tracker.py` (181 dòng)
 _ExperimentTracker Singleton — Ghi nhận DSR trials và SHA-256 param hashes._
@@ -227,24 +227,26 @@ _Dựng panel đa tài sản (time x symbol) cho nghiên cứu cross-sectional._
 - `def load_funding_panel` :54 — Panel funding rate căn theo lưới thời gian của giá.
 - `def forward_returns` :77 — Lợi suất TƯƠNG LAI qua `horizon` nến — biến mục tiêu.
 
-### `src/aegis/data/panel_v2.py` (181 dòng)
+### `src/aegis/data/panel_v2.py` (242 dòng)
 _Nạp panel đa tài sản từ MỘT nguồn duy nhất (nến 1h) và tổng hợp lên khung bất _
 
-- `def interval_hours` :41
-- `def resample_bars` :47 — Tổng hợp nến từ khung `source` lên khung `target`.
-- `def load_panel_v2` :94 — Nạp panel {trường: DataFrame(time x symbol)} ở khung `interval`.
-- `def load_funding_panel_v2` :150 — Panel funding rate căn theo lưới giá.
-- `def align_panel` :175 — Ép mọi trường về cùng bộ cột và cùng thứ tự — tránh lệch cột âm thầm.
+- `def interval_hours` :43
+- `def resample_bars` :49 — Tổng hợp nến từ khung `source` lên khung `target`.
+- `def load_panel_v2` :96 — Nạp panel {trường: DataFrame(time x symbol)} ở khung `interval`.
+- `def load_funding_panel_v2` :152 — Panel funding rate căn theo lưới giá.
+- `def align_panel` :177 — Ép mọi trường về cùng bộ cột và cùng thứ tự — tránh lệch cột âm thầm.
+- `def load_metrics_panel_v2` :200 — Panel dữ liệu VỊ THẾ, căn theo lưới giá — trường thiếu trả về khung rỗng.
 
-### `src/aegis/data/universe.py` (125 dòng)
+### `src/aegis/data/universe.py` (210 dòng)
 _Module K.3 — Dựng universe giao dịch được, chống thiên lệch sống sót._
 
 - `class UniverseFilter` :36 — Tiêu chí lọc universe.
-- `  . describe` :42
-- `def tradeable_symbols` :48 — Tập perp USDT đang giao dịch được trên sàn mà client đang trỏ tới.
-- `def liquid_symbols` :59 — Tập cặp có khối lượng 24h vượt ngưỡng.
-- `def history_lengths` :70 — Số nến đã tải được cho từng cặp.
-- `def build_universe` :85 — Lọc danh sách ứng viên xuống universe thực sự giao dịch được.
+- `  . describe` :55
+- `def tradeable_symbols` :61 — Tập perp USDT đang giao dịch được trên sàn mà client đang trỏ tới.
+- `def liquid_symbols` :72 — Tập cặp có khối lượng 24h vượt ngưỡng.
+- `def history_lengths` :83 — Số nến khung `interval` THỰC SỰ DỰNG ĐƯỢC cho từng cặp.
+- `def symbol_min_notionals` :141 — Notional tối thiểu của từng cặp, đọc MỘT LẦN từ `exchangeInfo`.
+- `def build_universe` :155 — Lọc danh sách ứng viên xuống universe thực sự giao dịch được.
 
 ### `src/aegis/execution/limit_queue_sim.py` (297 dòng)
 _limit_queue_sim.py — L2 Orderbook Queue Estimation & 3-Tier Progressive Fallba_
@@ -257,21 +259,21 @@ _limit_queue_sim.py — L2 Orderbook Queue Estimation & 3-Tier Progressive Fallb
 
 - `def compute_realized_pnl` :12 — [MODULE G] Động cơ duy nhất tính toán PnL trên toàn hệ thống.
 
-### `src/aegis/execution/portfolio_rebalancer.py` (229 dòng)
+### `src/aegis/execution/portfolio_rebalancer.py` (312 dòng)
 _Cầu nối trọng số mục tiêu -> lệnh thật trên sàn (danh mục cross-sectional)._
 
-- `class SymbolFilters` :26 — Ràng buộc giao dịch của một cặp (lấy từ /fapi/v1/exchangeInfo).
-- `  . round_qty` :48
-- `  . round_price` :56
-- `  . format_qty` :63
-- `  . format_price` :73
-- `  . is_tradeable` :77
-- `class TargetPosition` :84
-- `class RebalanceOrder` :93
-- `class RebalancePlan` :103
-- `  . total_turnover` :110
-- `def build_rebalance_plan` :114 — Dựng danh sách lệnh đưa danh mục hiện tại về trọng số mục tiêu.
-- `def max_positions_for_capital` :215 — Số vị thế TỐI ĐA mà vốn cho phép, để mỗi lệnh vẫn vượt min_notional.
+- `class SymbolFilters` :28 — Ràng buộc giao dịch của một cặp (lấy từ /fapi/v1/exchangeInfo).
+- `  . round_qty` :50
+- `  . round_price` :58
+- `  . format_qty` :65
+- `  . format_price` :75
+- `  . is_tradeable` :79
+- `class TargetPosition` :86
+- `class RebalanceOrder` :95
+- `class RebalancePlan` :105
+- `  . total_turnover` :112
+- `def build_rebalance_plan` :116 — Dựng danh sách lệnh đưa danh mục hiện tại về trọng số mục tiêu.
+- `def max_positions_for_capital` :298 — Số vị thế TỐI ĐA mà vốn cho phép, để mỗi lệnh vẫn vượt min_notional.
 
 ### `src/aegis/execution/position_sizer.py` (172 dòng)
 _[PHÁT HIỆN O] Module G — Cầu Nối Kelly → Lệnh Thật._
@@ -518,7 +520,14 @@ _Hệ thống cảnh báo và gửi thông báo qua Telegram / Discord / Webhook
 - `  . send_anomaly_alert` :197
 - `def send_telegram_alert` :219 — Hàm tiện ích nhanh gửi tin nhắn Telegram.
 
-### `src/aegis/oms/order_router.py` (659 dòng)
+### `src/aegis/monitoring/position_report.py` (199 dòng)
+_Báo cáo chi tiết từng vị thế cho Telegram._
+
+- `def position_rows` :40 — Chuẩn hoá dữ liệu vị thế thô từ sàn thành các trường để hiển thị.
+- `def build_position_report` :103 — Dựng báo cáo HTML cho Telegram: từng vị thế + ngưỡng rủi ro cấp danh mục.
+- `def chunk_message` :171 — Chia tin dài thành nhiều phần, CẮT Ở RANH GIỚI DÒNG.
+
+### `src/aegis/oms/order_router.py` (761 dòng)
 _Điều hướng lệnh sang Binance USDⓈ-M Futures._
 
 - `class OrderRejected` :30 — Lệnh bị từ chối TRƯỚC khi gửi (vi phạm kiểm tra an toàn cục bộ).
@@ -530,10 +539,11 @@ _Điều hướng lệnh sang Binance USDⓈ-M Futures._
 - `  . poll_status` :237
 - `  . submit_plan` :266
 - `  . execute_with_fallback` :333
-- `  . filled_for` :471
-- `  . remaining_for` :495
-- `  . cancel_all` :573
-- `  . kill_switch` :626
+- `  . fill_imbalance` :419
+- `  . filled_for` :570
+- `  . remaining_for` :594
+- `  . cancel_all` :675
+- `  . kill_switch` :728
 
 ### `src/aegis/oms/reconciliation.py` (141 dòng)
 _Đối chiếu trạng thái nội bộ với trạng thái THẬT trên sàn._
@@ -589,44 +599,45 @@ _research_pipeline.py — Institutional Full-Fit Production Pipeline (Task 7)._
 - `  . __init__` :58
 - `  . run` :64
 
-### `src/aegis/pipelines/xs_live_pipeline.py` (759 dòng)
+### `src/aegis/pipelines/xs_live_pipeline.py` (1058 dòng)
 _Pipeline live cho chiến lược cross-sectional market-neutral._
 
-- `class LiveConfig` :58 — Cấu hình đã qua kiểm định holdout — xem artifacts/strategy_validated.json.
-- `  . from_artifacts` :100
-- `class CrossSectionalLivePipeline` :139 — Vòng lặp vận hành chiến lược cross-sectional.
-- `  . __init__` :142
-- `  . data_interval` :162
-- `  . refresh_data` :174
-- `  . load_filters` :191
-- `  . resolve_universe` :205
-- `  . compute_target_weights` :289
-- `  . notifier_enabled` :365
-- `  . check_neutrality` :411
-- `  . run_once` :480
-- `  . kill` :752
+- `class LiveConfig` :61 — Cấu hình đã qua kiểm định holdout — xem artifacts/strategy_validated.json.
+- `  . from_artifacts` :147
+- `class CrossSectionalLivePipeline` :186 — Vòng lặp vận hành chiến lược cross-sectional.
+- `  . __init__` :189
+- `  . data_interval` :210
+- `  . refresh_data` :222
+- `  . load_filters` :239
+- `  . resolve_universe` :253
+- `  . compute_target_weights` :375
+- `  . notifier_enabled` :452
+- `  . check_neutrality` :529
+- `  . run_once` :642
+- `  . kill` :1051
 
-### `src/aegis/research/adaptive_combiner.py` (227 dòng)
+### `src/aegis/research/adaptive_combiner.py` (293 dòng)
 _Gộp tín hiệu THÍCH ỨNG theo cửa sổ trượt — quyết định trọng số bằng dữ liệu QU_
 
-- `class CombinerSpec` :49 — Tham số của tầng gộp thích ứng.
-- `def factor_returns` :62 — Chuỗi lợi suất của "danh mục nhân tố" ứng với MỘT tín hiệu.
-- `def adaptive_weights` :129 — Trọng số từng họ theo thời gian, tính HOÀN TOÀN từ dữ liệu quá khứ.
-- `def combine_adaptive` :183 — Gộp nhiều tín hiệu thành MỘT điểm số tổng hợp bằng trọng số thích ứng.
+- `class CombinerSpec` :53 — Tham số của tầng gộp thích ứng.
+- `def factor_returns` :80 — Chuỗi lợi suất của "danh mục nhân tố" ứng với MỘT tín hiệu.
+- `def adaptive_weights` :147 — Trọng số từng họ theo thời gian, tính HOÀN TOÀN từ dữ liệu quá khứ.
+- `def combine_adaptive` :249 — Gộp nhiều tín hiệu thành MỘT điểm số tổng hợp bằng trọng số thích ứng.
 
-### `src/aegis/research/backtest_v2.py` (340 dòng)
+### `src/aegis/research/backtest_v2.py` (443 dòng)
 _Engine backtest cross-sectional thế hệ 2 — nhận TRỌNG SỐ dựng sẵn._
 
-- `class CostModel` :47 — Chi phí một chiều theo bp trên notional giao dịch.
-- `  . base_bps` :68
-- `  . bps_for` :74
-- `def load_live_spreads` :87 — Spread THẬT đo từ sổ lệnh Binance (`/fapi/v1/ticker/bookTicker`), lưu sẵn ra f
-- `def corwin_schultz_spread` :106 — Ước lượng spread Corwin-Schultz (2012) — CHỈ dùng khi không có spread thật.
-- `def estimate_cost_bps` :136 — Chi phí TRƯỢT GIÁ một chiều theo từng cặp, tính bằng bp (chưa gồm phí sàn).
-- `def drift_weights` :185 — Trọng số sau một chu kỳ, do giá dịch chuyển chứ không do giao dịch.
-- `class BacktestV2Result` :204
-- `  . stats` :216
-- `def simulate` :259 — Mô phỏng danh mục từ chuỗi trọng số MỤC TIÊU.
+- `class CostModel` :48 — Chi phí một chiều theo bp trên notional giao dịch.
+- `  . base_bps` :69
+- `  . bps_for` :75
+- `def load_live_spreads` :88 — Spread THẬT đo từ sổ lệnh Binance (`/fapi/v1/ticker/bookTicker`), lưu sẵn ra f
+- `def corwin_schultz_spread` :107 — Ước lượng spread Corwin-Schultz (2012) — CHỈ dùng khi không có spread thật.
+- `def estimate_cost_bps` :137 — Chi phí TRƯỢT GIÁ một chiều theo từng cặp, tính bằng bp (chưa gồm phí sàn).
+- `def drift_weights` :186 — Trọng số sau một chu kỳ, do giá dịch chuyển chứ không do giao dịch.
+- `class BacktestV2Result` :205
+- `  . stats` :217
+- `def simulate` :260 — Mô phỏng danh mục từ chuỗi trọng số MỤC TIÊU.
+- `def simulate_marked_to_market` :347 — Cùng một chiến lược, nhưng đo đường vốn trên lưới NẾN thay vì lưới TÁI CÂN BẰN
 
 ### `src/aegis/research/basis_trade.py` (118 dòng)
 _Basis trade (funding arbitrage): short perp + long spot cùng tài sản._
@@ -665,6 +676,24 @@ _Gộp DANH MỤC từ nhiều cấu hình — chống rủi ro chọn sai siêu
 - `class EnsembleMember` :39 — Một thành phần: tín hiệu trên lưới riêng + cách dựng danh mục riêng.
 - `def align_to_grid` :48 — Đưa trọng số của một thành phần về lưới CHUNG.
 - `def ensemble_weights` :59 — Trọng số danh mục tổ hợp trên lưới chung `grid`.
+
+### `src/aegis/research/goal_dp.py` (478 dòng)
+_ĐẠT MỤC TIÊU TRƯỚC HẠN CHÓT — quy hoạch động trên xác suất, không phải trên Sh_
+
+- `def constant_leverage_ceiling` :92 — Mốc (1): xác suất TỐT NHẤT đạt được bằng một mức đòn bẩy CỐ ĐỊNH, và mức đó là
+- `def dynamic_leverage_ceiling` :119 — Mốc (2): trần lý thuyết khi đòn bẩy KHÔNG bị chặn và giao dịch liên tục.
+- `class GoalSpec` :139 — Đặc tả bài toán "đạt mục tiêu trước hạn chót".
+- `  . leverage_grid` :172
+- `  . executable_floor` :182
+- `  . log_target` :187
+- `  . log_floor` :190
+- `  . wealth_grid` :193
+- `class GoalPolicy` :200 — Chính sách tối ưu + hàm giá trị.
+- `  . p_success` :223
+- `  . leverage_for` :236
+- `def solve_goal_dp` :271 — Giải bài toán bằng quy nạp lùi từ hạn chót về hiện tại.
+- `def evaluate_policy` :347 — Chấm điểm chính sách trên lợi suất NGOÀI MẪU, bằng đường lấy mẫu theo khối.
+- `def policy_frontier` :454 — Quét đánh đổi: mỗi (ngưỡng cháy, trần đòn bẩy) -> xác suất đạt đích ngoài mẫu.
 
 ### `src/aegis/research/holdout.py` (63 dòng)
 _Kỷ luật train / holdout — hàng rào chống quá khớp khi tinh chỉnh chiến lược._
@@ -716,17 +745,17 @@ _Gộp tín hiệu bằng HỌC-ĐỂ-XẾP-HẠNG (LambdaRank) — tối ưu tr
 - `def build_dataset` :72 — Dựng bảng dữ liệu phẳng: mỗi hàng là (thời điểm, tài sản).
 - `def combine_lambdarank` :115 — Điểm số tổng hợp do model xếp hạng sinh ra, huấn luyện tiến về phía trước.
 
-### `src/aegis/research/signal_library.py` (425 dòng)
+### `src/aegis/research/signal_library.py` (563 dòng)
 _Thư viện tín hiệu cross-sectional, tổ chức theo HỌ KINH TẾ._
 
 - `def xs_zscore` :47 — Z-score theo HÀNG. Kẹp đuôi trước khi chuẩn hoá lại để một giá trị ngoại lai
 - `def xs_rank` :57 — Thứ hạng theo hàng, ánh xạ về [-1, 1].
 - `class SignalDef` :72 — Một tín hiệu: giả thuyết, họ, hàm tính, và số nến cần khởi động.
-- `def build_signal` :385 — Tính MỘT tín hiệu và chuẩn hoá theo mặt cắt ngang.
-- `def build_family` :396 — Gộp mọi biến thể trong một họ thành MỘT tín hiệu cấp họ.
-- `def build_all_families` :420 — Dựng tín hiệu cấp họ cho mọi họ — đây là đầu vào của tầng gộp.
+- `def build_signal` :386 — Tính MỘT tín hiệu và chuẩn hoá theo mặt cắt ngang.
+- `def build_family` :397 — Gộp mọi biến thể trong một họ thành MỘT tín hiệu cấp họ.
+- `def build_all_families` :421 — Dựng tín hiệu cấp họ cho mọi họ — đây là đầu vào của tầng gộp.
 
-### `src/aegis/research/strategy_v2.py` (179 dòng)
+### `src/aegis/research/strategy_v2.py` (198 dòng)
 _Chiến lược v2 — MỘT đường đi duy nhất từ dữ liệu tới trọng số vị thế._
 
 - `class StrategyV2Config` :40 — Toàn bộ tham số chiến lược — khai báo MỘT chỗ.
@@ -739,6 +768,27 @@ _Chiến lược v2 — MỘT đường đi duy nhất từ dữ liệu tới tr
 - `  . score` :91
 - `  . target_weights` :115
 - `  . backtest` :127
+
+### `src/aegis/research/strategy_v3.py` (374 dòng)
+_Chiến lược v3 — CẤU HÌNH CHỐT + đường chạy nghiên cứu dùng lại được._
+
+- `class StrategyV3Config` :47 — Cấu hình v3 ĐÃ CHỐT trên tập train qua `scripts/stability.py` (chọn theo ĐỘ ỔN
+- `  . bar_hours` :95
+- `  . period_hours` :100
+- `  . periods_per_year` :104
+- `  . periods_per_week` :108
+- `  . signal_names` :111
+- `  . notional_per_order` :115
+- `  . max_positions_affordable` :120
+- `  . to_dict` :132
+- `class V3Data` :174 — Panel + funding + tín hiệu đã dựng, đủ để chạy bất kỳ biến thể nào của v3.
+- `  . close` :186
+- `  . index` :190
+- `def load_v3_data` :194 — Nạp panel, funding và dựng toàn bộ tín hiệu TRÊN TOÀN CHUỖI.
+- `def combined_signal` :250 — Điểm số tổng hợp trên lưới tái cân bằng — tách riêng vì nó ĐẮT và TÁI DÙNG ĐƯỢ
+- `def run_v3` :282 — Chạy v3 rồi CẮT lợi suất về đoạn `mask` yêu cầu.
+- `def split_train_holdout` :332 — Trả về `(res_train, res_holdout)` theo mốc chia đã chốt trong `holdout_split.j
+- `def run_v3_fine` :339 — ĐÚNG chiến lược v3 (tái cân bằng 72h), nhưng đường vốn đo trên nến 4h.
 
 ### `src/aegis/research/xs_regression.py` (197 dòng)
 _Gộp tín hiệu bằng HỒI QUY MẶT CẮT NGANG — phương pháp Han-Zhou-Zhu, bản crypto_
@@ -770,6 +820,18 @@ _drift_monitor.py — CUSUM Brier drift monitoring & refresh_cusum_thresholds (T
 
 - `def refresh_cusum_thresholds` :25 — Tính toán và tái tạo cấu hình ngưỡng CUSUM sau production_fit (Task B-2-1).
 - `def monitor_brier_score_cusum_drift` :83 — Theo dõi độ trôi sai số Brier Score bằng bộ lọc CUSUM (Page 1954).
+
+### `src/aegis/risk/goal_overlay.py` (190 dòng)
+_Tầng phủ ĐÒN BẨY THEO MỤC TIÊU — đưa chính sách DP từ nghiên cứu vào đường chạ_
+
+- `def save_policy` :49 — Ghi chính sách ra `.npz` kèm `.meta.json`.
+- `def load_policy` :70 — Nạp chính sách + spec. Thiếu file `.meta.json` là lỗi, KHÔNG đoán spec mặc địn
+- `class GoalOverlayConfig` :90 — Tham số vận hành của tầng phủ.
+- `class GoalOverlay` :110 — Tra chính sách DP -> hệ số nhân đòn bẩy. Không trạng thái, không tác dụng phụ.
+- `  . from_config` :117
+- `  . periods_left` :122
+- `  . state` :129
+- `  . multiplier` :137
 
 ### `src/aegis/risk/portfolio.py` (537 dòng)
 _Dựng trọng số danh mục cross-sectional — tầng biến TÍN HIỆU thành VỊ THẾ._

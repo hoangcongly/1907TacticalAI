@@ -158,6 +158,35 @@ class AegisTelegramAIBot:
         except Exception as exc:
             return f"⚠️ Lỗi khi truy vấn trạng thái: {exc}"
 
+    def handle_positions(self) -> str:
+        """
+        Lệnh /vithe — chi tiết từng vị thế: vốn vào lệnh, % tài khoản, giá vào,
+        giá hiện tại, giá thanh lý, và ngưỡng chốt lỗ cấp danh mục.
+
+        Tách khỏi /status vì /status là ảnh chụp nhanh toàn tài khoản, còn lệnh này
+        là bảng chi tiết từng chân — hai nhu cầu khác nhau, và gộp lại thì vượt
+        giới hạn 4096 ký tự của Telegram.
+        """
+        try:
+            from aegis.monitoring.position_report import build_position_report
+            from datetime import datetime
+
+            bal = self.client.balance_usdt()
+            equity = bal["wallet_balance"] + bal["unrealized_pnl"]
+            pos = [p for p in self.client.position_risk()
+                   if abs(float(p.get("positionAmt", 0) or 0)) > 0]
+            if not pos:
+                return "📭 Hiện không có vị thế nào đang mở."
+
+            state = self.store.load()
+            nxt = state.last_rebalance_ms + self.cfg.rebalance_hours * 3_600_000
+            return build_position_report(
+                pos, equity, bal["wallet_balance"], max(state.peak_equity, equity),
+                next_rebalance=datetime.utcfromtimestamp(nxt / 1000).strftime("%d/%m %H:%M UTC"),
+                target_leverage=self.cfg.leverage)
+        except Exception as exc:
+            return f"❌ Không lấy được chi tiết vị thế: {exc}"
+
     def handle_costs(self) -> str:
         """Xử lý lệnh /costs — trả về báo cáo chi phí và độ trung lập."""
         try:
@@ -252,6 +281,7 @@ class AegisTelegramAIBot:
                 "Tôi là trợ lý định lượng cá nhân của anh, quản lý danh mục Futures tự động 24/7.\n\n"
                 "📌 <b>Các lệnh nhanh:</b>\n"
                 "• /status — Xem số dư, lãi/lỗ và các vị thế đang mở\n"
+                "• /vithe — Chi tiết từng lệnh: vốn vào, % tài khoản, giá vào, giá thanh lý\n"
                 "• /sync — Đồng bộ tức thì sổ sách nội bộ khớp với sàn Binance\n"
                 "• /costs — Xem chi phí giao dịch & độ trung lập\n"
                 "• /rebalance — Kích hoạt tái cân bằng danh mục ngay\n"
@@ -263,6 +293,15 @@ class AegisTelegramAIBot:
             return self.handle_status()
         elif cmd == "/sync":
             return self.handle_sync()
+        elif cmd in ("/vithe", "/positions"):
+            # Báo cáo vị thế thường vượt 4096 ký tự -> phải chia tin, nếu không
+            # Telegram từ chối và người dùng không nhận được gì (im lặng).
+            from aegis.monitoring.position_report import chunk_message
+            parts = chunk_message(self.handle_positions())
+            for extra in parts[:-1]:
+                if not self.send_message(extra):
+                    return "❌ Không gửi được báo cáo vị thế (Telegram từ chối)."
+            return parts[-1]
         elif cmd == "/costs":
             return self.handle_costs()
         elif cmd == "/rebalance":

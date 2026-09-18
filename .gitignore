@@ -8,6 +8,7 @@ __pycache__/
 # Environments
 .env
 venv/
+.venv/          # [FIX F41] thiếu dòng này => .venv là untracked, `git clean -fd` xoá sạch
 ai_env/
 .pytest_cache/
 
@@ -23,3 +24,10 @@ logs/
 *.onnx
 *.lock
 .aegis_trading.lock
+
+# Cache dẫn xuất — SINH LẠI ĐƯỢC, không commit (4,2MB)
+#   returns_v3*.csv   <- scripts/export_returns_v3.py
+#   goal_policy.npz   <- scripts/build_goal_policy.py
+artifacts/returns_v3*.csv
+artifacts/returns_v3*.meta.json
+artifacts/goal_policy.npz

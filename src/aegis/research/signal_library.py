@@ -379,7 +379,8 @@ def _trade_intensity(panel, funding, window: int = 168):
 # ---------------------------------------------------------------------------
 # Dựng tín hiệu
 # ---------------------------------------------------------------------------
-FAMILIES: List[str] = ["carry", "momentum", "flow", "volatility", "microstructure"]
+FAMILIES: List[str] = ["carry", "momentum", "flow", "volatility", "microstructure",
+                       "positioning"]
 
 
 def build_signal(name: str, panel: Dict[str, pd.DataFrame], funding: pd.DataFrame,
@@ -423,3 +424,140 @@ def build_all_families(panel: Dict[str, pd.DataFrame], funding: pd.DataFrame,
     """Dựng tín hiệu cấp họ cho mọi họ — đây là đầu vào của tầng gộp."""
     return {f: build_family(f, panel, funding, min_members=min_members)
             for f in (families or FAMILIES)}
+
+
+# ===========================================================================
+# HỌ 6 — POSITIONING (vị thế)
+#
+# Giả thuyết chung, và lý do họ này đáng tồn tại riêng: 26 tín hiệu trước đều dựng
+# từ GIÁ, KHỐI LƯỢNG và FUNDING. Không cái nào nhìn thấy AI ĐANG CẦM GÌ.
+#
+# Với perpetual futures, vị thế là biến trạng thái quan trọng nhất mà giá không chứa.
+# Squeeze và thanh lý dây chuyền không bắt nguồn từ một cú sốc thông tin — chúng bắt
+# nguồn từ việc quá nhiều người đứng cùng một bên với đòn bẩy. Funding có đo sự chen
+# chúc đó, nhưng chỉ gián tiếp, 8 tiếng một lần, và bị kẹp bởi cơ chế của sàn.
+# Open interest và tỷ lệ long/short đo nó TRỰC TIẾP.
+#
+# Nguồn: kho dump `data.binance.vision/.../metrics` (xem `scripts/download_metrics.py`).
+# Chưa tải thì mọi tín hiệu ở đây trả NaN và tầng gộp tự bỏ qua họ này — hệ thống chạy
+# y hệt như trước khi có nó.
+#
+# ⚠️ ĐỪNG ÁP ĐẶT DẤU. Với cùng một đại lượng vị thế, hai giả thuyết đối nghịch đều có
+# lý: "đám đông sai nên fade" và "dòng tiền có quán tính nên follow". Lý thuyết không
+# phân xử được, và chọn dấu bằng tay sau khi nhìn kết quả chính là data snooping.
+# Giả thuyết ghi dưới đây là để KIỂM CHỨNG, còn dấu do `adaptive_combiner` học từ quá
+# khứ tại mỗi thời điểm.
+# ===========================================================================
+def _pos(panel: Dict[str, pd.DataFrame], field: str) -> pd.DataFrame:
+    """Trường vị thế, căn theo lưới giá. Thiếu -> toàn NaN (họ tự tắt)."""
+    close = panel["close"]
+    df = panel.get(field)
+    if df is None or getattr(df, "empty", True):
+        return pd.DataFrame(np.nan, index=close.index, columns=close.columns)
+    return df.reindex(index=close.index, columns=close.columns)
+
+
+def _safe_log(df: pd.DataFrame) -> pd.DataFrame:
+    """Log của một TỶ LỆ. Tỷ lệ long/short lệch phải rất mạnh; log làm nó đối xứng."""
+    return np.log(df.where(df > 0))
+
+
+@_register("oi_growth", "positioning",
+           "Open interest tăng = đòn bẩy đang được tích tụ. Vị thế mới vào bằng tiền vay "
+           "là vị thế yếu nhất khi giá đi ngược.",
+           warmup=60)
+def _oi_growth(panel, funding, lookback: int = 42):
+    oi = _pos(panel, "sum_open_interest_value")
+    return oi / oi.shift(lookback) - 1.0
+
+
+@_register("oi_price_confirm", "positioning",
+           "OI tăng CÙNG giá tăng = tiền mới vào chiều long (chen chúc). OI tăng khi giá "
+           "giảm = short mới. Tích của hai thay đổi tách được bốn trạng thái vị thế mà "
+           "riêng giá hay riêng OI đều không thấy.",
+           warmup=60)
+def _oi_price_confirm(panel, funding, lookback: int = 42):
+    oi = _pos(panel, "sum_open_interest_value")
+    d_oi = oi / oi.shift(lookback) - 1.0
+    d_px = panel["close"] / panel["close"].shift(lookback) - 1.0
+    return d_oi * np.sign(d_px)
+
+
+@_register("oi_zscore", "positioning",
+           "OI lệch so với CHUẨN RIÊNG của từng cặp. Mức tuyệt đối phản ánh quy mô cặp; "
+           "cái đáng giao dịch là trạng thái chen chúc BẤT THƯỜNG so với chính nó.",
+           warmup=400)
+def _oi_zscore(panel, funding, window: int = 240):
+    oi = _pos(panel, "sum_open_interest_value")
+    m = oi.rolling(window, min_periods=window // 4).mean()
+    s = oi.rolling(window, min_periods=window // 4).std()
+    return (oi - m) / s.replace(0.0, np.nan)
+
+
+@_register("oi_turnover", "positioning",
+           "OI chia cho khối lượng giao dịch. Cao = vị thế NGỒI LÂU không đổi chủ, tức "
+           "đòn bẩy cũ tích tụ. Thấp = tiền vào ra liên tục, vị thế không đọng.",
+           warmup=280)
+def _oi_turnover(panel, funding, window: int = 120):
+    oi = _pos(panel, "sum_open_interest_value")
+    dv = (panel["close"] * panel["volume"]).rolling(window, min_periods=window // 4).mean()
+    return oi / dv.replace(0.0, np.nan)
+
+
+@_register("crowd_ls", "positioning",
+           "Tỷ lệ long/short theo SỐ TÀI KHOẢN của toàn sàn — đại diện cho đám đông nhỏ lẻ. "
+           "Đếm theo đầu người nên mỗi tài khoản một phiếu bất kể vốn.",
+           warmup=48)
+def _crowd_ls(panel, funding, smooth: int = 12):
+    r = _safe_log(_pos(panel, "count_long_short_ratio"))
+    return r.rolling(smooth, min_periods=max(2, smooth // 3)).mean()
+
+
+@_register("smart_ls", "positioning",
+           "Tỷ lệ long/short theo VỊ THẾ của nhóm top trader — đại diện cho tiền lớn. "
+           "Đếm theo quy mô vị thế nên nó nói ai đang cầm bao nhiêu, không phải bao nhiêu người.",
+           warmup=48)
+def _smart_ls(panel, funding, smooth: int = 12):
+    r = _safe_log(_pos(panel, "sum_toptrader_long_short_ratio"))
+    return r.rolling(smooth, min_periods=max(2, smooth // 3)).mean()
+
+
+@_register("smart_minus_crowd", "positioning",
+           "Tiền lớn TRỪ đám đông. Đây là tín hiệu riêng có của họ này: hai nhóm thường "
+           "đứng cùng chiều, nên phần CHÊNH LỆCH mới là thông tin. Khi top trader nghiêng "
+           "long mà đám đông nghiêng short (hoặc ngược lại), một bên sắp phải nhường.",
+           warmup=48)
+def _smart_minus_crowd(panel, funding, smooth: int = 12):
+    smart = _safe_log(_pos(panel, "sum_toptrader_long_short_ratio"))
+    crowd = _safe_log(_pos(panel, "count_long_short_ratio"))
+    return (smart - crowd).rolling(smooth, min_periods=max(2, smooth // 3)).mean()
+
+
+@_register("smart_count_vs_size", "positioning",
+           "Trong CHÍNH nhóm top trader: tỷ lệ theo số tài khoản so với tỷ lệ theo quy mô "
+           "vị thế. Lệch nhau nghĩa là số ít đang cầm vị thế rất lớn ngược chiều số đông "
+           "trong cùng nhóm — dấu vết của niềm tin tập trung.",
+           warmup=48)
+def _smart_count_vs_size(panel, funding, smooth: int = 12):
+    by_size = _safe_log(_pos(panel, "sum_toptrader_long_short_ratio"))
+    by_count = _safe_log(_pos(panel, "count_toptrader_long_short_ratio"))
+    return (by_size - by_count).rolling(smooth, min_periods=max(2, smooth // 3)).mean()
+
+
+@_register("taker_aggression", "positioning",
+           "Khối lượng taker mua chia taker bán. Lệnh cắn giá là lệnh VỘI — nó đo mức độ "
+           "sốt ruột của một bên, khác hẳn khối lượng tổng vốn trung tính về hướng.",
+           warmup=48)
+def _taker_aggression(panel, funding, smooth: int = 12):
+    r = _safe_log(_pos(panel, "sum_taker_long_short_vol_ratio"))
+    return r.rolling(smooth, min_periods=max(2, smooth // 3)).mean()
+
+
+@_register("crowd_ls_momentum", "positioning",
+           "THAY ĐỔI vị thế của đám đông, không phải mức. Bắt lúc dòng người đang đổi bên — "
+           "mức nói ai đang ở đâu, thay đổi nói ai đang di chuyển.",
+           warmup=160)
+def _crowd_ls_momentum(panel, funding, lookback: int = 42):
+    r = _safe_log(_pos(panel, "count_long_short_ratio"))
+    sm = r.rolling(12, min_periods=4).mean()
+    return sm - sm.shift(lookback)

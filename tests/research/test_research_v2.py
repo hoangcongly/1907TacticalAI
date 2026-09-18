@@ -310,11 +310,30 @@ def test_tin_hieu_nhan_qua(panel):
 
 
 def test_moi_ho_deu_dung_duoc(panel):
+    """
+    Mọi họ dựng được từ GIÁ/KHỐI LƯỢNG/FUNDING phải sinh ra giá trị.
+
+    `positioning` là ngoại lệ CÓ CHỦ Ý: nó đọc open interest và tỷ lệ long/short từ
+    một nguồn riêng (`data/binance_metrics`, xem `scripts/download_metrics.py`). Chưa
+    tải nguồn đó thì họ này toàn NaN và tầng gộp thích ứng tự bỏ qua nó — đó là hành
+    vi ĐÚNG, không phải hỏng. Điền 0 để "cho có giá trị" sẽ khiến một cặp không có dữ
+    liệu vị thế được xếp hạng trung tính và lọt vào danh mục dựa trên thông tin không
+    tồn tại.
+
+    Ngoại lệ được liệt kê TƯỜNG MINH ở đây chứ không bỏ qua chung chung: nếu ngày mai
+    có thêm một họ phụ thuộc nguồn ngoài, người viết phải tự thêm tên nó vào và trong
+    lúc đó phải nghĩ xem việc thiếu dữ liệu có được phép im lặng hay không.
+    """
     p, funding = panel
+    needs_external_data = {"positioning"}
     for f in FAMILIES:
         s = build_family(f, p, funding)
         assert s.shape == p["close"].shape
-        assert s.notna().any().any(), f"họ {f} toàn NaN"
+        if f in needs_external_data:
+            assert s.isna().all().all(), \
+                f"họ {f} phải TẮT SẠCH khi thiếu nguồn ngoài, không được điền bừa"
+        else:
+            assert s.notna().any().any(), f"họ {f} toàn NaN"
 
 
 def test_xs_rank_nam_trong_khoang_chuan():

@@ -104,6 +104,33 @@ def main(argv=None) -> int:
               f"{r.net_exposure*100:>+7.2f}%{lev:>9}"
               f"{'  ✅' if r.clean else '  ❌':>7}  {why}")
 
+    # --- CHẨN ĐOÁN TỶ LỆ MAKER -------------------------------------------
+    # Cổng chất lượng nói đường ống có vỡ không. Bảng này nói TIỀN đang rò ở đâu:
+    # maker thấp là chi phí cao, và chi phí cao là Sharpe thấp. Hai nguyên nhân
+    # (hết giờ chờ / trần đuổi giá) cần hai bản vá khác nhau nên phải tách bạch.
+    diag = [r for r in recs[-max(a.n * 2, 6):]
+            if getattr(r, "requotes", 0) or getattr(r, "passive_timed_out", 0)]
+    if diag:
+        print()
+        print(f"{'CHẨN ĐOÁN MAKER':<21}{'maker':>8}{'hết giờ':>9}{'chặn đuổi':>11}"
+              f"{'sổ đứng':>9}{'đã đuổi':>9}{'trôi tối đa':>13}{'lệch khớp':>11}")
+        print("-" * 88)
+        for r in diag:
+            print(f"{pd.to_datetime(r.timestamp_ms, unit='ms').strftime('%Y-%m-%d %H:%M:%S'):<21}"
+                  f"{r.maker_ratio*100:>7.0f}%{getattr(r,'passive_timed_out',0):>9}"
+                  f"{getattr(r,'requote_blocked_by_chase_cap',0):>11}"
+                  f"{getattr(r,'requote_skipped_no_move',0):>9}"
+                  f"{getattr(r,'requotes',0):>9}"
+                  f"{getattr(r,'max_drift_bps_seen',0.0):>12.1f}bp"
+                  f"{getattr(r,'fill_drift',0.0)*100:>10.1f}%")
+        last = diag[-1]
+        blocked = getattr(last, "requote_blocked_by_chase_cap", 0)
+        timed = getattr(last, "passive_timed_out", 0)
+        if blocked > timed and blocked > 0:
+            print("  -> Nút thắt là TRẦN ĐUỔI GIÁ (max_chase_bps), không phải thời gian chờ.")
+        elif timed > 0:
+            print("  -> Nút thắt là THỜI GIAN CHỜ (passive_wait_s), không phải trần đuổi giá.")
+
     streak = 0
     for r in reversed(recs):
         if r.clean:

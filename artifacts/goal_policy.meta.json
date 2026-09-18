@@ -1,0 +1,32 @@
+{
+  "spec": {
+    "target_return": 0.05,
+    "horizon_periods": 42,
+    "ruin_floor": 0.7,
+    "max_leverage": 5.0,
+    "n_leverage": 21,
+    "min_executable_leverage": 1.5789473684210527,
+    "cost_per_leverage_turn": 0.0005,
+    "n_wealth": 361,
+    "n_quantiles": 64,
+    "wealth_headroom": 0.06
+  },
+  "meta": {
+    "n_obs": 10439,
+    "n_quantiles": 64,
+    "mean_per_period": 0.00035347995745439053,
+    "std_per_period": 0.0090487768219089
+  },
+  "shape": {
+    "policy": [
+      42,
+      361,
+      22
+    ],
+    "value": [
+      43,
+      361,
+      22
+    ]
+  }
+}

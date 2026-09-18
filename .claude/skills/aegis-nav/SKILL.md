@@ -50,7 +50,7 @@ Python, `src/aegis/`, ~9.5k dòng, 202 test.
 | Thuật toán khớp lệnh | `oms/order_router.py:execute_with_fallback` (maker rồi taker) |
 | Trạng thái bền vững | `core/state_store.py` |
 | Đo chi phí thực tế | `core/execution_log.py` (`run_daily.py --costs`) |
-| Lọc universe | `data/universe.py` |
+| Lọc universe | `data/universe.py` ⚠️ `history_lengths` phải nhận `source_interval` [F37] |
 | Kỷ luật train/holdout | `research/holdout.py` |
 | Nạp dữ liệu thật | `data/ingestion/binance_rest.py`, `binance_history.py` |
 | **Cross-sectional / market-neutral** | `research/cross_sectional.py` ⭐ **nơi có edge** |
@@ -69,7 +69,8 @@ Tiền tố đường dẫn: `src/aegis/`
 
 | Cần làm gì | Đi thẳng tới |
 |---|---|
-| Thêm/sửa tín hiệu (26 tín hiệu, 5 họ) | `research/signal_library.py` |
+| Thêm/sửa tín hiệu (36 tín hiệu, 6 họ) | `research/signal_library.py` ⚠️ thêm vào registry KHÔNG tự vào V3 — xem `V3_SIGNALS` [F38] |
+| **Dữ liệu VỊ THẾ** (OI, long/short) | `scripts/download_metrics.py` -> `data/binance_metrics/`, `panel_v2.load_metrics_panel_v2` |
 | Gộp tín hiệu, học dấu từ quá khứ | `research/adaptive_combiner.py` |
 | Dựng trọng số, trung lập, chia đều rủi ro | `risk/portfolio.py` |
 | Hiệp phương sai co (Ledoit-Wolf) | `risk/covariance_shrinkage.py` |
@@ -79,12 +80,26 @@ Tiền tố đường dẫn: `src/aegis/`
 | Chiến lược đầu-cuối (research) | `research/strategy_v2.py` |
 | Chiến lược đầu-cuối (live) | `pipelines/xs_live_pipeline.py:_compute_target_weights_v3` |
 | Nạp panel + tổng hợp khung thời gian | `data/panel_v2.py` |
+| **Cấu hình v3 chốt + đường chạy dùng chung** | `research/strategy_v3.py` ⭐ (`V3`, `run_v3`, `V3_VINTAGE_MS`) |
+| Đo đường vốn ở độ phân giải NẾN (sụt giảm trong kỳ) | `research/strategy_v3.run_v3_fine`, `backtest_v2.simulate_marked_to_market` |
+| **Mục tiêu có HẠN CHÓT** (P đạt đích, không phải Sharpe) | `research/goal_dp.py` ⭐ |
+| Đưa chính sách mục tiêu vào live | `risk/goal_overlay.py` -> `xs_live_pipeline._position_multiplier` |
+| Chuỗi lợi suất đã cache (khỏi dựng lại panel) | `artifacts/returns_v3.csv`, `artifacts/returns_v3_fine.csv` |
 
-**Ba điều dễ sai nhất, đã trả giá để biết:**
+**Sáu điều dễ sai nhất, đã trả giá để biết:**
 1. Chi phí thật **4-5bp/chiều**, không phải 1bp.
 2. **IC có thể ngược dấu với chênh lệch decile** — chọn tín hiệu bằng `decile_spread`.
 3. **Số vị thế phải cố định** khi so sánh (`PortfolioSpec.n_positions`), nếu không ta
    chỉ đang đo tác dụng của việc nắm nhiều cặp hơn.
+4. **TÍNH TOÀN DÒNG THỜI GIAN RỒI CẮT SAU.** Cắt trước khởi động lại tầng gộp thích
+   ứng -> Sharpe holdout đọc nhầm 0,71 thay vì 1,28. [F35]
+5. **maxDD trên lưới 72h LUÔN lạc quan** — thật là 45,5%, không phải 36,9%. Dùng
+   `run_v3_fine` khi cần con số sàn thực sự nhìn thấy.
+6. **Bộ lọc universe phải đo lịch sử theo ĐÚNG đường `load_panel_v2` dùng** — đếm
+   file `_4h.parquet` trong khi hệ thống dựng 4h từ 1h làm live chạy 62 cặp thay vì
+   127, tốn 0,36 Sharpe. [F37]
+7. **Ghim mốc dữ liệu khi so sánh với artifact cũ** (`V3_VINTAGE_MS`). `min_coverage`
+   được tính trên panel đang dài ra, nên rổ tự đổi kích thước theo thời gian.
 
 ## ⭐ KẾT QUẢ NGHIÊN CỨU QUAN TRỌNG NHẤT
 Chiến lược **directional một tài sản** (toàn bộ `pipelines/`) KHÔNG có edge:
@@ -105,7 +120,13 @@ Cấu hình chốt: `artifacts/strategy_config.json`. Chi tiết: `plan.md`.
 
 ## Lệnh hay dùng
 ```bash
-python -m pytest -q                    # 202 test, ~60s
+python -m pytest -q                    # 485 test, ~155s
+python scripts/export_returns_v3.py    # tái tạo + KIỂM CHỨNG parity, cache lợi suất
+python scripts/goal_plan.py            # mục tiêu +5%/7 ngày: trả lời bằng số
+python scripts/build_goal_policy.py    # giải sẵn chính sách DP ra artifact
+python scripts/preflight.py            # ⭐ kiểm TRƯỚC mỗi lượt tái cân bằng
+python scripts/breadth_study.py        # độ rộng danh mục (kết quả: ĐÓNG)
+python scripts/risk_overlay_study.py   # mục tiêu biến động (kết quả: ĐÓNG)
 python scripts/gen_codemap.py          # sinh lại bản đồ
 python scripts/check_docs.py           # kiểm tra docs chưa mục
 make agent-sync                        # cả hai

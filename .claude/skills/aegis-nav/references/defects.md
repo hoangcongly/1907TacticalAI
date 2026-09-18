@@ -2,6 +2,7 @@
 
 Nguồn sự thật DUY NHẤT về lỗi đã biết. Sửa xong -> đổi STATUS + xoá khỏi mục "CÒN LẠI".
 Mọi lỗi đã vá đều có marker `[FIX Fxx]` trong code: `grep -rn "\[FIX F" src/`
+Lỗi đánh dấu 🔧 VÁ HẠ TẦNG nằm ngoài mã nguồn (plist, crontab) nên không có marker.
 
 | ID | Lỗi | Mức | STATUS | Vị trí |
 |---|---|---|---|---|
@@ -29,6 +30,9 @@ Mọi lỗi đã vá đều có marker `[FIX Fxx]` trong code: `grep -rn "\[FIX 
 | F29 | Cổng chặn chỉ kiểm lệch hướng, không kiểm đòn bẩy gộp | T0 | ✅ VÁ | `pipelines/xs_live_pipeline.py` `[FIX F29]` |
 | F30 | Chốt nhịp tái cân bằng chỉ có ở daemon -> cron cân sai chu kỳ | T0 | ✅ VÁ | `pipelines/xs_live_pipeline.py` `[FIX F30]` |
 | F31 | Phí hardcode 1bp/4bp trong module ĐO chi phí thật (thật: 2bp/5bp) | T1 | ✅ VÁ | `core/execution_log.py` `[FIX F31]` |
+| F32 | cron macOS bỏ lượt khi máy ngủ; daemon chạy code cũ hàng ngày | T0 | 🔧 VÁ HẠ TẦNG | `~/Library/LaunchAgents/com.aegis.trading.plist` |
+| F33 | Log daemon bị đệm -> giám sát mù suốt 2 ngày 16 giờ | T1 | 🔧 VÁ HẠ TẦNG | plist: `-u` + `PYTHONUNBUFFERED` |
+| F34 | Telegram từ chối tin > 4096 ký tự, chỉ trả về False -> báo cáo im lặng không tới | T1 | ✅ VÁ | `monitoring/position_report.py` `[FIX F34]` |
 | F14 | `high_watermark` tính nhưng không dùng | T1 | ✅ VÁ | `live_pipeline.py` `[FIX F14]` |
 | F15 | Sharpe/DSR sai công thức | T1 | ✅ VÁ | `cpcv_pipeline.py` `[FIX F15]` |
 | F6b | Ngưỡng Regime-Flip tuyệt đối 0.35 sai sau khi F6 đổi phân phối p_trend | T1 | ✅ VÁ | `trailing_exit.py:resolve_regime_exit_threshold` |
@@ -230,3 +234,315 @@ Tiến độ được in ở mọi lượt chạy `run_daily.py`, nên không ai
 
 8. Tiêu chí "đã sẵn sàng chưa" phải nhị phân và do máy chấm. Tiêu chí định tính sẽ
    luôn được diễn giải theo hướng ta đang muốn đi.
+
+
+---
+
+# Sự cố hạ tầng 13/09/2026 — F32, F33
+
+Không phải lỗi thuật toán. Lỗi VẬN HÀNH, và cả hai đều thuộc loại im lặng.
+
+## F32 — daemon chạy code cũ, cron bỏ lượt
+
+Phát hiện khi kiểm tra định kỳ:
+
+    daemon khởi động : 10/09 17:59
+    các bản vá F21-F31: 11/09 18:56 - 21:32
+
+Tiến trình `run_daily.py --live --loop` chạy liên tục 2 ngày 16 giờ, tức nạp code
+TRƯỚC toàn bộ bản vá. Nó không có F22 (một lệnh lỗi giết cả lượt), F27 (nhân đôi vị
+thế), F21/F23 (lệnh mồ côi), F25/F29 (cổng chặn). Nhật ký của nó có đúng dòng
+`ERROR ... 'rejected'` — chính lỗi đã vá.
+
+**Lượt tái cân bằng kế tiếp còn 32 giờ.** Nếu không phát hiện, nó sẽ chạy bằng đúng
+bản đã gây ra cả hai sự cố trước.
+
+Song song: `crontab` 07:00 hằng ngày KHÔNG chạy hai ngày liền, không một dòng log.
+Nguyên nhân xác định bằng `pmset -g log`: máy là laptop gập nắp, ngủ gần như liên
+tục (Clamshell Sleep). **cron của macOS không chạy bù lượt đã lỡ.**
+
+Đã thay bằng launchd với `KeepAlive` — khởi động lại tiến trình khi máy thức, và
+daemon tự kiểm tra "đã đủ 72h chưa" nên bắt kịp lượt bị lỡ.
+
+## F33 — log bị đệm, giám sát mù
+
+Daemon chạy 2 ngày 16 giờ mà log chỉ có dòng `ERROR`/`WARNING`, không một heartbeat.
+Nguyên nhân: Python đệm stdout khi đầu ra là file; stderr thì không. Nên ta chỉ thấy
+được lỗi, không bao giờ thấy trạng thái bình thường — và "không có tin" bị hiểu nhầm
+thành "không có vấn đề".
+
+Đã thêm `-u` và `PYTHONUNBUFFERED=1` vào plist.
+
+## Nguyên tắc bổ sung
+
+9. Tiến trình dài hạn KHÔNG tự nạp lại code. Sau mỗi lần vá đường tiền, phải khởi
+   động lại mọi daemon đang chạy — nếu không, bản vá chỉ tồn tại trên đĩa.
+10. Bộ lập lịch phải chịu được máy ngủ. Trên macOS dùng launchd, không dùng cron.
+11. Log không đệm, nếu không "im lặng" và "hỏng" trông giống hệt nhau.
+
+
+---
+
+# F34 — báo cáo Telegram im lặng không tới nơi (13/09/2026)
+
+Thêm báo cáo chi tiết vị thế theo yêu cầu vận hành (tên cặp, vốn vào lệnh, % tài
+khoản, giá vào, giá thanh lý). Báo cáo 12 vị thế dài **4482 ký tự**; Telegram từ
+chối mọi tin quá 4096 và thư viện chỉ trả về `False`, KHÔNG ném ngoại lệ.
+
+Nghĩa là báo cáo sẽ không bao giờ tới nơi và không ai biết. Cùng một họ lỗi với
+F33: "im lặng" và "hoạt động bình thường" trông giống hệt nhau.
+
+Đã thêm `chunk_message` cắt ở ranh giới DÒNG (cắt giữa dòng làm hỏng thẻ HTML và
+Telegram từ chối cả tin), và phía gọi phải KIỂM TRA giá trị trả về, ghi log lỗi nếu
+một phần bị từ chối.
+
+## Ghi chú thiết kế: vì sao không có chốt lời / chốt lỗ theo giá
+
+Câu hỏi vận hành thường gặp. Chiến lược này là danh mục cross-sectional
+market-neutral: vị thế mở vì tài sản xếp hạng cao/thấp trong mặt cắt ngang, đóng khi
+rơi khỏi nhóm ở lần tái cân bằng. Điều kiện thoát là THỨ HẠNG và THỜI GIAN.
+
+Đặt chốt lỗ theo giá cho từng chân sẽ PHÁ VỠ trung lập: chân long bị cắt còn chân
+short vẫn giữ thì danh mục thành cược có hướng — đúng cơ chế làm sổ lệch +35% ngày
+10/09. Chốt lỗ thật của chiến lược nằm ở CẤP DANH MỤC: ngắt mạch TIER1/2/3 theo
+drawdown, cộng giá thanh lý từng vị thế do sàn tính.
+
+`monitoring/position_report.py` hiển thị đúng những thứ đó thay vì bịa ra TP/SL.
+
+---
+
+# F35 — cắt đoạn đo TRƯỚC khi tính, làm Sharpe holdout đọc nhầm 0,71 thay vì 1,28 (14/09/2026)
+
+`StrategyV2.backtest(mask=...)` cắt lưới tái cân bằng về đoạn cần đo RỒI mới gọi
+`target_weights`. Nhưng `adaptive_combiner.adaptive_weights` phụ thuộc ĐƯỜNG ĐI —
+nó đi tới từ chỉ số 0 với `prev = 0` và trần `max_step` mỗi kỳ. Đưa cho nó một lưới
+đã cắt ngắn nghĩa là bắt nó học lại từ đầu: `min_periods = 120` kỳ đầu chạy trọng số
+đều, và cửa sổ học 500 kỳ không bao giờ đầy.
+
+Live KHÔNG gặp handicap đó — live luôn có toàn bộ lịch sử trong tay. Nên con số đo
+theo cách cũ không mô tả điều live sẽ trải qua.
+
+`scripts/validate_v3.py` đã phát hiện và né lỗi này từ 10/09 (nó tự tính toàn dòng
+thời gian rồi cắt sau), nhưng **bản vá chỉ nằm trong script, không nằm trong thư
+viện**. `StrategyV2.backtest` vẫn nguyên lỗi tới 14/09. Bất kỳ ai gọi nó với `mask`
+đều nhận một con số thấp hơn sự thật gần một nửa, không có cảnh báo nào.
+
+Bài học chung, đắt hơn bản thân lỗi: **vá một lỗi đo lường trong script mà không vá
+trong thư viện thì lỗi vẫn còn sống.** Script là nơi lỗi được PHÁT HIỆN, không phải
+nơi nó được SỬA.
+
+Đã vá bằng cách đảo thứ tự (tính toàn bộ -> cắt sau) và khoá bằng
+`tests/research/test_mask_after_compute.py`, trong đó có một test khẳng định TIỀN ĐỀ
+(tầng gộp thật sự phụ thuộc đường đi) để nếu sau này tầng gộp đổi bản chất thì bất
+biến được xoá một cách có ý thức chứ không mục đi trong im lặng.
+
+---
+
+# Hai lỗ hổng TÁI LẬP phát hiện cùng ngày (14/09/2026) — không đánh số F vì không phải lỗi logic
+
+## (a) `strategy_v3.json` không ghi MỐC DỮ LIỆU nên không tái lập được
+
+`load_panel_v2` lọc universe bằng `min_coverage` tính TRÊN CHÍNH panel được nạp.
+Panel dài thêm -> tỷ lệ phủ của mọi cặp đổi -> cặp mới vượt ngưỡng và vào rổ. Đã xảy
+ra: rổ là **127 cặp tới 12/09 20:00, thành 128 cặp ngay sau đó**. Thêm một cặp làm
+đổi THỨ HẠNG của toàn mặt cắt ngang, nên mọi con số — kể cả đoạn train năm 2021 —
+đều dịch đi.
+
+Hệ quả: chạy lại `validate_v3.py` hôm nay ra Sharpe khác hôm qua, và không phân biệt
+được "code hỏng" với "dữ liệu dài ra". Đã ghim bằng `strategy_v3.V3_VINTAGE_MS` và
+`load_v3_data(end_ms=...)`; `scripts/export_returns_v3.py` kiểm chứng parity với
+artifact đã ghi (nhóm cấu trúc khớp **0.00e+00**, nhóm phụ thuộc chi phí < 0,72%).
+
+Hệ quả thứ hai, tinh vi hơn và CHƯA sửa: rổ được lọc bằng dữ liệu tới HÔM NAY rồi áp
+ngược cho quá khứ — một dạng thiên vị sống sót nhẹ. Ghim mốc không xoá được nó,
+nhưng làm nó đứng yên và đo được.
+
+## (b) `estimate_cost_bps` đọc 720 nến CUỐI panel
+
+Nên ước lượng chi phí trôi theo dữ liệu mới, và nó vào thẳng lợi suất ròng của MỌI
+kỳ kể cả train. Đây là phần dư duy nhất không tái lập được chính xác (biết ngày chạy
+nhưng không biết giờ). Đã xử lý bằng ngưỡng parity hai tầng: nhóm thống kê thuần từ
+trọng số khoá tuyệt đối, nhóm phụ thuộc chi phí cho phép 1% tương đối.
+
+---
+
+# F36 — `warm_equal` / `collapse_equal` là CỜ GIẢ: chuẩn hoá gross vô hiệu hoá chúng (14/09/2026)
+
+`adaptive_weights` kết thúc mỗi kỳ bằng `cur = cur / |cur|.sum()`, tức ép gross = 1.0
+VÔ ĐIỀU KIỆN. Hệ quả: khi mục tiêu là "đứng ngoài" (vector 0 — chính là thứ mà
+`warm_equal=False` và `collapse_equal=False` tồn tại để diễn đạt), phép chuẩn hoá kéo
+ngay trọng số trở lại gross đầy đủ.
+
+Hai cờ đó vì vậy chưa bao giờ làm được việc chúng hứa. Chúng đổi TỶ LỆ giữa các họ tín
+hiệu nhưng không bao giờ đổi được QUY MÔ. Ý định "không có bằng chứng thì không đặt
+cược" bị vô hiệu hoá trong im lặng — không lỗi, không cảnh báo, chỉ là một cờ không có
+tác dụng.
+
+Đã vá: chuẩn hoá về gross CỦA MỤC TIÊU thay vì về 1.0. Khi có bằng chứng, `target`
+luôn có gross = 1.0 nên kết quả cũ được tái tạo tới sai số dấu phẩy động — parity với
+`strategy_v3.json` sau khi vá lệch **2,22e-16** ở nhóm thống kê thuần trọng số.
+
+Khoá bằng `tests/research/test_combiner_evidence.py`.
+
+## Ghi chú liên quan: hai trạng thái bị gộp làm một
+
+Cùng file, nhánh xử lý "chưa đủ lịch sử" (warm-up) và "đủ lịch sử nhưng không họ nào
+vượt ngưỡng t" (bằng chứng sụp đổ) dùng chung cờ `warm_equal`. Chúng khác nhau về bản
+chất: vô tri khác với một kết luận. Nay tách thành hai cờ, và nhánh sụp đổ GHI CẢNH
+BÁO mỗi khi kích hoạt.
+
+Đo được: với 26 tín hiệu, nhánh sụp đổ chạy **0/799 kỳ**. Đây là rủi ro tiềm ẩn, không
+phải lỗi đang hoạt động — nhưng nó sẽ kích hoạt nếu ai đó thu hẹp thư viện tín hiệu
+hoặc nâng `t_threshold`, và trước bản vá này nó sẽ kích hoạt im lặng.
+
+---
+
+# F37 — bộ lọc universe đo lịch sử SAI FILE: live chạy 62 cặp thay vì 127 (14/09/2026)
+
+## Lỗi
+
+`data/universe.history_lengths` đếm dòng trong `{symbol}_{interval}.parquet`. Nhưng hệ
+thống KHÔNG đọc file đó: `data/panel_v2.load_panel_v2` **ưu tiên tổng hợp khung mục
+tiêu TỪ `source_interval` (1h)** và chỉ rơi về file đúng khung khi không có nguồn.
+
+Vậy là bộ lọc universe đo một thứ còn đường chạy dùng một thứ khác — đúng họ lỗi F3,
+chỉ khác lớp áo.
+
+## Hậu quả đo được
+
+- **89/170 cặp bị loại OAN.** Ví dụ: CRVUSDT có 52.869 nến 1h (= 13.217 nến 4h) nhưng
+  `CRVUSDT_4h.parquet` chỉ còn **186 dòng** sót lại từ một lần tải cũ -> bị loại vì
+  "thiếu lịch sử".
+- Live chạy **62 cặp**, nghiên cứu kiểm định trên **127**.
+- Chi phí thật, đo trên cùng dữ liệu và cùng mọi tham số khác:
+
+| rổ | cặp | Sharpe | ann | trung vị fold | fold tệ nhất |
+|---|---|---|---|---|---|
+| CŨ (lỗi F37) | 60 | **1,20** | 45,5% | 1,04 | −0,62 |
+| MỚI (đã vá) | 101 | **1,56** | 64,8% | 1,31 | −0,20 |
+| nghiên cứu | 127 | 1,74 | 79,4% | 1,61 | +0,30 |
+
+**0,36 Sharpe và 19,3 điểm phần trăm lợi suất năm.** Quy ra tiền ở nửa Kelly:
+~10.450 -> ~17.660 VND/tuần, **+69%**.
+
+Xác nhận mạnh nhất: sau khi vá, `build_universe` trên **MAINNET trả về đúng 127 cặp** —
+khớp chính xác cấu hình nghiên cứu. Trước khi vá thì không.
+
+## Vì sao KHÔNG sửa bằng cách tải lại file 4h
+
+File 4h rồi sẽ lại cũ đi và lỗi quay lại — lần sau không ai nhớ vì sao. Cách sửa bền
+vững là ĐO ĐÚNG THỨ ĐƯỜNG CHẠY THẬT SẼ DÙNG. `history_lengths` nay nhận
+`source_interval` và đếm theo đúng thứ tự ưu tiên của `load_panel_v2`.
+
+Khoá bằng `tests/data/test_universe_history_path.py`.
+
+## Bài học chung — đắt hơn bản thân lỗi
+
+Cả một chiến dịch nghiên cứu trong ngày (độ rộng, mục tiêu biến động, bể chọn, cân theo
+bằng chứng, vùng đệm thứ hạng) tìm được đúng **+7,7%** lợi nhuận. Một lỗi ĐÚNG/SAI phát
+hiện tình cờ khi viết `scripts/preflight.py` đáng **+69%**.
+
+Ở một hệ thống chưa từng được kiểm tra đầu-cuối, alpha lớn nhất nằm ở chỗ hệ thống
+KHÔNG chạy đúng thứ mình tưởng nó đang chạy — không nằm ở mô hình.
+
+---
+
+# F38 — live duyệt `SIGNAL_REGISTRY` thay vì bộ tín hiệu ĐÃ KIỂM ĐỊNH (14/09/2026)
+
+`xs_live_pipeline._compute_target_weights_v3` dựng tín hiệu bằng
+`for n in SIGNAL_REGISTRY`. Nhưng registry là nơi CHỨA mọi tín hiệu từng được viết, kể
+cả tín hiệu đang thử nghiệm — nó không phải danh sách "những gì đang được giao dịch".
+
+Hệ quả: thêm một họ tín hiệu mới vào registry (việc hoàn toàn hợp lệ khi nghiên cứu)
+sẽ âm thầm đổi thứ LIVE đặt lệnh. Và vì `adaptive_weights` chuẩn hoá theo SỐ HỌ
+(`equal = 1/n`, `raw / total`), mọi trọng số dịch đi — kể cả khi họ mới toàn NaN và
+không bao giờ nhận trọng số. Không crash, không cảnh báo.
+
+Phát hiện ngay khi thêm họ `positioning` (10 tín hiệu): registry thành 36 trong khi
+bản đã kiểm định holdout là 26.
+
+**Test parity trọng số KHÔNG bắt được lỗi này** — nó tự dựng cả hai phía bằng cùng một
+danh sách, nên research và live có thể đã lệch mà test vẫn xanh. Cùng khe hở mà F37 lọt
+qua ở một tham số khác: công thức thì khoá, CẤU HÌNH thì không.
+
+Đã vá: `LiveConfig.v3_signals` (mặc định `V3_SIGNALS` — bộ 26 đóng băng), và live NÉM
+LỖI nếu cấu hình yêu cầu tín hiệu không có trong registry thay vì lặng lẽ bỏ qua.
+
+Thêm hai test ở tầng CẤU HÌNH trong `test_research_live_parity_v3.py`: bộ tín hiệu
+trùng nhau, và 12 tham số chiến lược của `LiveConfig.from_artifacts` trùng `V3`.
+
+## Quy tắc rút ra sau F37 + F38
+
+Mọi đại lượng mà research và live CÙNG quyết định phải có **đúng một nguồn sự thật**,
+và phải có test so hai phía ở tầng cấu hình chứ không chỉ ở tầng công thức. Khoá công
+thức mà để hai phía đọc hai cấu hình khác nhau thì test chỉ chứng minh rằng hai hàm
+giống nhau — không chứng minh rằng hệ thống đang chạy đúng chiến lược.
+
+---
+
+# F39 — `combined_signal` dùng cả `V3Data.signals` thay vì lọc theo cấu hình (14/09/2026)
+
+Anh em sinh đôi của F38, ở tầng NGHIÊN CỨU thay vì tầng live.
+
+`V3Data` được nạp một lần rồi tái dùng cho nhiều cấu hình — đó vừa là điểm mạnh (nạp
+panel mất 20 giây) vừa là cái bẫy. `combined_signal` lấy nguyên `data.signals.items()`,
+nên nếu `V3Data` được nạp với 36 tín hiệu thì MỌI cấu hình chạy trên nó đều dùng 36 —
+kể cả cấu hình khai báo chỉ 26.
+
+Hệ quả cụ thể: thí nghiệm "26 tín hiệu so với 26+10" chạy 36 ở CẢ HAI phía và cho ra
+hai con số y hệt nhau. Không crash, không cảnh báo — chỉ là một thí nghiệm không đo cái
+nó tưởng đang đo, và ta sẽ kết luận "thêm tín hiệu không có tác dụng" trong khi chưa hề
+thử.
+
+Đã vá: `combined_signal` lọc theo `cfg.signal_names()` và NÉM LỖI nếu `V3Data` thiếu
+tín hiệu mà cấu hình yêu cầu — thay vì im lặng chạy với bộ khác.
+
+Parity với `strategy_v3.json` sau khi vá: **2,22e-16** (không đổi).
+
+## Quy tắc chung rút ra từ F37 + F38 + F39
+
+Ba lỗi, một cơ chế: **một đối tượng dùng chung được đọc như thể nó là cấu hình.**
+`{symbol}_4h.parquet` bị đọc như "lịch sử khả dụng"; `SIGNAL_REGISTRY` bị đọc như "bộ
+tín hiệu đang chạy"; `V3Data.signals` bị đọc như "tín hiệu cấu hình này muốn".
+
+Trong cả ba, thứ được đọc là một CÁI KHO — nó chứa mọi thứ từng có. Cấu hình là một
+LỰA CHỌN từ cái kho đó. Nhầm kho với lựa chọn không bao giờ gây lỗi; nó chỉ làm hệ
+thống chạy một thứ khác thứ ta nghĩ, và im lặng.
+
+---
+
+# F40 — `min_notional` được giả định ĐỒNG NHẤT $5; sẽ cắn ở lượt MAINNET đầu tiên (14/09/2026)
+
+`max_positions_for_capital(equity, leverage, min_notional=5.0, ...)` giả định MỌI cặp
+cần đúng $5. Trên mainnet điều đó SAI: 122/128 cặp cần $5, nhưng ETH/LTC/LINK/ETC/BCH
+cần **$20** và BTCUSDT cần **$50**.
+
+Vốn 1.000.000 VND (~$38) ở 2x cho $6,34 mỗi vị thế. Nếu một trong sáu cặp đó lọt vào
+top-6, `build_rebalance_plan` bỏ lệnh vào `skipped` và danh mục **MẤT MỘT CHÂN**. Một
+sổ market-neutral thiếu một chân không còn trung lập — nó thành cược có hướng, đúng cơ
+chế đã làm sổ lệch +35% ngày 10/09 (F25).
+
+Lỗi này CHƯA TỪNG cắn vì hệ thống mới chạy testnet, nơi bộ lọc khác. Nó sẽ cắn ở lượt
+mainnet đầu tiên — tức đúng lúc có tiền thật.
+
+Đã vá: `UniverseFilter.max_min_notional` + `symbol_min_notionals()`, lọc TRƯỚC khi xếp
+hạng (cùng nguyên tắc mà `resolve_universe` đã áp cho tính giao dịch được).
+
+## Bẫy thứ hai, phát hiện khi viết test cho bản vá thứ nhất
+
+Bản vá đầu chia cho `n_positions` CỨNG: ngưỡng = 38*2/12/1,2 = **$5,28**. Vốn tụt còn
+$35 thì ngưỡng thành **$4,86 — dưới mức gần như mọi cặp đều cần**, bộ lọc quét sạch
+universe và `resolve_universe` ném lỗi "còn 0 cặp". Một cú sụt 8% vốn sẽ giết đường
+chạy, và nguyên nhân chính là lớp bảo vệ vừa thêm vào.
+
+Sửa bằng cách dùng số vị thế ĐÃ ĐIỀU CHỈNH THEO VỐN. Khi đó ngưỡng luôn >= $5:
+
+    n_eff = floor(E*L / (5*safety))  =>  E*L/n_eff >= 5*safety
+    ngưỡng = (E*L/n_eff)/safety >= 5
+
+Bài học: **một bộ lọc an toàn có thể tự trở thành nguyên nhân sự cố.** Mọi lớp bảo vệ
+mới phải được hỏi "nó hỏng thế nào khi điều kiện xấu đi" — chứ không chỉ "nó có chặn
+đúng thứ cần chặn không".
+
+Khoá bằng `tests/data/test_universe_affordability.py` (13 test, gồm bất biến ngưỡng
+>= $5 quét qua nhiều mức vốn).

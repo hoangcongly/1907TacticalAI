@@ -52,6 +52,22 @@ class ExecutionRecord:
     manual_intervention: bool = False     # con người phải vào sửa tay
     exec_error: Optional[str] = None      # thực thi ném lỗi [F24]
 
+    # --- CHẨN ĐOÁN TỶ LỆ MAKER (14/09/2026) ---
+    # Tỷ lệ maker đo được 0,378-0,49 trong khi mức đạt được là ~0,85, và chênh lệch đó
+    # đáng +0,06 Sharpe / +7,7% lợi nhuận. Nhưng "maker thấp" có HAI nguyên nhân hoàn
+    # toàn khác nhau và cần hai bản vá khác nhau:
+    #   (a) chờ chưa đủ lâu       -> `passive_timed_out` cao
+    #   (b) trần đuổi giá quá hẹp -> `requote_blocked_by_chase_cap` cao
+    # Không ghi lại thì mọi tranh luận về nó là đoán mò. Ghi rồi thì một lượt sạch là
+    # đủ để biết phải vá cái nào.
+    passive_timed_out: int = 0                 # lệnh hết giờ chờ mà chưa khớp hết
+    requote_blocked_by_chase_cap: int = 0      # lần không dám đuổi vì vượt max_chase_bps
+    requote_skipped_no_move: int = 0           # lần sổ chưa dịch đủ để đáng báo giá lại
+    requotes: int = 0                          # lần thực sự đặt lại giá
+    max_drift_bps_seen: float = 0.0            # giá đã trôi xa mốc ban đầu tới đâu
+    fill_drift: float = 0.0                    # lệch trung lập lớn nhất khi đang khớp
+    early_exit: Optional[str] = None           # lý do thoát chờ sớm (van trung lập)
+
     @property
     def clean(self) -> bool:
         """

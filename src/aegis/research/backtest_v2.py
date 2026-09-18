@@ -33,6 +33,7 @@ __all__ = [
     "CostModel",
     "BacktestV2Result",
     "simulate",
+    "simulate_marked_to_market",
     "estimate_cost_bps",
     "drift_weights",
 ]
@@ -337,4 +338,106 @@ def simulate(
         weights=W,
         meta={"bar_hours": bar_hours, "rebalance_every": rebalance_every,
               "period_hours": period_hours, "cost_bps_mean": float(cost_bps.mean() * 1e4)},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Mô phỏng ĐÁNH DẤU THEO THỊ TRƯỜNG trên lưới mịn
+# ---------------------------------------------------------------------------
+def simulate_marked_to_market(
+    weights: pd.DataFrame,
+    close: pd.DataFrame,
+    funding: Optional[pd.DataFrame] = None,
+    cost: Optional[CostModel] = None,
+    bar_hours: float = 4.0,
+) -> BacktestV2Result:
+    """
+    Cùng một chiến lược, nhưng đo đường vốn trên lưới NẾN thay vì lưới TÁI CÂN BẰNG.
+
+    VÌ SAO CẦN HÀM RIÊNG THAY VÌ GỌI `simulate` VỚI LƯỚI MỊN: `simulate` coi mỗi hàng
+    của `weights` là một lần TÁI CÂN BẰNG — nó kéo danh mục về đúng trọng số mục tiêu
+    ở mọi hàng và tính phí cho việc đó. Đưa lưới 4h vào đó nghĩa là mô phỏng một hệ
+    thống giao dịch mỗi 4 giờ, không phải hệ thống hiện tại (72h) nhìn ở độ phân giải
+    cao hơn. Turnover sẽ bị thổi lên ~18 lần và kết luận thành vô nghĩa.
+
+    Hàm này giữ đúng hành vi thật: GIỮ vị thế và để trọng số TRÔI giữa hai lần tái cân
+    bằng, chỉ giao dịch (và chỉ tính phí) tại các mốc có trong `weights`.
+
+    HAI ĐIỀU CHỈ THẤY ĐƯỢC Ở ĐỘ PHÂN GIẢI NÀY:
+
+    1. SỤT GIẢM TRONG KỲ. Drawdown đo trên nến 72h chỉ thấy giá đóng ba ngày một lần.
+       Một cú sập rồi hồi trong vòng 48 tiếng là VÔ HÌNH với nó — nhưng hoàn toàn hữu
+       hình với sàn, với margin, và với van drawdown đang chạy mỗi 30 phút. Con số
+       maxDD của lưới thô LUÔN lạc quan, và lạc quan đúng ở chỗ nguy hiểm nhất.
+
+    2. ĐIỂM QUYẾT ĐỊNH. Một tuần chỉ có 2,33 kỳ 72h — quá ít để nói về điều khiển
+       động. Cũng một tuần đó có 42 nến 4h. Tầng đòn bẩy có thể đổi ở nhịp mịn (chỉ
+       cần co/giãn toàn bộ sổ, không cần đổi thành phần), nên đây mới là lưới đúng
+       để giải bài toán điều khiển.
+
+    `weights` phải là trọng số MỤC TIÊU tại các mốc tái cân bằng; `close` là giá trên
+    lưới mịn. Mọi mốc của `weights` phải có trong `close.index`.
+    """
+    cost = cost or CostModel()
+    idx = close.index
+    missing = weights.index.difference(idx)
+    if len(missing):
+        raise ValueError(f"{len(missing)} mốc tái cân bằng không có trong lưới giá")
+
+    cols = close.columns
+    W = weights.reindex(columns=cols).fillna(0.0)
+    rebal_at = set(W.index)
+
+    ret = close / close.shift(1) - 1.0          # lợi suất từng nến của từng tài sản
+    cost_vec = (cost.bps_for(cols) / 1e4).reindex(cols).to_numpy()
+
+    fr = None
+    if funding is not None and not funding.empty:
+        fr = funding.reindex(index=idx, columns=cols).fillna(0.0)
+    funding_per_bar = bar_hours / 8.0
+
+    n = len(idx)
+    out_r = np.zeros(n); out_g = np.zeros(n); out_c = np.zeros(n)
+    out_f = np.zeros(n); out_t = np.zeros(n); out_n = np.zeros(n)
+    out_net = np.zeros(n); out_gross = np.zeros(n)
+
+    # THỨ TỰ LÀ TẤT CẢ. Trọng số mục tiêu tại mốc `ts` được tính từ giá ĐÓNG của `ts`,
+    # nên nó chỉ được ăn lợi suất từ `ts` TRỞ ĐI. Làm ngược lại — đặt trọng số rồi áp
+    # ngay lợi suất của chính nến vừa đóng — là nhìn trước một nhịp, và một nhịp thôi
+    # cũng đủ thổi Sharpe từ 1,28 lên 1,66 trên chính dữ liệu này (đã đo).
+    #
+    # Vì vậy mỗi nến chạy đúng ba bước, theo đúng thứ tự:
+    #   (1) ăn lợi suất của nến hiện tại bằng trọng số ĐANG GIỮ
+    #   (2) để trọng số trôi theo giá
+    #   (3) nếu đây là mốc tái cân bằng thì mới giao dịch về mục tiêu mới
+    w = pd.Series(0.0, index=cols)
+    for i, ts in enumerate(idx):
+        # (1) + (2) — lợi suất của nến này thuộc về trọng số đã giữ từ trước.
+        r = ret.loc[ts] if i > 0 else pd.Series(np.nan, index=cols)
+        if r.notna().any() and float(w.abs().sum()) > 0.0:
+            out_g[i] = float((w * r.fillna(0.0)).sum())
+            if fr is not None:
+                out_f[i] = -float((w * fr.loc[ts]).sum()) * funding_per_bar
+            w = drift_weights(w, r)
+
+        # (3) Giao dịch ở giá đóng nến này, tính phí vào chính nến này.
+        if ts in rebal_at:
+            target = W.loc[ts]
+            traded = (target - w).abs()
+            out_t[i] = float(traded.sum())
+            out_c[i] = float((traded.to_numpy() * cost_vec).sum())
+            w = target
+
+        out_r[i] = out_g[i] - out_c[i] + out_f[i]
+        out_n[i] = float((w != 0.0).sum())
+        out_net[i] = float(w.sum())
+        out_gross[i] = float(w.abs().sum())
+
+    s = lambda a: pd.Series(a, index=idx)
+    return BacktestV2Result(
+        returns=s(out_r), gross_returns=s(out_g), cost_drag=s(out_c),
+        funding_pnl=s(out_f), turnover=s(out_t), n_positions=s(out_n),
+        net_exposure=s(out_net), gross_exposure=s(out_gross), weights=W,
+        meta={"bar_hours": bar_hours, "marked_to_market": True,
+              "n_rebalances": int(len(W)), "cost_bps_mean": float(cost_vec.mean() * 1e4)},
     )

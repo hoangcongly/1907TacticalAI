@@ -19,6 +19,14 @@ dependencies = [
     "onnxruntime>=1.16.0",
     "statsmodels>=0.14.0",
     "pandera>=0.16.0",
+    # [FIX F41] Ba gói dưới đây TRƯỚC ĐÂY chỉ được cài tay vào .venv, không khai
+    # báo ở đây. Khi .venv bị xoá (sự cố 16/09/2026), dựng lại bằng `uv pip install -e .`
+    # ra một venv THIẾU chúng: không có pyarrow thì không đọc nổi parquet -> universe
+    # về 0 cặp; không có requests thì không gọi nổi sàn lẫn Telegram.
+    # Phụ thuộc không khai báo = venv không tái lập được = sự cố không hồi phục được.
+    "pyarrow>=14.0.0",
+    "requests>=2.31.0",
+    "joblib>=1.3.0",
 ]
 
 [project.optional-dependencies]
@@ -27,6 +35,11 @@ dev = [
     "pytest-cov>=4.1.0",
     "black>=23.9.0",
     "flake8>=6.1.0",
+    # [FIX F41] Chỉ để `tests/research/test_literature_methods.py` chạy được.
+    # LambdaRank là hướng ĐÃ THỬ VÀ THUA (CLAUDE.md §3b) nên KHÔNG phải phụ thuộc
+    # lõi — nhưng thiếu nó thì 3 test đỏ, và test đỏ vì lý do sai sẽ che test đỏ
+    # vì lý do đúng.
+    "lightgbm>=4.0.0",
 ]
 
 [tool.setuptools.packages.find]

@@ -34,8 +34,12 @@ lớp phòng vệ:
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
+import logging
+
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "CombinerSpec",
@@ -56,7 +60,21 @@ class CombinerSpec:
     max_step: float = 0.10        # thay đổi trọng số tối đa mỗi kỳ
     allow_sign_flip: bool = True  # cho phép học dấu ngược với giả thuyết ban đầu
     shrink: float = 1.0           # cường độ co; 0 = không co, 1 = co chuẩn
-    warm_equal: bool = True       # giai đoạn đầu dùng trọng số đều thay vì bỏ trống
+    warm_equal: bool = True       # CHƯA ĐỦ LỊCH SỬ -> trọng số đều thay vì bỏ trống
+    #: KHI KHÔNG HỌ NÀO CÓ BẰNG CHỨNG (đủ lịch sử nhưng mọi |t| < ngưỡng) thì làm gì.
+    #:
+    #: Bản đầu dùng chung `warm_equal` cho cả hai tình huống. Chúng KHÁC NHAU về bản
+    #: chất: "chưa đủ dữ liệu để biết" là vô tri, còn "đủ dữ liệu và dữ liệu nói không
+    #: có gì" là một kết luận. Trả lời cả hai bằng "giao dịch đều tay, gross đầy đủ"
+    #: nghĩa là ở tình huống thứ hai hệ thống đặt cược hết cỡ đúng lúc nó vừa tự kết
+    #: luận rằng không tín hiệu nào chứng minh được điều gì.
+    #:
+    #: ĐÃ ĐO (14/09/2026): với 26 tín hiệu, nhánh này chạy 0/799 kỳ — luôn có ít nhất
+    #: một họ vượt t = 2,0. Nên đây là RỦI RO TIỀM ẨN, không phải lỗi đang hoạt động,
+    #: và mặc định giữ nguyên hành vi cũ để không đổi kết quả đã kiểm định. Nhưng nó
+    #: sẽ chạy nếu ai đó thu hẹp thư viện tín hiệu hoặc nâng `t_threshold` — và lúc đó
+    #: nó sẽ chạy IM LẶNG. Vì vậy nhánh này nay ghi cảnh báo mỗi khi kích hoạt.
+    collapse_equal: bool = True
 
 
 def factor_returns(
@@ -129,7 +147,8 @@ def _score(window: np.ndarray, t_threshold: float, shrink: float,
 def adaptive_weights(
     fac_rets: Dict[str, pd.Series],
     spec: Optional[CombinerSpec] = None,
-) -> pd.DataFrame:
+    return_diagnostics: bool = False,
+):
     """
     Trọng số từng họ theo thời gian, tính HOÀN TOÀN từ dữ liệu quá khứ.
 
@@ -146,6 +165,14 @@ def adaptive_weights(
     weights = np.zeros((len(idx), len(names)))
     prev = np.zeros(len(names))
     equal = np.full(len(names), 1.0 / len(names))
+    # Chẩn đoán: nhánh nào đã chạy, và TỔNG BẰNG CHỨNG thô trước khi chuẩn hoá.
+    # `evidence` là đại lượng bị chuẩn hoá mất ở dòng `target = raw / total` — tức là
+    # thông tin về ĐỘ MẠNH của bằng chứng bị vứt đi và chỉ giữ lại TỶ LỆ giữa các họ.
+    # Ghi lại để đo xem sự mất mát đó có đáng kể không.
+    branch = np.empty(len(idx), dtype=object)
+    evidence = np.zeros(len(idx))
+    n_active = np.zeros(len(idx))
+    n_collapse = 0
 
     for i in range(len(idx)):
         lo = max(0, i - spec.lookback)
@@ -153,13 +180,19 @@ def adaptive_weights(
 
         if len(window) < spec.min_periods:
             target = equal.copy() if spec.warm_equal else np.zeros(len(names))
+            branch[i] = "warmup"
         else:
             raw = np.array([_score(window[:, j], spec.t_threshold, spec.shrink,
                                    spec.allow_sign_flip) for j in range(len(names))])
             total = np.abs(raw).sum()
+            evidence[i] = float(total)
+            n_active[i] = float((np.abs(raw) > 1e-12).sum())
             if total <= 1e-12:
-                target = equal.copy() if spec.warm_equal else np.zeros(len(names))
+                target = equal.copy() if spec.collapse_equal else np.zeros(len(names))
+                branch[i] = "collapse"
+                n_collapse += 1
             else:
+                branch[i] = "ok"
                 target = raw / total
                 over = np.abs(target) > spec.max_abs_weight
                 if over.any():
@@ -171,13 +204,46 @@ def adaptive_weights(
         # Trần thay đổi mỗi kỳ.
         step = np.clip(target - prev, -spec.max_step, spec.max_step)
         cur = prev + step
+
+        # [FIX F36] Chuẩn hoá về gross CỦA MỤC TIÊU, không phải về 1.0 vô điều kiện.
+        #
+        # Bản cũ luôn chia cho `|cur|.sum()`, tức luôn ép gross = 1.0. Hệ quả: khi mục
+        # tiêu là "đứng ngoài" (vector 0 — điều mà `warm_equal=False` và
+        # `collapse_equal=False` tồn tại để diễn đạt), việc chuẩn hoá KÉO NGAY trọng số
+        # trở lại gross đầy đủ. Hai cờ đó vì thế là cờ GIẢ: chúng đổi tỷ lệ giữa các họ
+        # nhưng không bao giờ đổi được quy mô, nên ý định "không có bằng chứng thì
+        # không đặt cược" bị vô hiệu hoá trong im lặng.
+        #
+        # Test `test_collapse_equal_tat_thi_danh_muc_rong` đã phát hiện đúng điều này:
+        # đặt `collapse_equal=False` vẫn cho gross = 1.0.
+        #
+        # KHÔNG ĐỔI HÀNH VI Ở TRẠNG THÁI BÌNH THƯỜNG: khi có bằng chứng, `target` luôn
+        # có gross = 1.0 (nó là `raw/total`, hoặc `equal`), nên phép chia dưới đây cho
+        # ra đúng kết quả cũ tới từng chữ số.
+        tgt_gross = float(np.abs(target).sum())
         s = np.abs(cur).sum()
-        if s > 1e-12:
-            cur = cur / s
+        if s > 1e-12 and tgt_gross > 1e-12:
+            cur = cur * (tgt_gross / s)
+        # tgt_gross = 0 -> để `cur` tự đi về 0 theo `max_step`; đứng ngoài phải đứng
+        # ngoài thật, và đi ra từ từ để không tạo một cú xả toàn danh mục trong một kỳ.
         weights[i] = cur
         prev = cur
 
-    return pd.DataFrame(weights, index=idx, columns=names)
+    if n_collapse:
+        # KHÔNG im lặng. Đây là trạng thái "không tín hiệu nào chứng minh được gì" và
+        # hệ thống vẫn đang giao dịch ở gross đầy đủ. Người vận hành phải biết.
+        logger.warning(
+            "[BẰNG CHỨNG SỤP ĐỔ] %d/%d kỳ không có họ tín hiệu nào vượt ngưỡng t=%.1f; "
+            "đang dùng %s. Xem `CombinerSpec.collapse_equal`.",
+            n_collapse, len(idx), spec.t_threshold,
+            "trọng số ĐỀU ở gross đầy đủ" if spec.collapse_equal else "danh mục RỖNG")
+
+    W = pd.DataFrame(weights, index=idx, columns=names)
+    if not return_diagnostics:
+        return W
+    diag = pd.DataFrame({"branch": branch, "evidence": evidence,
+                         "n_active": n_active}, index=idx)
+    return W, diag
 
 
 def combine_adaptive(

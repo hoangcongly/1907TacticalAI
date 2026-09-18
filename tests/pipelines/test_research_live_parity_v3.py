@@ -19,6 +19,7 @@ import pytest
 from aegis.data.panel_v2 import load_funding_panel_v2, load_panel_v2
 from aegis.research.adaptive_combiner import CombinerSpec, combine_adaptive
 from aegis.research.signal_library import SIGNAL_REGISTRY, build_signal
+from aegis.research.strategy_v3 import V3_SIGNALS
 from aegis.risk.portfolio import PortfolioSpec, build_weights
 
 UNIVERSE_FILE = pathlib.Path("artifacts/universe_wide.json")
@@ -45,7 +46,9 @@ def market():
 def _weights_research(panel, funding, tail_only: bool):
     """Đường research; `tail_only=True` mô phỏng đúng cách live cắt đuôi chuỗi."""
     close = panel["close"]
-    sigs = {n: build_signal(n, panel, funding) for n in SIGNAL_REGISTRY}
+    # [FIX F38] Bộ 26 đã kiểm định — KHÔNG duyệt registry. Registry chứa cả tín hiệu
+    # đang thử nghiệm; dùng nó ở đây làm test 'xanh' cả khi research và live đã lệch.
+    sigs = {n: build_signal(n, panel, funding) for n in V3_SIGNALS}
     marks = close.index[::REBAL]
     combined = combine_adaptive(
         {k: v.reindex(marks) for k, v in sigs.items()}, close.reindex(marks),
@@ -83,8 +86,10 @@ def test_live_khop_research(market, monkeypatch):
     pipe = xlp.CrossSectionalLivePipeline.__new__(xlp.CrossSectionalLivePipeline)
     pipe.config = cfg
     # Bỏ qua bước lọc universe theo sàn: test này chỉ kiểm chứng phép TÍNH.
+    # `*_` nuốt tham số `equity` mà `resolve_universe` nhận từ [FIX F40]. Test này chỉ
+    # kiểm chứng phép TÍNH nên bỏ qua cả lọc sàn lẫn lọc vốn.
     monkeypatch.setattr(pipe, "resolve_universe",
-                        lambda: list(json.load(open(UNIVERSE_FILE, encoding="utf-8"))),
+                        lambda *_, **__: list(json.load(open(UNIVERSE_FILE, encoding="utf-8"))),
                         raising=False)
 
     got, ts = pipe._compute_target_weights_v3()
@@ -105,8 +110,10 @@ def test_trong_so_trung_lap_va_dung_so_vi_the(market, monkeypatch):
     cfg = xlp.LiveConfig.from_artifacts("artifacts/strategy_v3.json")
     pipe = xlp.CrossSectionalLivePipeline.__new__(xlp.CrossSectionalLivePipeline)
     pipe.config = cfg
+    # `*_` nuốt tham số `equity` mà `resolve_universe` nhận từ [FIX F40]. Test này chỉ
+    # kiểm chứng phép TÍNH nên bỏ qua cả lọc sàn lẫn lọc vốn.
     monkeypatch.setattr(pipe, "resolve_universe",
-                        lambda: list(json.load(open(UNIVERSE_FILE, encoding="utf-8"))),
+                        lambda *_, **__: list(json.load(open(UNIVERSE_FILE, encoding="utf-8"))),
                         raising=False)
 
     w, _ = pipe._compute_target_weights_v3()
@@ -127,3 +134,57 @@ def test_trong_so_trung_lap_va_dung_so_vi_the(market, monkeypatch):
     worst = float(np.abs(vals).max())
     assert worst <= cfg.max_weight * 1.10, (
         f"vượt trần {worst/cfg.max_weight - 1:.2%} — quá nhiều, không còn là sai số chiếu")
+
+
+# ---------------------------------------------------------------------------
+# [FIX F38] Parity ở tầng CẤU HÌNH, không chỉ ở tầng công thức
+# ---------------------------------------------------------------------------
+def test_live_va_research_dung_cung_bo_tin_hieu():
+    """
+    Bộ tín hiệu của live phải TRÙNG bộ của research v3.
+
+    Test parity trọng số ở trên không bắt được lệch này: nó tự dựng cả hai phía bằng
+    cùng một danh sách, nên nếu live đọc `SIGNAL_REGISTRY` còn research đọc danh sách
+    đóng băng thì test vẫn xanh trong khi hệ thống thật đã lệch.
+
+    Đây là khe hở mà F37 lọt qua ở một tham số khác (lịch sử universe): công thức thì
+    khoá, cấu hình thì không.
+    """
+    from aegis.pipelines.xs_live_pipeline import LiveConfig
+    from aegis.research.strategy_v3 import V3
+
+    cfg = LiveConfig(universe=["AAAUSDT"], engine="v3")
+    live_names = tuple(cfg.v3_signals) if cfg.v3_signals else V3_SIGNALS
+    assert live_names == V3.signal_names()
+    assert len(live_names) == 26
+
+
+def test_tham_so_chien_luoc_cua_live_trung_research():
+    """
+    Các tham số quyết định DANH MỤC phải giống nhau ở hai phía. Lệch một con số ở đây
+    nghĩa là hệ thống đang chạy một chiến lược chưa từng được kiểm định — và nó sẽ
+    chạy im lặng, vì cả hai phía đều "đúng" theo tiêu chuẩn riêng.
+    """
+    import pathlib
+
+    from aegis.pipelines.xs_live_pipeline import LiveConfig
+    from aegis.research.strategy_v3 import V3
+
+    art = pathlib.Path("artifacts/strategy_v3.json")
+    if not art.is_file():
+        pytest.skip("chưa có artifacts/strategy_v3.json")
+    cfg = LiveConfig.from_artifacts(str(art))
+
+    assert cfg.engine == "v3"
+    assert cfg.n_positions == V3.n_positions
+    assert cfg.rebalance_bars == V3.rebalance_every
+    assert cfg.rebalance_hours == pytest.approx(V3.period_hours)
+    assert cfg.interval == V3.interval
+    assert cfg.weight_mode == V3.portfolio.mode
+    assert cfg.max_weight == pytest.approx(V3.portfolio.max_weight)
+    assert cfg.combiner_lookback == V3.combiner.lookback
+    assert cfg.combiner_min_periods == V3.combiner.min_periods
+    assert cfg.combiner_t_threshold == pytest.approx(V3.combiner.t_threshold)
+    assert cfg.combiner_max_abs_weight == pytest.approx(V3.combiner.max_abs_weight)
+    assert cfg.combiner_max_step == pytest.approx(V3.combiner.max_step)
+    assert cfg.top_frac == pytest.approx(V3.top_frac)

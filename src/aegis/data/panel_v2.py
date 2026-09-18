@@ -35,6 +35,8 @@ __all__ = [
     "load_funding_panel_v2",
     "align_panel",
     "interval_hours",
+    "load_metrics_panel_v2",
+    "METRICS_FIELDS",
 ]
 
 
@@ -179,3 +181,62 @@ def align_panel(panel: Dict[str, pd.DataFrame], funding: pd.DataFrame):
         cols = list(panel["close"].columns)
     out = {f: d.reindex(columns=cols) for f, d in panel.items()}
     return out, funding.reindex(columns=cols)
+
+
+METRICS_ROOT = "data/binance_metrics"
+
+#: Trường vị thế lấy từ kho dump `data.binance.vision/.../metrics`.
+#: Đây là những đại lượng mà GIÁ và KHỐI LƯỢNG không chứa: ai đang cầm gì.
+METRICS_FIELDS = [
+    "sum_open_interest",                 # OI theo đơn vị cơ sở
+    "sum_open_interest_value",           # OI theo USD
+    "count_toptrader_long_short_ratio",  # long/short theo SỐ TÀI KHOẢN của top trader
+    "sum_toptrader_long_short_ratio",    # long/short theo VỊ THẾ của top trader
+    "count_long_short_ratio",            # long/short của TOÀN BỘ tài khoản (đám đông)
+    "sum_taker_long_short_vol_ratio",    # khối lượng taker mua/bán
+]
+
+
+def load_metrics_panel_v2(
+    symbols: List[str],
+    close_index: pd.Index,
+    root: str = METRICS_ROOT,
+    interval: str = "4h",
+) -> Dict[str, pd.DataFrame]:
+    """
+    Panel dữ liệu VỊ THẾ, căn theo lưới giá — trường thiếu trả về khung rỗng.
+
+    QUY ƯỚC THỜI GIAN PHẢI KHỚP `resample_bars`, nếu không sẽ nhìn trước cả một nến:
+    mỗi trường ở đây là MỨC TỒN (số hợp đồng đang mở tại một thời điểm), nên giá trị
+    của nến T là quan sát tại CUỐI nến T — y hệt `close`. Vì `simulate` cho trọng số
+    tại T ăn lợi suất T -> T+1, dùng giá trị cuối-nến-T tại chỉ số T là nhân quả.
+
+    Nếu ai đó đổi `_aggregate` trong `scripts/download_metrics.py` sang lấy giá trị
+    ĐẦU kỳ thì quy ước gãy và mọi tín hiệu vị thế trễ đúng một nến — không crash, chỉ
+    yếu đi. Hai nơi phải sửa cùng nhau.
+
+    Thiếu dữ liệu KHÔNG phải lỗi: chưa tải metrics thì họ tín hiệu vị thế tự tắt
+    (toàn NaN) và tầng gộp thích ứng bỏ qua nó. Hệ thống vẫn chạy y như trước.
+    """
+    idx = pd.Index(close_index)
+    root_p = pathlib.Path(root)
+    cols: Dict[str, Dict[str, pd.Series]] = {f: {} for f in METRICS_FIELDS}
+
+    for symbol in symbols:
+        path = root_p / f"{symbol}_{interval}.parquet"
+        if not path.is_file():
+            continue
+        try:
+            df = pd.read_parquet(path).drop_duplicates("timestamp_ms").sort_values("timestamp_ms")
+        except Exception:
+            continue
+        df = df.set_index("timestamp_ms")
+        for f in METRICS_FIELDS:
+            if f in df.columns:
+                # reindex thẳng, KHÔNG ffill: thiếu là thiếu. Điền tới sẽ khiến một
+                # cặp ngừng báo cáo vẫn có "vị thế" y như lần cuối, mãi mãi.
+                cols[f][symbol] = df[f].astype(np.float64).reindex(idx)
+
+    return {f: (pd.DataFrame(c).reindex(index=idx) if c
+                else pd.DataFrame(index=idx, dtype=np.float64))
+            for f, c in cols.items()}

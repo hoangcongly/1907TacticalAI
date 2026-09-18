@@ -1,25 +1,25 @@
 {
   "schema_version": 1,
-  "peak_equity": 5205.5259330300005,
+  "peak_equity": 6033.22572581,
   "is_dead": false,
   "frozen_until_ms": 0,
   "positions": {
-    "ONDOUSDT": -1916.0,
-    "ZECUSDT": 0.444,
-    "BCHUSDT": -2.859,
-    "PENGUUSDT": -92934.0,
-    "VETUSDT": 209607.0,
-    "VIRTUALUSDT": -1254.4,
-    "COTIUSDT": 29819.0,
-    "VTHOUSDT": 2566138.0,
+    "TRUMPUSDT": -232.74,
+    "DASHUSDT": 18.366,
+    "SOLUSDT": -11.0,
+    "VTHOUSDT": 2020195.0,
     "USELESSUSDT": 2787.0,
+    "HEMIUSDT": -65924.0,
+    "IOSTUSDT": -1688202.0,
+    "FLOCKUSDT": 14182.0,
     "BULLAUSDT": 6840.0,
     "PAXGUSDT": -0.26,
-    "SANDUSDT": -34845.0
+    "SANDUSDT": -47286.0,
+    "ARBUSDT": 7439.7
   },
-  "last_rebalance_ms": 1789127216628,
-  "rebalance_count": 1,
-  "last_equity": 5205.5259330300005,
-  "last_error": null,
-  "updated_ms": 1789137306589
+  "last_rebalance_ms": 1789548207948,
+  "rebalance_count": 3,
+  "last_equity": 5872.7396225,
+  "last_error": "LỆCH HƯỚNG -3.0% gross (trần ±2%) — long $5,689 vs short $6,036. Danh mục KHÔNG đúng thiết kế; mọi con số kiểm định mất hiệu lực.",
+  "updated_ms": 1789548666030
 }

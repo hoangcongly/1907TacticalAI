@@ -69,7 +69,7 @@ Tiền tố đường dẫn: `src/aegis/`
 
 | Cần làm gì | Đi thẳng tới |
 |---|---|
-| Thêm/sửa tín hiệu (36 tín hiệu, 6 họ) | `research/signal_library.py` ⚠️ thêm vào registry KHÔNG tự vào V3 — xem `V3_SIGNALS` [F38] |
+| Thêm/sửa tín hiệu (40 tín hiệu, 7 họ; V3 dùng 26) | `research/signal_library.py` ⚠️ thêm vào registry KHÔNG tự vào V3 — xem `V3_SIGNALS` [F38] |
 | **Dữ liệu VỊ THẾ** (OI, long/short) | `scripts/download_metrics.py` -> `data/binance_metrics/`, `panel_v2.load_metrics_panel_v2` |
 | Gộp tín hiệu, học dấu từ quá khứ | `research/adaptive_combiner.py` |
 | Dựng trọng số, trung lập, chia đều rủi ro | `risk/portfolio.py` |

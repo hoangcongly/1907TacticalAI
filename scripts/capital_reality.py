@@ -24,7 +24,11 @@ from aegis.data.panel_v2 import load_funding_panel_v2, load_panel_v2, align_pane
 from aegis.research.adaptive_combiner import CombinerSpec, combine_adaptive
 from aegis.research.backtest_v2 import CostModel, estimate_cost_bps, simulate
 from aegis.research.leverage import kelly_leverage, simulate_paths
-from aegis.research.signal_library import SIGNAL_REGISTRY, build_signal
+from aegis.research.signal_library import build_signal
+# [FIX F50] Duyệt ĐÚNG 26 tín hiệu đã kiểm định, KHÔNG duyệt cả registry. Registry là
+# nơi CHỨA mọi tín hiệu từng viết (positioning, residual_momentum...); duyệt nó thì
+# thêm một tín hiệu nghiên cứu là âm thầm đổi kết quả script này — họ lỗi F38/F39.
+from aegis.research.strategy_v3 import V3_SIGNALS
 from aegis.risk.portfolio import PortfolioSpec, build_weights
 
 CAPITAL_VND = 1_000_000
@@ -47,7 +51,7 @@ def main():
 
     marks = cf.index[::REBAL]
     close = cf.reindex(marks)
-    sigs = {n: build_signal(n, panel, funding).reindex(marks) for n in SIGNAL_REGISTRY}
+    sigs = {n: build_signal(n, panel, funding).reindex(marks) for n in V3_SIGNALS}
     sig = combine_adaptive(sigs, close, CombinerSpec(lookback=500, min_periods=120,
                                                      t_threshold=2.0, max_abs_weight=0.20,
                                                      max_step=0.05), top_frac=0.10)

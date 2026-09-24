@@ -32,7 +32,11 @@ from aegis.research.cross_sectional import (
     signal_momentum, signal_ofi,
 )
 from aegis.research.ensemble import EnsembleMember, ensemble_weights
-from aegis.research.signal_library import SIGNAL_REGISTRY, build_signal
+from aegis.research.signal_library import build_signal
+# [FIX F50] Duyệt ĐÚNG 26 tín hiệu đã kiểm định, KHÔNG duyệt cả registry. Registry là
+# nơi CHỨA mọi tín hiệu từng viết (positioning, residual_momentum...); duyệt nó thì
+# thêm một tín hiệu nghiên cứu là âm thầm đổi kết quả script này — họ lỗi F38/F39.
+from aegis.research.strategy_v3 import V3_SIGNALS
 from aegis.risk.portfolio import PortfolioSpec, build_weights, realized_vol
 
 UNIVERSE = "artifacts/universe_wide.json"
@@ -75,7 +79,7 @@ def main():
     split = json.load(open("artifacts/holdout_split.json"))["split_ts"]
 
     print(f"dựng tín hiệu trên {cf.shape[1]} cặp...", flush=True)
-    sigs_full = {n: build_signal(n, panel, funding) for n in SIGNAL_REGISTRY}
+    sigs_full = {n: build_signal(n, panel, funding) for n in V3_SIGNALS}
     old_full = combine_signals_zscore({
         "funding_carry": signal_funding_carry(funding, 6),
         "momentum_90": signal_momentum(cf, 90),

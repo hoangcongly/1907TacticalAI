@@ -36,7 +36,11 @@ from aegis.research.cross_sectional import (
     combine_signals_zscore, signal_funding_carry, signal_funding_momentum,
     signal_momentum, signal_ofi,
 )
-from aegis.research.signal_library import SIGNAL_REGISTRY, build_signal, build_all_families
+from aegis.research.signal_library import build_signal, build_all_families
+# [FIX F50] Duyệt ĐÚNG 26 tín hiệu đã kiểm định, KHÔNG duyệt cả registry. Registry là
+# nơi CHỨA mọi tín hiệu từng viết (positioning, residual_momentum...); duyệt nó thì
+# thêm một tín hiệu nghiên cứu là âm thầm đổi kết quả script này — họ lỗi F38/F39.
+from aegis.research.strategy_v3 import V3_SIGNALS
 from aegis.risk.portfolio import PortfolioSpec, build_weights
 
 MAKER = 0.5
@@ -68,7 +72,7 @@ def main():
         panel = load_panel_v2(syms, "4h", source_interval="1h", min_coverage=0.15)
         funding = load_funding_panel_v2(syms, panel["close"].index)
         panel, funding = align_panel(panel, funding)
-        sigs = {n: build_signal(n, panel, funding) for n in SIGNAL_REGISTRY}
+        sigs = {n: build_signal(n, panel, funding) for n in V3_SIGNALS}
         fam = build_all_families(panel, funding)
         old = combine_signals_zscore({
             "funding_carry": signal_funding_carry(funding, 6),

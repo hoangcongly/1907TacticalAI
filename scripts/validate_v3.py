@@ -29,7 +29,11 @@ from aegis.research.leverage import (
     LeverageSpec, apply_leverage, kelly_leverage, required_sharpe_for_target,
     target_probability_table,
 )
-from aegis.research.signal_library import SIGNAL_REGISTRY, build_signal
+from aegis.research.signal_library import build_signal
+# [FIX F50] Duyệt ĐÚNG 26 tín hiệu đã kiểm định, KHÔNG duyệt cả registry. Registry là
+# nơi CHỨA mọi tín hiệu từng viết (positioning, residual_momentum...); duyệt nó thì
+# thêm một tín hiệu nghiên cứu là âm thầm đổi kết quả script này — họ lỗi F38/F39.
+from aegis.research.strategy_v3 import V3_SIGNALS
 from aegis.risk.portfolio import PortfolioSpec, build_weights
 from aegis.validation.dsr import compute_deflated_sharpe_ratio
 
@@ -67,8 +71,8 @@ def main():
     split = json.load(open("artifacts/holdout_split.json"))["split_ts"]
 
     # Tín hiệu tính trên TOÀN chuỗi (cần warm-up) rồi mới cắt — hợp lệ vì nhân quả.
-    print(f"dựng {len(SIGNAL_REGISTRY)} tín hiệu trên {close_full.shape[1]} cặp...", flush=True)
-    sigs_full = {n: build_signal(n, panel, funding) for n in SIGNAL_REGISTRY}
+    print(f"dựng {len(V3_SIGNALS)} tín hiệu trên {close_full.shape[1]} cặp...", flush=True)
+    sigs_full = {n: build_signal(n, panel, funding) for n in V3_SIGNALS}
 
     per_sym = estimate_cost_bps(panel, notional_usd=CAPITAL_USD * 3 / N_POSITIONS,
                                 bars_per_day=6)
@@ -115,7 +119,7 @@ def main():
     print("\n" + "=" * 96)
     print(f"CẤU HÌNH CHỐT: universe rộng ({close_full.shape[1]} cặp) | {INTERVAL} | "
           f"tái cân bằng {REBAL} nến ({4*REBAL}h)")
-    print(f"  {len(SIGNAL_REGISTRY)} tín hiệu / 5 họ, gộp thích ứng (lookback {COMBINER.lookback}, "
+    print(f"  {len(V3_SIGNALS)} tín hiệu / 5 họ, gộp thích ứng (lookback {COMBINER.lookback}, "
           f"ngưỡng t {COMBINER.t_threshold})")
     print(f"  {N_POSITIONS} vị thế, trọng số liên tục chia đều rủi ro, trần {PORTFOLIO.max_weight:.0%}/cặp")
     print(f"  phí: maker {MAKER_RATIO:.0%} | trượt giá trung vị {per_sym.median():.2f}bp/cặp")
@@ -221,7 +225,7 @@ def main():
             "universe_file": UNIVERSE, "n_symbols": int(close_full.shape[1]),
             "interval": INTERVAL, "rebalance_every": REBAL,
             "period_hours": 4 * REBAL, "n_positions": N_POSITIONS,
-            "n_signals": len(SIGNAL_REGISTRY),
+            "n_signals": len(V3_SIGNALS),
             "combiner": {"lookback": COMBINER.lookback, "min_periods": COMBINER.min_periods,
                          "t_threshold": COMBINER.t_threshold,
                          "max_abs_weight": COMBINER.max_abs_weight,

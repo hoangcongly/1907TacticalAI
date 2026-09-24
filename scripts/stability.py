@@ -32,7 +32,11 @@ from aegis.research.cross_sectional import (
     combine_signals_zscore, signal_funding_carry, signal_funding_momentum,
     signal_momentum, signal_ofi,
 )
-from aegis.research.signal_library import SIGNAL_REGISTRY, build_all_families, build_signal
+from aegis.research.signal_library import build_all_families, build_signal
+# [FIX F50] Duyệt ĐÚNG 26 tín hiệu đã kiểm định, KHÔNG duyệt cả registry. Registry là
+# nơi CHỨA mọi tín hiệu từng viết (positioning, residual_momentum...); duyệt nó thì
+# thêm một tín hiệu nghiên cứu là âm thầm đổi kết quả script này — họ lỗi F38/F39.
+from aegis.research.strategy_v3 import V3_SIGNALS
 from aegis.risk.portfolio import PortfolioSpec, build_weights
 
 UNIVERSE = "artifacts/universe_wide.json"
@@ -70,7 +74,7 @@ def main():
         "funding_mom": signal_funding_momentum(funding, 42),
     }, min_coverage=3)
     fam_full = build_all_families(panel, funding)
-    all_sig_full = {n: build_signal(n, panel, funding) for n in SIGNAL_REGISTRY}
+    all_sig_full = {n: build_signal(n, panel, funding) for n in V3_SIGNALS}
 
     rows = []
     for rebal in (12, 18, 24, 36):

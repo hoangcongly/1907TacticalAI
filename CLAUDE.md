@@ -84,6 +84,46 @@ chi tiết: phần dạng đóng (Sharpe cần có, trần xác suất) không d
 **Đừng nâng đòn bẩy vượt khoảng [4..6]x để đuổi mục tiêu tuần.** Hai đòn bẩy có thật
 là VỐN (nhân tiền tuyến tính, không bị phạt) và tỷ lệ maker (F49, +21%/năm ở 7,89x).
 
+## 🔬 24/09/2026 — ĐỘNG LƯỢNG PHẦN DƯ + KHỬ BETA ở n=50: ĐÃ CÀI, **CHƯA ĐO TRÊN DỮ LIỆU THẬT**
+
+```bash
+python scripts/residual_study.py     # ⭐ chạy trên máy có data/ (~10-15 phút)
+```
+
+**Rà tài liệu trước khi chọn.** Lợi suất crypto cao nhất đã công bố là CTREND
+(+3,87%/tuần) và momentum Liu-Tsyvinski-Wu (+4,2%/tuần), cả hai ở 1x và trên dữ liệu
+thời kỳ đầu. Momentum crypto thất bại toàn bộ trong 2022-2023. CTREND và LambdaRank đã
+thử và thua ở đây (§11 báo cáo v3), vì ràng buộc là ĐỘ RỘNG. Vì vậy chỉ chọn cơ chế
+**không cần mặt cắt ngang rộng**:
+
+| hướng | nguồn | vì sao chọn / loại |
+|---|---|---|
+| **Động lượng phần dư** `rmom_*` | Blitz-Huij-Martens 2011; Blitz et al. 2013 | ~2 lần Sharpe động lượng thô ở cổ phiếu, giữ được ngoài mẫu. Ở crypto động lượng thô xếp theo `beta × thị trường`, nên sổ trung lập đô-la vẫn ngầm cược thị trường |
+| **Khử beta ở n=50** | — | §8 báo cáo v3 loại nó (−0,04) **ở n=12**, lý do "12 vị thế thì ràng buộc beta đòi dịch trọng số quá nhiều". Lý do đó không còn ở n=50 |
+| chia lô tái cân bằng | Hoffstein-Faber-Braun | **loại**: sinh lệnh nhỏ, dưới min notional ở vốn $38 |
+| giao dịch từng phần | Gârleanu-Pedersen 2013 | **loại**: cùng lý do, và để lại vị thế vụn |
+
+Test khoá **cơ chế** (`tests/research/test_residual_momentum.py`, 9 test): trên panel
+chỉ có beta, động lượng thô tương quan hạng 0,60–0,97 với beta, còn phần dư chỉ
+0,00–0,07. Ngoài ra phần dư vẫn giữ được alpha riêng thật, và có test nhân quả khi sửa
+20 nến tương lai.
+
+**Luật quyết định CHỐT TRƯỚC khi chạy** (in ra trong script): thắng khi đủ cả ba điều
+kiện. (1) ΔSharpe ≥ +0,10 ở CẢ HAI cơ sở. (2) Bootstrap ghép cặp cho P(hơn) ≥ 90% ở
+kỷ nguyên ≥100 cặp. (3) Fold tệ nhất không tệ hơn. Thắng rồi vẫn phải giao dịch giấy
+tiến về phía trước, vì kỷ nguyên ≥100 chồng lên holdout.
+
+⚠️ `--synthetic` chỉ chứng minh script chạy hết đường. Panel giả được dựng sẵn cấu
+trúc beta + alpha bền, nên phần dư thắng là đương nhiên. **Đừng trích số của nó.**
+
+⚠️ Họ `residual_momentum` cố ý KHÔNG nằm trong `FAMILIES` hay `V3_SIGNALS`.
+
+**F50** — `validate_v3.py`, `stability.py`, `diagnose_oos.py`, `capital_reality.py`,
+`validate_ensemble.py` dựng tín hiệu bằng cách duyệt CẢ `SIGNAL_REGISTRY`, tức đang
+chạy 36 tín hiệu chứ không phải 26. Chưa gây hại vì 10 tín hiệu positioning toàn NaN.
+Nhưng thêm bất kỳ tín hiệu có giá trị nào sẽ âm thầm đổi kết quả của cả năm script.
+Nay chúng duyệt `V3_SIGNALS`, và có test chặn script nào duyệt lại registry.
+
 ## 🆕 14/09/2026 — HỌ TÍN HIỆU THỨ 6: VỊ THẾ (open interest + long/short)
 
 26 tín hiệu cũ đều dựng từ GIÁ, KHỐI LƯỢNG, FUNDING. Không cái nào thấy AI ĐANG CẦM GÌ.

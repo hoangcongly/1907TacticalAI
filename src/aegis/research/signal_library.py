@@ -38,6 +38,7 @@ __all__ = [
     "build_signal",
     "build_family",
     "build_all_families",
+    "residual_returns",
 ]
 
 
@@ -213,6 +214,96 @@ def _mom_52w_high(panel, funding, window: int = 720):
     c = panel["close"]
     hi = panel["high"].rolling(window, min_periods=window // 4).max()
     return c / hi.replace(0.0, np.nan) - 1.0
+
+
+# ===========================================================================
+# HỌ 2b — ĐỘNG LƯỢNG PHẦN DƯ (residual momentum) — THỬ NGHIỆM, KHÔNG thuộc V3
+#
+# Nguồn: Blitz, Huij & Martens (2011), "Residual momentum", J. Empirical Finance —
+# xếp hạng trên lợi suất ĐÃ KHỬ NHÂN TỐ cho lợi nhuận điều chỉnh rủi ro gấp ~2 lần
+# động lượng thô, ổn định hơn qua thời gian, và giữ được ngoài mẫu sau khi công bố.
+# Blitz, Huij, Lansdorp & Verbeek (2013), "Short-term residual reversal", J. Financial
+# Markets — cùng kết quả gấp ~2 lần ở chân trời NGẮN.
+#
+# Giả thuyết chung, và vì sao ở crypto nó còn mạnh hơn ở cổ phiếu: phần lớn biến động
+# của một altcoin là do CẢ THỊ TRƯỜNG kéo. Động lượng thô vì thế thực chất xếp hạng
+# `beta x lợi suất thị trường quá khứ`: sau một đợt tăng nó mua coin beta cao, bán
+# coin beta thấp. Sổ trung lập ĐÔ-LA nhưng vẫn ngầm cược THỊ TRƯỜNG — và sập khi thị
+# trường đảo chiều (tài liệu ghi nhận cú sập động lượng crypto −255% cuối 2020). Trừ
+# phần thị trường ra trước khi xếp hạng là giữ lại phần thông tin RIÊNG của từng coin.
+#
+# "Thị trường" = rổ đều trọng số của universe — cùng định nghĩa với `low_idio_vol`
+# và `risk/portfolio.rolling_beta`, để ba chỗ không đo ba thứ khác nhau.
+#
+# ⚠️ Họ này CỐ Ý không nằm trong `FAMILIES` và không nằm trong `V3_SIGNALS`: thêm vào
+# một trong hai sẽ âm thầm đổi mọi kết quả đang dựa trên chúng (F38/F39). Đánh giá
+# bằng `scripts/residual_study.py`, nơi phép so sánh là THAY THẾ chứ không THÊM.
+# ===========================================================================
+RESID_BETA_WINDOW = 360          # 360 nến 4h = 60 ngày để ước lượng beta
+
+
+def residual_returns(close: pd.DataFrame, beta_window: int = RESID_BETA_WINDOW) -> pd.DataFrame:
+    """
+    Lợi suất log đã trừ phần do thị trường: `e_t = r_t - beta_{t-1} * m_t`.
+
+    Beta lấy từ cửa sổ kết thúc ở t-1 (dịch một nhịp), nên phần dư tại t KHÔNG dùng
+    chính lợi suất t để ước lượng hệ số trừ đi — tránh việc phần dư bị ép trực giao
+    một cách cơ học với đúng nến đang đo.
+    """
+    r = _log_ret(close)
+    mkt = r.mean(axis=1)
+    mp = max(20, beta_window // 3)
+    cov = r.rolling(beta_window, min_periods=mp).cov(mkt)
+    var = mkt.rolling(beta_window, min_periods=mp).var()
+    beta = cov.div(var.replace(0.0, np.nan), axis=0).shift(1)
+    return r - beta.mul(mkt, axis=0)
+
+
+def _resid_mom(close: pd.DataFrame, lookback: int, skip: int,
+               vol_window: int = 60, beta_window: int = RESID_BETA_WINDOW) -> pd.DataFrame:
+    """
+    Tổng phần dư trên `lookback` nến, chia cho độ lệch chuẩn phần dư x sqrt(lookback).
+
+    Chia cho biến động riêng theo đúng Blitz et al.: không chia thì coin biến động
+    riêng lớn nhất luôn nằm ở hai cực, và tín hiệu quay về xếp hạng biến động. Cửa sổ
+    biến động dài ít nhất `vol_window` để chân trời ngắn (6 nến) không chia cho một
+    độ lệch chuẩn ước lượng từ 6 điểm.
+    """
+    e = residual_returns(close, beta_window).shift(skip)
+    s = e.rolling(lookback, min_periods=max(2, lookback // 2)).sum()
+    vw = max(lookback, vol_window)
+    sd = e.rolling(vw, min_periods=vw // 3).std()
+    return s / (sd * np.sqrt(lookback)).replace(0.0, np.nan)
+
+
+@_register("rmom_fast", "residual_momentum",
+           "Phần dư chân trời 1 ngày. Ở crypto động lượng NGẮN mạnh dương (reversal_6 "
+           "Sharpe -1,73); phần dư tách nó khỏi cú kéo chung của thị trường.",
+           warmup=130)
+def _rmom_fast(panel, funding, lookback: int = 6, skip: int = 0):
+    return _resid_mom(panel["close"], lookback, skip)
+
+
+@_register("rmom_mid", "residual_momentum",
+           "Phần dư chân trời 1 tuần — bản khử thị trường của `mom_mid`.",
+           warmup=170)
+def _rmom_mid(panel, funding, lookback: int = 42, skip: int = 1):
+    return _resid_mom(panel["close"], lookback, skip)
+
+
+@_register("rmom_slow", "residual_momentum",
+           "Phần dư chân trời 2 tuần - 1 tháng — bản khử thị trường của `mom_slow`, "
+           "đúng dạng Blitz-Huij-Martens.",
+           warmup=220)
+def _rmom_slow(panel, funding, lookback: int = 90, skip: int = 1):
+    return _resid_mom(panel["close"], lookback, skip)
+
+
+@_register("rmom_vlong", "residual_momentum",
+           "Phần dư chân trời quý — bản khử thị trường của `mom_vlong`.",
+           warmup=310)
+def _rmom_vlong(panel, funding, lookback: int = 180, skip: int = 1):
+    return _resid_mom(panel["close"], lookback, skip)
 
 
 # ===========================================================================

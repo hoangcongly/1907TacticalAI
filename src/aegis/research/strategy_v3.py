@@ -37,7 +37,8 @@ from aegis.research.signal_library import SIGNAL_REGISTRY, build_signal
 from aegis.risk.portfolio import PortfolioSpec, build_weights
 
 __all__ = ["StrategyV3Config", "V3", "V3_SIGNALS", "V3_VINTAGE_MS", "V3Data", "load_v3_data",
-           "combined_signal", "run_v3", "run_v3_fine", "split_train_holdout"]
+           "combined_signal", "run_v3", "run_v3_fine", "split_train_holdout",
+           "WIDE_CONFIG_FILE", "config_from_json"]
 
 
 # ---------------------------------------------------------------------------
@@ -149,6 +150,56 @@ V3_SIGNALS: tuple = (
 
 #: Cấu hình đang chạy. ĐỪNG SỬA — xem docstring của `StrategyV3Config`.
 V3 = StrategyV3Config()
+
+#: File cấu hình daemon đang chạy (`run_daily.py --config ...`), 50 vị thế.
+WIDE_CONFIG_FILE = "artifacts/strategy_v3_wide.json"
+
+
+def config_from_json(path: str = WIDE_CONFIG_FILE) -> StrategyV3Config:
+    """
+    Dựng cấu hình NGHIÊN CỨU từ ĐÚNG file JSON mà live nạp, với ĐÚNG phép ánh xạ của
+    `LiveConfig.from_artifacts` — hai phía đọc cùng một nguồn sự thật.
+
+    [FIX F51] Các nghiên cứu về cấu hình wide (`breadth_beyond_50`, `sizing_mode_study`,
+    `maker_ratio_study`, `leverage_study`...) tự dựng `PortfolioSpec` cho n=50 nhưng
+    GIỮ tầng gộp của `V3` (`max_step=0,05`). Trong khi đó `strategy_v3_wide.json` —
+    file daemon chạy — ghi `max_step=0,025`. Mọi Sharpe 2,23 báo cho cấu hình wide vì
+    thế đo một cấu hình KHÁC thứ đang đặt lệnh. Test parity cấu hình cũ chỉ kiểm
+    `strategy_v3.json` (n=12), file daemon không còn chạy, nên khe hở này lọt qua —
+    cùng họ F38: công thức thì khoá, cấu hình thì không.
+    """
+    import json
+    from dataclasses import replace
+
+    inner = json.load(open(path, encoding="utf-8"))
+    inner = inner.get("config", inner)
+    comb, port = inner.get("combiner", {}), inner.get("portfolio", {})
+    n = int(inner.get("n_positions", V3.n_positions))
+    return replace(
+        V3,
+        universe_file=inner.get("universe_file", V3.universe_file),
+        interval=inner.get("interval", V3.interval),
+        rebalance_every=int(inner.get("rebalance_every", V3.rebalance_every)),
+        n_positions=n,
+        maker_ratio=float(inner.get("maker_ratio_assumed", V3.maker_ratio)),
+        combiner=replace(
+            V3.combiner,
+            lookback=int(comb.get("lookback", 500)),
+            min_periods=int(comb.get("min_periods", 120)),
+            t_threshold=float(comb.get("t_threshold", 2.0)),
+            max_abs_weight=float(comb.get("max_abs_weight", 0.20)),
+            max_step=float(comb.get("max_step", 0.05))),
+        # Y HỆT `xs_live_pipeline._compute_target_weights_v3`: live dựng PortfolioSpec
+        # với `beta_neutral=False` cố định và `vol_window` mặc định, BỎ QUA hai trường
+        # đó trong JSON; `rank_binary` thì trần 1,0. Đọc JSON "đúng hơn" live ở đây là
+        # đo một cấu hình live không chạy.
+        portfolio=PortfolioSpec(
+            mode=port.get("mode", "zscore_riskparity"),
+            n_positions=n,
+            max_weight=(1.0 if port.get("mode") == "rank_binary"
+                        else float(port.get("max_weight", 0.20))),
+            beta_neutral=False),
+    )
 
 #: MỐC DỮ LIỆU mà `artifacts/strategy_v3.json` được sinh ra (nến 4h cuối cùng nó thấy).
 #:
@@ -356,8 +407,9 @@ def run_v3_fine(
     close_full = data.close
 
     marks = close_full.index[::cfg.rebalance_every]
-    sigs = {k: v.reindex(marks) for k, v in data.signals.items()}
-    sig = combine_adaptive(sigs, close_full.reindex(marks), cfg.combiner, top_frac=cfg.top_frac)
+    # [FIX F39] Lọc tín hiệu theo CẤU HÌNH như `run_v3`. Bản cũ gộp CẢ `data.signals`,
+    # nên nạp dữ liệu một lần cho nhiều cấu hình là âm thầm chạy sai bộ tín hiệu.
+    sig = combined_signal(data, cfg)
     W = build_weights(sig, close_full.reindex(marks), cfg.portfolio)
 
     cost = CostModel(maker_ratio=maker_ratio, half_spread_bps=0.0,

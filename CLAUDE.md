@@ -84,6 +84,34 @@ chi tiết: phần dạng đóng (Sharpe cần có, trần xác suất) không d
 **Đừng nâng đòn bẩy vượt khoảng [4..6]x để đuổi mục tiêu tuần.** Hai đòn bẩy có thật
 là VỐN (nhân tiền tuyến tính, không bị phạt) và tỷ lệ maker (F49, +21%/năm ở 7,89x).
 
+## 🔴 F51 (24/09/2026) — DAEMON CHẠY MỘT CẤU HÌNH CHƯA TỪNG ĐƯỢC BACKTEST
+
+`strategy_v3_wide.json`, file daemon chạy (lượt 23/09 có 50 vị thế), ghi tầng gộp
+`max_step = 0,025`. **Mọi** nghiên cứu cấu hình wide (`breadth_beyond_50`,
+`sizing_mode_study`, `maker_ratio_study`, `leverage_study`) lại tự dựng
+`PortfolioSpec` n=50 nhưng GIỮ tầng gộp của `V3`, tức `max_step = 0,05`.
+(`residual_study` từng mắc cùng lỗi, nay đã dựng từ `config_from_json`.) Vì vậy
+mọi Sharpe 2,23–2,26 báo cho "cấu hình đang chạy" đều đo một cấu hình KHÁC, và không
+có ghi chép nào giải thích vì sao giá trị 0,025 có mặt.
+
+Khe hở lọt qua vì test parity cấu hình chỉ kiểm `strategy_v3.json` (n=12), tức file
+daemon không còn chạy. Thêm nữa, test đó nằm trong module bị skip TOÀN BỘ khi thiếu
+`data/`. Cùng họ F38: công thức thì khoá, cấu hình thì không.
+
+**Vá phía đo, CHƯA đổi phía live:** `strategy_v3.config_from_json()` dựng cấu hình
+nghiên cứu từ ĐÚNG file JSON, bằng đúng phép ánh xạ của `LiveConfig.from_artifacts`
+(kể cả việc live bỏ qua `beta_neutral`/`vol_window` trong JSON). Test parity mới
+`tests/pipelines/test_config_parity_wide_f51.py` chạy KHÔNG cần dữ liệu.
+`run_v3_fine` nay lọc tín hiệu theo cấu hình (phần F39 còn sót).
+
+⚠️ **Quyết định còn treo:** nên giữ 0,025 hay về 0,05 thì phải để
+`recent_backtest.py` (mục 3) trả lời trên dữ liệu thật. Đổi JSON là đổi đường tiền,
+nên phải NẠP LẠI daemon.
+
+```bash
+python scripts/recent_backtest.py --days 28 --leverage 5.0   # ⭐ lời lỗ cấu hình LIVE + so 0,025/0,05
+```
+
 ## 📉 24/09/2026 — LÃI/LỖ THẬT (testnet) VÀ CHI PHÍ KHỚP LỆNH CHƯA TỪNG ĐƯỢC ĐO
 
 Nguồn là các ảnh chụp equity trong `artifacts/execution_log.jsonl`, chụp ở ĐẦU mỗi

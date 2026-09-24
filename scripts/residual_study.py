@@ -49,11 +49,14 @@ import pandas as pd
 
 from aegis.research.signal_library import build_signal
 from aegis.research.strategy_v3 import (
-    V3, V3_SIGNALS, V3_VINTAGE_MS, V3Data, combined_signal, load_v3_data, run_v3,
+    V3_SIGNALS, V3_VINTAGE_MS, V3Data, combined_signal, config_from_json, load_v3_data, run_v3,
 )
 from aegis.risk.portfolio import PortfolioSpec
 
-N = 50
+#: [F51] So với ĐÚNG cấu hình daemon chạy (`strategy_v3_wide.json`, kể cả tầng gộp
+#: `max_step=0,025`), không phải tầng gộp của V3 (0,05) mà các nghiên cứu wide cũ dùng.
+BASE = config_from_json()
+N = BASE.n_positions
 MAKER = 0.39                     # mức THẬT đo ở lượt 19/09
 RMOM = ("rmom_fast", "rmom_mid", "rmom_slow", "rmom_vlong")
 SWAP = dict(zip(("mom_fast", "mom_mid", "mom_slow", "mom_vlong"), RMOM))
@@ -64,8 +67,7 @@ MIN_P_BETTER = 0.90
 
 
 def _spec(beta_neutral: bool) -> PortfolioSpec:
-    return PortfolioSpec(mode="zscore_riskparity", n_positions=N, max_weight=1.0 / N,
-                         beta_neutral=beta_neutral, vol_window=60)
+    return replace(BASE.portfolio, beta_neutral=beta_neutral)
 
 
 def variants():
@@ -167,11 +169,11 @@ def main(argv=None) -> int:
         print("!" * 96)
         data = synthetic_data()
     else:
-        cfg_all = replace(V3, signals=tuple(dict.fromkeys(V3_SIGNALS + RMOM)))
+        cfg_all = replace(BASE, signals=tuple(dict.fromkeys(V3_SIGNALS + RMOM)))
         data = load_v3_data(cfg_all, end_ms=V3_VINTAGE_MS)
 
-    ppy = V3.periods_per_year
-    marks = data.close.index[::V3.rebalance_every]
+    ppy = BASE.periods_per_year
+    marks = data.close.index[::BASE.rebalance_every]
     px = data.close.reindex(marks)
     mkt = (px.shift(-1) / px - 1.0).mean(axis=1)       # lợi suất TIẾN, khớp quy ước `simulate`
     hi = data.close.notna().sum(axis=1) >= 100
@@ -179,7 +181,7 @@ def main(argv=None) -> int:
 
     rets = {}
     for label, names, bn in variants():
-        cfg = replace(V3, signals=tuple(names))
+        cfg = replace(BASE, signals=tuple(names))
         sig = combined_signal(data, cfg)
         rets[label] = run_v3(data, cfg, maker_ratio=MAKER, portfolio=_spec(bn),
                              sig=sig).returns.dropna()

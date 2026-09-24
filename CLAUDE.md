@@ -84,6 +84,41 @@ chi tiết: phần dạng đóng (Sharpe cần có, trần xác suất) không d
 **Đừng nâng đòn bẩy vượt khoảng [4..6]x để đuổi mục tiêu tuần.** Hai đòn bẩy có thật
 là VỐN (nhân tiền tuyến tính, không bị phạt) và tỷ lệ maker (F49, +21%/năm ở 7,89x).
 
+## 📉 24/09/2026 — LÃI/LỖ THẬT (testnet) VÀ CHI PHÍ KHỚP LỆNH CHƯA TỪNG ĐƯỢC ĐO
+
+Nguồn là các ảnh chụp equity trong `artifacts/execution_log.jsonl`, chụp ở ĐẦU mỗi
+lượt. Chỉ có 13 ngày dữ liệu, vì v3 chạy từ 10/09.
+
+| giai đoạn | equity | thay đổi | cấu hình |
+|---|---|---|---|
+| 10/09 → 13/09 (code còn lỗi F21-F31) | 5.112 → 6.033 | +18,0% | có sửa tay, từng chạy 3,67x; riêng 11/09→13/09 **+17,5% trong 40h, chưa rõ có phải nạp tiền testnet** |
+| 13/09 → 19/09 (code đã vá) | 6.033 → 6.088 | +0,9% | n=12, ~2x |
+| 19/09 → 23/09 05:29 | 6.088 → 5.499 | −9,7% | n=50, 7,62x gross |
+| 23/09 05:29 → +6h | 5.499 → 5.082 | −7,6% | n=50, 4,89x |
+| **code đã vá, cộng dồn** | **6.033 → 5.082** | **−15,8%** | |
+
+**13 ngày KHÔNG nói được gì về edge.** Ở 5-7,6x, σ của 4 ngày vào khoảng 17-22%, nên
+−16,5% chỉ là khoảng −0,8σ. Muốn t = 2 thì cần 0,8 năm (nếu Sharpe là 2,23) hoặc 2,2
+năm (nếu Sharpe là 1,34). Thứ đo được sớm là CHI PHÍ, và chi phí khớp lệnh chưa từng
+được đo: `ExecutionRecord` không ghi giá khớp so với giá lúc quyết định. Lượt 23/09
+mới ghi nhận phí $16, trong khi equity mất $417 trong 6h.
+
+```bash
+python scripts/pnl_report.py --days 28     # sổ kế toán sàn: tách NẠP TIỀN khỏi lãi thật
+python scripts/shortfall_report.py         # ⭐ chi phí TRỄ + KHỚP + PHÍ so với 4,5bp backtest
+```
+
+`shortfall_report.py` (7 test ở `tests/ops/test_shortfall_report.py`) lấy giá tham
+chiếu từ CÙNG sàn với lệnh. **TRỄ** = giá lúc quyết định so với giá đóng nến 4h, tức
+giá backtest giả định khớp. **KHỚP** = giá khớp so với giá lúc quyết định, tách
+maker/taker. Nếu tổng vượt xa 4,5bp thì mọi Sharpe backtest đều lạc quan, và thực thi
+là đòn bẩy lợi nhuận số 1, đứng trước mọi tín hiệu mới.
+
+⚠️ Container cloud không kết nối được sàn (proxy trả 403 cho `data.binance.vision`,
+`fapi.binance.com`, `testnet.binancefuture.com`). Hai script trên chạy trên máy Mac,
+hoặc trong session mới sau khi mở Network access và thêm khoá API chỉ-đọc vào biến
+môi trường.
+
 ## 🔬 24/09/2026 — ĐỘNG LƯỢNG PHẦN DƯ + KHỬ BETA ở n=50: ĐÃ CÀI, **CHƯA ĐO TRÊN DỮ LIỆU THẬT**
 
 ```bash

@@ -65,7 +65,21 @@ class ExecutionRecord:
     requote_skipped_no_move: int = 0           # lần sổ chưa dịch đủ để đáng báo giá lại
     requotes: int = 0                          # lần thực sự đặt lại giá
     max_drift_bps_seen: float = 0.0            # giá đã trôi xa mốc ban đầu tới đâu
-    fill_drift: float = 0.0                    # lệch trung lập lớn nhất khi đang khớp
+    #: [FIX F46] net/gross của KẾ HOẠCH, đo ở tầng lập kế hoạch — TRƯỚC khi mất một
+    #: đồng phí nào. Thiếu trường này thì `net_exposure` (đo SAU thực thi) không trả
+    #: lời được câu hỏi duy nhất đáng hỏi khi sổ lệch: kế hoạch vốn đã lệch, hay
+    #: thực thi làm nó lệch? Lượt 19/09 ra +4,00% mà khớp đủ 50/50 lệnh, và không có
+    #: cách nào phân biệt hai giả thuyết đó từ bản ghi — nên không ai sửa được.
+    plan_net_exposure: float = 0.0
+    #: [FIX F49] Vượt trần đuổi giá bao nhiêu LẦN, trung vị và phân vị 90.
+    #: Nới trần lên `chase_block_p50_ratio` lần thu lại ~50% số lần bị chặn;
+    #: lên `chase_block_p90_ratio` lần thu lại ~90%. Đếm số lần chặn không đủ để
+    #: quyết định — xem `order_router._requote_one`.
+    chase_block_p50_ratio: float = 0.0
+    chase_block_p90_ratio: float = 0.0
+    fill_drift: float = 0.0                    # lệch trung lập / gross ĐÃ KHỚP (chẩn đoán)
+    fill_drift_plan: float = 0.0               # lệch trung lập / gross KẾ HOẠCH [FIX F45]
+    fill_progress: float = 0.0                 # đã khớp bao nhiêu % kế hoạch [FIX F45]
     early_exit: Optional[str] = None           # lý do thoát chờ sớm (van trung lập)
 
     @property

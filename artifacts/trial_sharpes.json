@@ -1,0 +1,91 @@
+{
+  "seed": 20260921,
+  "n_trials_run": 250,
+  "n_trials_ok": 250,
+  "vintage_ms": 1789012800000,
+  "variance_of_srs_per_period": 0.000665505972005116,
+  "std_of_srs_per_period": 0.025797402427475444,
+  "sharpe_train_annual": {
+    "mean": 1.8882017284489208,
+    "std": 0.28455209234975315,
+    "min": 1.2967901812365,
+    "max": 2.480979698753688,
+    "q25": 1.651036429298128,
+    "q50": 1.84094334956773,
+    "q75": 2.107465706593054
+  },
+  "sharpe_holdout_annual": {
+    "mean": 0.9952439324912946,
+    "std": 0.45309061651063554
+  },
+  "v3_baseline": {
+    "sharpe_train": 1.995157151059713,
+    "sharpe_holdout": 1.283921317635753
+  },
+  "grids": {
+    "combiner": {
+      "lookback": [
+        250,
+        375,
+        500,
+        750
+      ],
+      "min_periods": [
+        80,
+        120,
+        180
+      ],
+      "t_threshold": [
+        1.0,
+        1.5,
+        2.0,
+        2.5
+      ],
+      "max_abs_weight": [
+        0.15,
+        0.2,
+        0.3,
+        0.45
+      ],
+      "max_step": [
+        0.03,
+        0.05,
+        0.1
+      ]
+    },
+    "portfolio": {
+      "mode": [
+        "zscore_riskparity",
+        "rank_riskparity",
+        "zscore",
+        "rank_binary"
+      ],
+      "n_positions": [
+        8,
+        12,
+        16,
+        20
+      ],
+      "max_weight": [
+        0.15,
+        0.2,
+        0.3
+      ],
+      "vol_window": [
+        40,
+        60,
+        90
+      ],
+      "z_clip": [
+        2.0,
+        2.5,
+        3.0
+      ],
+      "vol_floor_pct": [
+        0.05,
+        0.1,
+        0.2
+      ]
+    }
+  }
+}

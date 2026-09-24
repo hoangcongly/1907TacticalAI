@@ -511,7 +511,18 @@ def main(argv=None) -> int:
                 # thay vì khoe PID của một tiến trình không làm gì.
                 return 1
 
-        time.sleep(a.loop_interval_mins * 60)
+        # Giấc ngủ nằm NGOÀI khối `try` ở trên, nên `except KeyboardInterrupt` dòng
+        # 478 không với tới được — mà daemon ở trong giấc ngủ này gần như toàn bộ
+        # thời gian (30 phút ngủ / vài giây chạy). Hệ quả: mọi lần dừng bot thực tế
+        # đều thoát bằng traceback `KeyboardInterrupt` ném ra từ `time.sleep`, không
+        # bao giờ in "Đã nhận tín hiệu dừng bot", và log tích một traceback giả mỗi
+        # lần khởi động lại. Vô hại với flock (OS tự nhả) nhưng làm nhiễu chẩn đoán:
+        # traceback trong log trông y hệt một vụ chết thật.
+        try:
+            time.sleep(a.loop_interval_mins * 60)
+        except KeyboardInterrupt:
+            print("\nĐã nhận tín hiệu dừng bot.")
+            break
 
     return 0
 

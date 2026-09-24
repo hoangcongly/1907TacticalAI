@@ -28,6 +28,51 @@ LOOP_INTERVAL_MINS = 30.0
 STALE_AFTER_S = LOOP_INTERVAL_MINS * 60 * 2 + 300  # lỡ 2 chu kỳ + 5 phút dư
 
 
+def _slept_since(epoch_s: float) -> float:
+    """
+    Số giờ máy đã NGỦ kể từ `epoch_s`, đọc từ `pmset -g log`.
+
+    [FIX F47] VÌ SAO CẦN: plist ghi rõ "laptop gập nắp, ngủ gần như liên tục", và
+    `time.sleep()` bị treo theo giấc ngủ máy — 30 phút ngủ thành 5,6 giờ đồng hồ
+    tường. Nhịp tim đứng vì thế là chuyện BÌNH THƯỜNG trên máy này.
+
+    Nhưng healthcheck cũ báo ĐỎ y hệt nhau cho hai chuyện khác hẳn: "máy vừa ngủ
+    dậy" và "daemon đã chết". Một cảnh báo không phân biệt được hai thứ đó thì
+    người vận hành sẽ học cách bỏ qua nó — và khi nó kêu THẬT thì không ai nghe.
+    Đó đúng là bài học F41, lặp lại ở tầng cảnh báo thay vì tầng tiến trình.
+
+    Trả về 0.0 nếu không đọc được — thiếu dữ liệu phải ngả về phía THẬN TRỌNG,
+    tức coi như máy KHÔNG ngủ và nhịp tim đứng là đáng lo.
+    """
+    import re
+    import subprocess
+    try:
+        out = subprocess.run(["pmset", "-g", "log"], capture_output=True,
+                             text=True, timeout=20).stdout
+    except Exception:
+        return 0.0
+
+    total, sleep_at = 0.0, None
+    for line in out.splitlines():
+        m = re.match(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})", line)
+        if not m:
+            continue
+        try:
+            ts = time.mktime(time.strptime(m.group(1), "%Y-%m-%d %H:%M:%S"))
+        except Exception:
+            continue
+        if ts < epoch_s:
+            continue
+        if "Entering Sleep" in line or "Sleep  " in line:
+            sleep_at = ts
+        elif ("Wake from" in line or "DarkWake" in line) and sleep_at is not None:
+            total += max(0.0, ts - sleep_at)
+            sleep_at = None
+    if sleep_at is not None:
+        total += max(0.0, time.time() - sleep_at)
+    return total / 3600.0
+
+
 def _launchctl_status(label: str):
     """Trả về (pid, mã thoát lần cuối) hoặc None nếu job chưa nạp."""
     try:
@@ -98,9 +143,20 @@ def main() -> int:
             print(f"  nhịp tim         : {h.get('ts_human','?')} "
                   f"({age/60:.0f} phút trước) — {status}")
             if age > STALE_AFTER_S:
-                problems.append(
-                    f"NHỊP TIM ĐỨNG {age/3600:.1f} GIỜ (ngưỡng {STALE_AFTER_S/3600:.1f}h). "
-                    f"Daemon KHÔNG còn làm việc dù có thể vẫn còn PID.")
+                # [FIX F47] Trừ phần máy ngủ trước khi kết luận daemon chết.
+                slept_h = _slept_since(float(h.get("ts", 0)))
+                awake_h = age / 3600.0 - slept_h
+                if awake_h * 3600.0 > STALE_AFTER_S:
+                    problems.append(
+                        f"NHỊP TIM ĐỨNG {age/3600:.1f} GIỜ, trong đó {awake_h:.1f}h máy "
+                        f"THỨC (ngưỡng {STALE_AFTER_S/3600:.1f}h). Daemon KHÔNG còn làm "
+                        f"việc dù có thể vẫn còn PID.")
+                else:
+                    warnings.append(
+                        f"Nhịp tim {age/3600:.1f}h trước, nhưng máy đã NGỦ {slept_h:.1f}h "
+                        f"trong khoảng đó — chỉ {awake_h:.1f}h thức, dưới ngưỡng "
+                        f"{STALE_AFTER_S/3600:.1f}h. Daemon còn sống, lượt sẽ chạy bù khi "
+                        f"máy thức (launchd + kiểm 'đã đủ 72h chưa').")
             if status in ("ERROR", "DEAD"):
                 problems.append(f"Trạng thái nhịp tim = {status}: {h.get('detail','')}")
         except Exception as exc:

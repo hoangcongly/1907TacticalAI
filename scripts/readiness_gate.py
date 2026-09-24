@@ -149,7 +149,16 @@ def main(argv=None) -> int:
         if st.get("is_dead"):
             state_ok, state_msg = False, "kill switch đang bật"
         elif st.get("last_error"):
-            state_ok, state_msg = False, f"lỗi treo: {str(st['last_error'])[:60]}"
+            # [FIX F48] KHÔNG cắt cụt thông điệp lỗi. Cắt ở 60 ký tự biến
+            # "long $13.184 vs short $13.730" (lệch 2%, sổ vẫn hai chân) thành
+            # "long $13.184 vs short $1" — đọc ra thành một sổ MỘT CHIỀU hoàn toàn,
+            # tức một sự cố thuộc hạng khác hẳn. Đo thật 23/09/2026: sổ lúc đó
+            # long $13.061 / short $13.668, hoàn toàn bình thường.
+            #
+            # Một công cụ giám sát bịa ra sự cố nặng hơn thực tế cũng nguy hiểm
+            # ngang việc nó bỏ sót — cả hai đều dạy người vận hành ngừng tin nó.
+            # Cùng bài học F41/F47, lần này ở khâu HIỂN THỊ.
+            state_ok, state_msg = False, f"lỗi treo: {st['last_error']}"
     print(f"Trạng thái sổ hiện tại   : {'✅' if state_ok else '❌'} {state_msg}")
 
     passed = streak >= a.n and state_ok

@@ -73,7 +73,7 @@ class LiveConfig:
     #: Thời gian chờ khớp maker trước khi cắn giá.
     #:
     #: 300s -> 900s (14/09/2026). Con số 300 cũ là một cách chặn rủi ro GIÁN TIẾP:
-    #: vòng chờ hoàn toàn mù về trung lập, nên phải để ngắn. Nay `neutrality_tolerance`
+    #: vòng chờ hoàn toàn mù về trung lập, nên phải để ngắn. Nay `max_fill_imbalance`
     #: chặn trực tiếp đúng rủi ro đó, nên chờ lâu hơn AN TOÀN HƠN bản cũ chứ không
     #: kém an toàn hơn — và tỷ lệ maker đo được mới chỉ 0,378-0,49, tức chi phí đang
     #: cao gấp đôi mức có thể đạt.
@@ -96,11 +96,25 @@ class LiveConfig:
     #: 1,5σ nghĩa là "đuổi theo nhiễu bình thường, dừng khi là cú chạy thật" — cùng
     #: một ý nghĩa ở mọi cặp, điều mà một con số duy nhất không làm được.
     chase_sigma_mult: float = 1.5
-    #: Ngưỡng lệch trung lập trong lúc khớp thụ động. Vượt là thoát chờ và cắn giá
-    #: cho cân ngay. Đây là thứ cho phép `passive_wait_s` dài ra một cách AN TOÀN:
-    #: rủi ro thật (khớp lệch một chiều) bị chặn trực tiếp thay vì bị chặn gián tiếp
-    #: bằng một cái đồng hồ ngắn. Xem `order_router.execute_with_fallback`.
-    neutrality_tolerance: float = 0.10
+    #: [FIX F45] Trần lệch trung lập trong lúc khớp thụ động, tính theo GROSS KẾ HOẠCH.
+    #:
+    #: Vượt trần là thoát chờ và cắn giá cho cân ngay. Đây là thứ cho phép
+    #: `passive_wait_s` dài ra một cách AN TOÀN: rủi ro thật (khớp lệch một chiều) bị
+    #: chặn trực tiếp thay vì bị chặn gián tiếp bằng một cái đồng hồ ngắn.
+    #:
+    #: THAY THẾ `neutrality_tolerance` (0,10 trên gross ĐÃ KHỚP) — thước đo cũ SAI
+    #: MẪU SỐ. Chia cho phần đã khớp khiến phép đo nhiễu 26% ở tiến độ 25%, tức nhiễu
+    #: lớn gấp 2,6 lần chính ngưỡng. Hệ quả đo được ở lượt 19/09/2026 (50 lệnh):
+    #: van bắn ở tiến độ ~2%, `early_exit=neutrality_drift`, `requotes=0` — vòng báo
+    #: giá lại và trần đuổi co giãn của F44 trở thành CODE CHẾT, maker tụt còn 39%.
+    #:
+    #: Đổi tên chứ không giữ tên cũ là CỐ Ý: ý nghĩa của con số đã đổi (mẫu số khác),
+    #: nên mọi chỗ gọi phải nổ ra bằng TypeError thay vì âm thầm chạy sai đơn vị.
+    #: Đây đúng khe hở F38 — công thức thì khoá, cấu hình thì không.
+    #:
+    #: 0,25 chọn bằng mô phỏng 8.000 lượt/kịch bản: báo nhầm 0,3%, bắt đúng 100%.
+    #: Bảng đầy đủ ở `order_router.fill_imbalance` và `_passive_wait_loop`.
+    max_fill_imbalance: float = 0.25
     min_signal_coverage: int = 3      # đa số tín hiệu phải có dữ liệu
     min_history_bars: int = 120       # > lookback dài nhất (momentum_90)
     min_quote_volume_24h: float = 5e6
@@ -181,6 +195,14 @@ class LiveConfig:
                 min_history_bars=760,
             )
         return cls(**kw)
+
+
+def _pct(vals, q: float) -> float:
+    """Phân vị `q` của một danh sách có thể rỗng/None — rỗng thì 0.0. [FIX F49]"""
+    if not vals:
+        return 0.0
+    import numpy as _np
+    return float(_np.percentile(_np.asarray(vals, dtype=float), q))
 
 
 class CrossSectionalLivePipeline:
@@ -949,7 +971,9 @@ class CrossSectionalLivePipeline:
                 requote=self.config.requote,
                 max_chase_bps=self.config.max_chase_bps,
                 chase_caps=self._chase_caps(plan.orders),   # [FIX F44]
-                neutrality_tolerance=self.config.neutrality_tolerance,
+                # [FIX F45] Phải truyền: bỏ trống là van dùng mặc định của router
+                # thay vì cấu hình đã kiểm định. Đo trên gross KẾ HOẠCH.
+                max_fill_imbalance=self.config.max_fill_imbalance,
             )
         except Exception as exc:
             logger.exception("[F24] Thực thi lỗi — vẫn đồng bộ sổ từ sàn")
@@ -1022,6 +1046,10 @@ class CrossSectionalLivePipeline:
             timestamp_ms=now_ms, equity=equity, n_targets=len(weights),
             n_orders=len(plan.orders), gross_notional=gross_live,
             planned_turnover=plan.total_turnover,
+            # [FIX F46] Chụp lại sổ kế hoạch cạnh sổ thực tế. Hai con số này cạnh nhau
+            # là thứ biến "danh mục lệch" từ một bí ẩn thành một phép trừ.
+            plan_net_exposure=(plan.net_notional / plan.gross_notional
+                               if plan.gross_notional > 0 else 0.0),
             maker_notional=float(exec_report["passive_filled_notional"]),
             taker_notional=float(exec_report["taker_notional"]),
             unfilled_count=len(exec_report["unfilled"]),
@@ -1041,7 +1069,18 @@ class CrossSectionalLivePipeline:
             requote_skipped_no_move=int(exec_report.get("requote_skipped_no_move", 0)),
             requotes=int(exec_report.get("requotes", 0)),
             max_drift_bps_seen=float(exec_report.get("max_drift_bps_seen", 0.0)),
+            # [FIX F49] Phân vị của mức VƯỢT TRẦN, để lần chỉnh trần tới là phép đo
+            # chứ không phải phỏng đoán.
+            chase_block_p50_ratio=_pct(exec_report.get("chase_block_ratios"), 50),
+            chase_block_p90_ratio=_pct(exec_report.get("chase_block_ratios"), 90),
             fill_drift=float((exec_report.get("fill_imbalance") or {}).get("drift", 0.0)),
+            # [FIX F45] Hai trường này là thứ đã THIẾU khi chẩn đoán lượt 19/09: bản
+            # ghi có `fill_drift` nhưng không có tiến độ lúc van bắn, nên không thể
+            # phân biệt "lệch thật" với "mới khớp được 2% nên tỷ lệ nhiễu".
+            fill_drift_plan=float(
+                (exec_report.get("fill_imbalance") or {}).get("drift_plan", 0.0)),
+            fill_progress=float(
+                (exec_report.get("fill_imbalance") or {}).get("progress", 0.0)),
             early_exit=exec_report.get("early_exit"),
         ))
 

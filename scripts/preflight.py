@@ -76,6 +76,18 @@ def main(argv=None) -> int:
     ap.add_argument("--mainnet", action="store_true")
     ap.add_argument("--quiet", action="store_true", help="chỉ in mục không đạt")
     ap.add_argument("--config", default="artifacts/strategy_v3.json")
+    #: Đòn bẩy thật KHÔNG nằm trong file cấu hình — `run_daily.py` nhận nó qua cờ
+    #: `--leverage` rồi gán đè (`cfg.leverage = a.leverage`). Nghĩa là preflight đọc
+    #: cùng file cấu hình vẫn thấy giá trị MẶC ĐỊNH 2.0x, trong khi daemon có thể
+    #: đang chạy 5.0x. Ba phép kiểm dùng `cfg.leverage` — vốn mỗi vị thế, ký quỹ,
+    #: và dòng hiển thị — vì thế đo sai đại lượng mà không báo gì.
+    #:
+    #: ĐÃ QUAN SÁT 21/09/2026: daemon chạy 50 vị thế ở 5.0x, preflight báo "2.0x,
+    #: $229.99/vị thế" trong khi thực tế là $574.97/vị thế. Lần đó cả hai đều vượt
+    #: ngưỡng $6 nên phán quyết không đổi — nhưng đó là may, không phải thiết kế.
+    ap.add_argument("--leverage", type=float, default=None,
+                    help="Đòn bẩy daemon đang chạy (khớp cờ --leverage của run_daily.py). "
+                         "Bỏ trống = dùng giá trị trong file cấu hình.")
     a = ap.parse_args(argv)
 
     from aegis.core.state_store import StateStore
@@ -88,9 +100,13 @@ def main(argv=None) -> int:
     # ---- 1. Cấu hình & khoá ------------------------------------------------
     def _cfg(c: Check):
         cfg = LiveConfig.from_artifacts(a.config)
+        if a.leverage is not None:
+            cfg.leverage = a.leverage
         ctx["cfg"] = cfg
-        c.ok(f"engine={cfg.engine}, {cfg.n_positions} vị thế, {cfg.leverage:.1f}x, "
-             f"chu kỳ {cfg.rebalance_hours:.0f}h, chờ maker {cfg.passive_wait_s:.0f}s")
+        src = "cờ --leverage" if a.leverage is not None else "mặc định cấu hình — CÓ THỂ SAI"
+        c.ok(f"engine={cfg.engine}, {cfg.n_positions} vị thế, {cfg.leverage:.1f}x "
+             f"({src}), chu kỳ {cfg.rebalance_hours:.0f}h, "
+             f"chờ maker {cfg.passive_wait_s:.0f}s")
     checks.append(_run("cấu hình nạp được", _cfg))
     if checks[-1].blocked:
         _report(checks, a.quiet)

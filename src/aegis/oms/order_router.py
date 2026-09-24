@@ -340,8 +340,7 @@ class BinanceOrderRouter:
         requote: bool = True,
         max_chase_bps: float = 15.0,
         chase_caps: Optional[Dict[str, float]] = None,
-        neutrality_tolerance: float = 0.10,
-        min_gross_for_neutrality_check: float = 0.0,
+        max_fill_imbalance: float = 0.25,
     ) -> Dict[str, Any]:
         """
         Đặt lệnh maker trước, phần không khớp thì cắn giá sau.
@@ -357,7 +356,7 @@ class BinanceOrderRouter:
         Nên: chờ `passive_wait_s` để ăn phí maker, rồi cắn giá phần còn lại để
         đảm bảo danh mục về đúng trạng thái mục tiêu.
 
-        VAN TRUNG LẬP (`neutrality_tolerance`) — vì sao nó gỡ được đánh đổi trên:
+        VAN TRUNG LẬP (`max_fill_imbalance`) — vì sao nó gỡ được đánh đổi trên:
         Bản đầu chỉ đếm THỜI GIAN, hoàn toàn mù về việc sổ đang khớp cân hay lệch.
         Vì mù nên `passive_wait_s` buộc phải để ngắn (300s) — chờ lâu mà không nhìn
         thì rủi ro lệch hướng tích luỹ không kiểm soát.
@@ -371,6 +370,10 @@ class BinanceOrderRouter:
         Van đo độ lệch so với đường thực thi THEO TỶ LỆ, không so với 0: kế hoạch có
         thể vốn dĩ có net khác 0 (khi vốn tăng, mọi vị thế nở ra cùng lúc). So với 0
         sẽ báo động giả ngay từ lệnh đầu tiên.
+
+        [FIX F45] Và độ lệch đó phải quy về GROSS KẾ HOẠCH (`drift_plan`), không phải
+        gross đã khớp. Đo theo gross đã khớp thì bản thân phép đo nhiễu hơn ngưỡng,
+        nên van bắn ngay lệnh đầu và vòng báo giá lại chết cứng — xem `fill_imbalance`.
 
         Chạm ngưỡng thì thoát vòng chờ SỚM và rơi xuống phần dọn dẹp + cắn giá, tức
         khôi phục trung lập ngay — đắt hơn về phí, rẻ hơn nhiều về rủi ro.
@@ -405,8 +408,7 @@ class BinanceOrderRouter:
         try:
             self._passive_wait_loop(passive, intents, filters, deadline, poll_interval_s,
                                     requote, max_chase_bps, anchor, report,
-                                    neutrality_tolerance, min_gross_for_neutrality_check,
-                                    chase_caps or {})
+                                    max_fill_imbalance, chase_caps or {})
         except Exception:
             # [FIX F23] Dù vòng chờ hỏng vì bất kỳ lý do gì, phần DỌN DẸP bên dưới
             # vẫn phải chạy. Bỏ qua dọn dẹp đồng nghĩa để lệnh post-only sống trên
@@ -424,7 +426,35 @@ class BinanceOrderRouter:
         ở mọi thời điểm. Lệch khỏi đường đó — chân này khớp nhanh hơn chân kia — mới
         là thứ tạo ra cược có hướng ngoài ý muốn.
 
-        Trả về `drift` = (net đã khớp - net kỳ vọng ở cùng tỷ lệ) / gross đã khớp.
+        Trả về HAI thước đo cùng một độ lệch, khác nhau ở MẪU SỐ:
+
+          * `drift`      = (net đã khớp - net kỳ vọng) / gross ĐÃ KHỚP
+          * `drift_plan` = (net đã khớp - net kỳ vọng) / gross KẾ HOẠCH   [FIX F45]
+
+        `drift` chỉ dùng để CHẨN ĐOÁN. Không được dùng nó để bắn van — xem bên dưới.
+
+        [FIX F45] VÌ SAO MẪU SỐ QUYẾT ĐỊNH MỌI THỨ: `drift` chia cho phần đã khớp,
+        nên lúc mới khớp vài lệnh thì mẫu số cực nhỏ và tỷ lệ này nhiễu khủng khiếp.
+        Nó KHÔNG đo rủi ro, nó đo việc ta mới khớp được ít.
+
+        ĐÃ MÔ PHỎNG (50 lệnh, cỡ lệnh lognormal σ=0,35, 20.000 lượt) — độ lệch điển
+        hình do THỨ TỰ KHỚP NGẪU NHIÊN gây ra, tức hoàn toàn KHÔNG có rủi ro thật:
+
+            tiến độ     /gross đã khớp     /gross kế hoạch
+              10%            42,9%               4,8%
+              25%            26,1%               6,8%
+              50%            14,9%               7,6%
+              80%             7,2%               5,9%
+              95%             2,9%               2,8%
+
+        Với ngưỡng 10%, van đo theo `drift` bắn 100% số lượt — và bắn ở tiến độ
+        TRUNG VỊ 2%. Đó chính xác là lượt 19/09/2026: `early_exit=neutrality_drift`,
+        `fill_drift=-16,6%`, `requotes=0`. Nâng ngưỡng tiến độ tối thiểu KHÔNG cứu
+        được: ở 25% vẫn bắn 99,4%, phải tới 95% mới im — mà lúc đó van vô dụng.
+
+        `drift_plan` thì có mẫu số CỐ ĐỊNH, nên nhiễu bị chặn trên ở ~7,6% bất kể
+        tiến độ. Nó cũng là thước đo rủi ro ĐÚNG: cái gây hại là số đô la một chiều
+        đang cầm so với sổ ĐỊNH cầm, không phải so với phần tình cờ đã khớp.
         """
         net = gross = 0.0
         for orders in self._cycle_orders.values():
@@ -436,16 +466,18 @@ class BinanceOrderRouter:
                 net += n if m.side == "BUY" else -n
                 gross += n
         if gross <= 1e-9:
-            return {"drift": 0.0, "filled_gross": 0.0, "filled_net": 0.0, "progress": 0.0}
+            return {"drift": 0.0, "drift_plan": 0.0, "filled_gross": 0.0,
+                    "filled_net": 0.0, "progress": 0.0}
         progress = gross / plan_gross if plan_gross > 1e-9 else 0.0
         expected_net = plan_net * progress
-        return {"drift": (net - expected_net) / gross, "filled_gross": gross,
-                "filled_net": net, "progress": progress}
+        excess = net - expected_net
+        return {"drift": excess / gross,
+                "drift_plan": (excess / plan_gross) if plan_gross > 1e-9 else 0.0,
+                "filled_gross": gross, "filled_net": net, "progress": progress}
 
     def _passive_wait_loop(self, passive, intents, filters, deadline, poll_interval_s,
                            requote, max_chase_bps, anchor, report,
-                           neutrality_tolerance=0.10,
-                           min_gross_for_neutrality_check=0.0,
+                           max_fill_imbalance=0.25,
                            chase_caps=None) -> None:
         """Chờ khớp thụ động, định kỳ báo giá lại, và canh độ lệch trung lập."""
         plan_net = sum((o.notional if o.side == "BUY" else -o.notional)
@@ -463,16 +495,31 @@ class BinanceOrderRouter:
             # VAN TRUNG LẬP — kiểm TRƯỚC khi báo giá lại. Báo giá lại huỷ rồi đặt lại,
             # nên nếu sổ đang lệch thì việc cần làm là THOÁT và cắn giá cho cân, không
             # phải kiên nhẫn thêm một vòng nữa ở giá thụ động.
+            #
+            # [FIX F45] Bắn theo `drift_plan` (mẫu số = gross KẾ HOẠCH), KHÔNG theo
+            # `drift` (mẫu số = gross đã khớp). Lý do đầy đủ + bảng mô phỏng ở
+            # docstring `fill_imbalance`. Tóm tắt: `drift` nhiễu 26% ở tiến độ 25%
+            # nên mọi ngưỡng hữu ích đều bị nhiễu vượt qua, van bắn 100% số lượt ở
+            # tiến độ trung vị 2%, và vòng báo giá lại bên dưới không bao giờ chạy.
+            #
+            # Ngưỡng 0,25 chọn bằng ĐO, không bằng cảm tính (8.000 lượt/kịch bản):
+            #     ngưỡng   báo nhầm (khớp lành)   bắt được (một chân kẹt)
+            #      0,10          67,0%                   100%
+            #      0,15          21,3%                   100%
+            #      0,20           3,6%                   100%
+            #      0,25           0,3%                   100%      <- chọn
+            #      0,40           0,0%                    61%
+            # Trên 0,25 thì bắt đầu MẤT khả năng phát hiện; dưới thì báo nhầm tăng
+            # nhanh. 0,25 là điểm tách sạch, không phải điểm dò ra.
             imb = self.fill_imbalance(plan_net, plan_gross)
             report["fill_imbalance"] = imb
-            if (neutrality_tolerance > 0
-                    and imb["filled_gross"] >= min_gross_for_neutrality_check
-                    and abs(imb["drift"]) > neutrality_tolerance):
+            if max_fill_imbalance > 0 and abs(imb["drift_plan"]) > max_fill_imbalance:
                 report["early_exit"] = "neutrality_drift"
                 logger.warning(
-                    "[VAN TRUNG LẬP] khớp lệch %+.1f%% gross (ngưỡng %.0f%%) sau khi "
-                    "hoàn thành %.0f%% kế hoạch — thoát chờ thụ động, cắn giá cho cân",
-                    imb["drift"] * 100, neutrality_tolerance * 100, imb["progress"] * 100)
+                    "[VAN TRUNG LẬP] khớp lệch %+.1f%% gross KẾ HOẠCH (ngưỡng %.0f%%) "
+                    "sau khi hoàn thành %.0f%% kế hoạch — thoát chờ thụ động, cắn giá "
+                    "cho cân", imb["drift_plan"] * 100, max_fill_imbalance * 100,
+                    imb["progress"] * 100)
                 return
 
             if not requote:
@@ -541,6 +588,18 @@ class BinanceOrderRouter:
             report["requote_blocked_by_chase_cap"] = \
                 report.get("requote_blocked_by_chase_cap", 0) + 1
             report["max_drift_bps_seen"] = max(report.get("max_drift_bps_seen", 0.0), drift_bps)
+            # [FIX F49] Ghi lại VƯỢT TRẦN BAO NHIÊU LẦN, không chỉ đếm số lần vượt.
+            #
+            # Lượt 23/09/2026 cho `requote_blocked_by_chase_cap=358` so với
+            # `requotes=40` — trần chặn 90% số lần thử, tức nó đã thành nút thắt mới
+            # ngay sau khi F45 gỡ nút thắt cũ. Nhưng "chặn 358 lần" KHÔNG nói được
+            # phải nới trần bao nhiêu: chặn vì vượt 1,1 lần và chặn vì vượt 20 lần
+            # đòi hai hành động khác hẳn nhau.
+            #
+            # Tỷ lệ này trả lời thẳng: "nới trần lên k lần thì thu lại được bao nhiêu
+            # phần trăm số lần bị chặn". Không có nó thì lần chỉnh tới lại là phỏng đoán.
+            if max_chase_bps > 0:
+                report.setdefault("chase_block_ratios", []).append(drift_bps / max_chase_bps)
             return
 
         # [FIX F21] Chỉ đặt lệnh mới khi đã XÁC NHẬN lệnh cũ bị huỷ. Nếu không,

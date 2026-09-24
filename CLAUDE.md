@@ -274,6 +274,266 @@ Khoá bằng `tests/oms/test_chase_cap_volatility_f44.py` (8 test).
 `requote_blocked_by_chase_cap` + `max_drift_bps_seen` đã có sẵn trong `ExecutionRecord`
 — lượt sạch tới sẽ xác nhận bằng số thật. Đừng ghi nhận +7,7% cho tới khi có số đó.
 
+## 🔴 F45/F46/F47 (22/09/2026) — F44 LÀ CODE CHẾT VÌ VAN TRUNG LẬP SAI MẪU SỐ. ĐÃ VÁ.
+
+Lượt 19/09 (lượt 50 vị thế đầu tiên) để lại bốn bộ đếm bằng 0: `requotes=0`,
+`requote_blocked_by_chase_cap=0`, `requote_skipped_no_move=0`, `max_drift_bps_seen=0.0`.
+Nếu `_requote_one` từng chạy thì ít nhất một trong ba cái đầu phải khác 0. **Vòng đuổi
+giá chưa từng được gọi lần nào — trần co giãn của F44 chưa bao giờ có hiệu lực.**
+
+Van trung lập bắn ở `early_exit=neutrality_drift` rồi `return`, và vòng báo giá lại
+nằm ngay bên dưới nên không bao giờ tới lượt. 31/50 lệnh hết giờ, maker 39%.
+
+### Nguyên nhân: một tỷ lệ có mẫu số CO LẠI
+
+`drift = (net − net kỳ vọng) / gross ĐÃ KHỚP`. Lúc mới khớp vài lệnh, mẫu số cực nhỏ
+nên tỷ lệ này **không đo rủi ro, nó đo việc ta mới khớp được ít**. Mô phỏng 20.000
+lượt (50 lệnh, cỡ lognormal σ=0,35) cho độ lệch THUẦN NGẪU NHIÊN — không có rủi ro thật:
+
+| tiến độ | /gross đã khớp | /gross kế hoạch |
+|---|---|---|
+| 10% | **42,9%** | 4,8% |
+| 25% | **26,1%** | 6,8% |
+| 50% | **14,9%** | 7,6% |
+| 80% | 7,2% | 5,9% |
+
+Ngưỡng 10% nằm DƯỚI mức nhiễu ở mọi tiến độ hữu ích -> van bắn **100% số lượt**, ở
+tiến độ trung vị **2%**.
+
+⚠️ **Chẩn đoán đầu tiên đã SAI, và suýt được commit.** Bản vá đầu thêm
+`min_gross_for_neutrality_check = 0,25 × gross kế hoạch`. Đo lại: ở ngưỡng đó van
+**vẫn bắn 99,4%**; phải tới 95% mới im, mà lúc đó van vô dụng. **Cổng tiến độ không
+sửa được một phép đo sai đơn vị.** Đừng dựng lại hướng này — đã khoá bằng test.
+
+**Vá:** van đo `drift_plan` (mẫu số = gross KẾ HOẠCH, cố định) nên nhiễu bị chặn trên
+ở ~7,6%. Ngưỡng `max_fill_imbalance = 0,25` chọn bằng đo, 8.000 lượt/kịch bản:
+
+| ngưỡng | báo nhầm (khớp lành) | bắt được (một chân kẹt) |
+|---|---|---|
+| 0,10 | 67,0% | 100% |
+| 0,20 | 3,6% | 100% |
+| **0,25** | **0,3%** | **100%** |
+| 0,40 | 0,0% | **61%** |
+
+Đổi TÊN tham số (`neutrality_tolerance` -> `max_fill_imbalance`) là cố ý: đơn vị đã
+đổi, nên chỗ gọi nào sót phải nổ bằng TypeError thay vì âm thầm chạy sai — đúng khe
+hở F38.
+
+### Bản vá này đáng bao nhiêu tiền — và vì sao con số cũ thấp gấp 4 lần
+
+`scripts/maker_ratio_study.py` (MỚI) đo trên chính cấu hình đang chạy, kỷ nguyên >=100 cặp:
+
+| maker | Sharpe | +ann% @1x | +ann% @2x | **+ann% @7,89x** |
+|---|---|---|---|---|
+| 0,39 (live 19/09) | 2,229 | — | — | — |
+| 0,50 (giả định artifact) | 2,257 | +0,6 | +1,3 | +5,1 |
+| 0,70 | 2,309 | +1,8 | +3,6 | +14,3 |
+| **0,85 (mục tiêu)** | **2,348** | **+2,7** | +5,4 | **+21,2** |
+
+Ghi chú 14/09 định giá "+7,7% lợi nhuận" — đo ở **n=12 / 2,0x**. Chi phí = turnover ×
+đơn giá, và turnover tỷ lệ THUẬN với đòn bẩy, nên cùng một cải thiện ở 7,89x đáng
+**gấp ~4 lần**. Dùng lại con số cũ là xếp sai thứ tự ưu tiên công việc.
+
+⚠️ `strategy_v3_wide.json` ghi `maker_ratio_assumed: 0.50` còn live đo **0,39** —
+Sharpe đã kiểm định vốn đã lạc quan hơn thực tế, trước cả khi bàn tới cải thiện.
+
+**F46** — bản ghi nay lưu `plan_net_exposure` cạnh `net_exposure`. Lượt 19/09 ra net
++4,00% dù khớp đủ 50/50 lệnh, và bản ghi cũ KHÔNG phân biệt được "kế hoạch vốn đã
+lệch" với "thực thi làm nó lệch" — hai nguyên nhân sửa ở hai file khác nhau. Thêm
+`fill_drift_plan` + `fill_progress` vì `fill_drift` một mình vô nghĩa nếu không biết
+lúc đó đã khớp bao nhiêu.
+
+**F47** — `healthcheck.py` trừ thời gian MÁY NGỦ trước khi kết luận daemon chết.
+Plist ghi rõ máy này "gập nắp, ngủ gần như liên tục", `time.sleep` treo theo giấc ngủ
+nên nhịp tim đứng là BÌNH THƯỜNG. Đo 22/09: nhịp tim đứng 5,6h trong khi `pmset` cho
+thấy máy ngủ 4,3/6h gần nhất — daemon hoàn toàn khoẻ. Cảnh báo không phân biệt được
+hai tình huống đó sẽ bị học cách bỏ qua, rồi câm khi cần nhất. Bài học F41, lặp lại
+ở tầng cảnh báo.
+
+## ✅ 23/09/2026 — F45 XÁC NHẬN BẰNG LƯỢT THẬT. Nút thắt ĐÃ DỊCH sang trần đuổi giá.
+
+Lượt 23/09 12:29 là lần đầu F45 chạy production. So với lượt 19/09 (cùng cấu hình,
+trước bản vá):
+
+| chỉ số | 19/09 (trước) | 23/09 (sau) | |
+|---|---|---|---|
+| `early_exit` | `neutrality_drift` | **`None`** | van hết bắn sớm ✅ |
+| `requotes` | **0** | **40** | đường đuổi giá SỐNG ✅ |
+| `max_drift_bps_seen` | **0,0** | **778,4** | xác nhận `_requote_one` có chạy |
+| `requote_blocked_by_chase_cap` | 0 | **358** | nút thắt MỚI |
+| tỷ lệ maker | 39,0% | **43,6%** | |
+| net sau thực thi | +4,00% | −2,03% | |
+| **net của KẾ HOẠCH** | *(chưa đo)* | **0,0050%** | F46 |
+
+**F46 trả lời dứt điểm câu hỏi treo từ 19/09:** kế hoạch trung lập tới 5 phần trăm
+nghìn, còn sổ sau thực thi lệch −2,03%. **Toàn bộ sai lệch đến từ THỰC THI, không phải
+từ kế hoạch.** `_repair_neutrality` của F42 làm đúng việc của nó; đừng đi sửa tầng lập
+kế hoạch nữa. Cơ chế còn lại: giá trôi tới 778bp trong cửa sổ 900s làm notional thực
+tế lệch khỏi notional lúc lập kế hoạch.
+
+### Nút thắt mới, và lần này công cụ TỰ chỉ ra
+
+`readiness_gate.py` đổi kết luận từ "Nút thắt là THỜI GIAN CHỜ" sang **"Nút thắt là
+TRẦN ĐUỔI GIÁ"** — chẩn đoán cũ sai vì lúc đó ba bộ đếm đều bằng 0.
+
+Trần chặn **358/398 = 90%** số lần thử đuổi. Tức trần co giãn 1,5σ của F44 nay là thứ
+giữ tỷ lệ maker ở 43,6%.
+
+⚠️ Lập luận của chính F44 dẫn tới kết luận F44 chưa đi hết: khi
+`allow_taker_fallback=True`, vượt trần KHÔNG làm bỏ lệnh — lệnh vẫn khớp bằng taker ở
+đúng mức giá đã trôi đó, cộng thêm spread + 3bp. **Trần không tránh được cú trôi giá,
+nó chỉ làm cú trôi đó đắt hơn.** Nhưng ĐỪNG nới vội: xem F49.
+
+**F48** — `readiness_gate.py` cắt thông điệp lỗi ở 60 ký tự, biến
+`"long $13.184 vs short $13.730"` thành `"long $13.184 vs short $1"` — đọc ra thành sổ
+MỘT CHIỀU hoàn toàn, một sự cố thuộc hạng khác hẳn. Sổ thật lúc đó long $13.061 /
+short $13.668, bình thường. **Công cụ giám sát bịa ra sự cố nặng hơn thực tế cũng nguy
+hiểm ngang việc bỏ sót** — cả hai đều dạy người vận hành ngừng tin nó.
+
+**F49** — bản ghi nay lưu `chase_block_p50_ratio` / `chase_block_p90_ratio`: vượt trần
+bao nhiêu LẦN, không chỉ đếm số lần vượt. "Chặn 358 lần" không nói được phải nới bao
+nhiêu — chặn vì vượt 1,1 lần và vượt 20 lần đòi hai hành động khác hẳn. Lượt tới sẽ
+cho hai phân vị này, và khi đó việc chỉnh trần là PHÉP ĐO chứ không phải phỏng đoán.
+**Đừng chỉnh `chase_sigma_mult` trước khi có hai con số đó.**
+
+### Tiền: phí KHÔNG phải thứ làm tụt ví
+
+Ví $5.301,55 -> $4.782,37 (−$519,18) qua lượt này. Phân rã:
+
+| | |
+|---|---|
+| phí sàn (3,62bp trên $44.444 turnover) | **−$16,10  (3%)** |
+| lỗ đã chốt khi đóng vị thế cũ | −$503,08  (97%) |
+
+97% khoản trừ ví chỉ là uPnL chuyển thành lỗ thực hiện — kế toán, không phải mất mới.
+Đại lượng cần theo dõi vẫn là EQUITY: $5.499 (lúc tái cân bằng) -> $5.082 (6h sau).
+
+## 🧪 22/09/2026 — ĐỘ RỘNG VƯỢT 50: ĐÓNG. n=50 nằm trên CAO NGUYÊN, không phải may.
+
+Bảng độ rộng cũ dừng ở n=50 vì ràng buộc vốn ($38 × 7,89 / 50 = $6,00), nên "50 tốt
+nhất" chưa từng được kiểm — chỉ có "50 là lớn nhất mà $38 mua nổi". Nay đã quét
+(`scripts/breadth_beyond_50.py`, kỷ nguyên >=100 cặp, maker 0,39 mức thật):
+
+| n | max_w | Sharpe | ann% | vol% | g(Kelly)% | trung vị fold |
+|---|---|---|---|---|---|---|
+| 30 | 0,033 | 1,36 | 45,0 | 33,1 | 93 | 1,60 |
+| 40 | 0,025 | 2,19 | 58,3 | 26,6 | 239 | 2,27 |
+| **50** | 0,020 | **2,23** | 50,3 | 22,6 | 248 | 2,27 |
+| 60 | 0,017 | **2,26** | 44,2 | 19,6 | 255 | **2,60** |
+| 70 | 0,014 | 2,09 | 35,7 | 17,1 | 218 | 2,31 |
+| 100 | 0,010 | 1,75 | 22,6 | 12,9 | 153 | 2,01 |
+
+n=60 hơn n=50 đúng **+0,03 Sharpe** — nhiễu, và đòi 9,5x thay vì 7,9x ở vốn $38. Từ
+n=70 suy giảm rõ: pha loãng vào tín hiệu yếu làm lợi suất tụt nhanh hơn biến động.
+**Ràng buộc vốn và điểm tối ưu tình cờ trùng nhau** — nay đã đo chứ không còn là giả định.
+
+## ⚖️ 22/09/2026 — ĐÒN BẨY: KHOẢNG HAI CƠ SỞ CÙNG ĐỒNG Ý LÀ **4–6x**. `scripts/leverage_study.py`
+
+Daemon chạy `--leverage 5.0` (cờ CLI), cấu hình wide chốt **7,89x**. Trước đây câu hỏi
+này được trả lời bằng `g = μL − (σL)²/2`. **Công thức đó là khai triển Taylor bậc 2 và
+nó SAI theo hướng lạc quan** — giả định lợi suất gần Gauss, bỏ qua đuôi trái nơi
+`log(1+Lr)` phân kỳ về âm vô cùng. Nay đo bằng compounding thật `E[log(1+Lr)]`.
+
+### Điều quan trọng nhất: kỳ 72h TỆ NHẤT trong lịch sử là −13,41%
+
+Tức **cháy sạch vốn từ 7,46x trở lên** — cấu hình 7,89x nằm NGAY TRÊN ngưỡng đó. Một
+lần lặp lại kỳ 20/02/2021 là mất trắng tài khoản, không phải sụt giảm.
+
+| | toàn lịch sử (799 kỳ) | kỷ nguyên >=100 cặp (187 kỳ) |
+|---|---|---|
+| Sharpe | 1,34 | 2,23 |
+| kỳ tệ nhất | **−13,41%** | −6,21% |
+| cháy từ | **7,46x** | 16,09x |
+| L* theo g THẬT | 4,5x | 10,0x |
+| L* bootstrap khối, KTC 90% | **[2,0 .. 6,0]x** | **[4,0 .. 14,0]x** |
+| g(5,0x) | 89%/năm, P(cháy) 0% | 193%/năm, P(cháy) 0% |
+| g(7,89x) | 42%/năm, **P(cháy) 65%** | 264%/năm, P(cháy) 0% |
+
+**Giao của hai khoảng tin cậy là [4,0 .. 6,0]x.** 5,0x nằm giữa; **7,89x nằm ngoài
+khoảng của toàn lịch sử.** Đây không phải thoả hiệp — đó là vùng mà kết luận KHÔNG phụ
+thuộc vào việc tin cơ sở nào.
+
+### Đuôi trái biến mất THẬT hay chưa kịp xuất hiện?
+
+Kỳ −13,41% rơi vào **20/02/2021, lúc universe chỉ có 34 cặp** — nên phần nào do độ
+rộng thật. Nhưng so với mức worst-of-n kỳ vọng nếu Gauss:
+
+| kỷ nguyên | n kỳ | σ kỳ | tệ nhất | = mấy σ | Gauss kỳ vọng |
+|---|---|---|---|---|---|
+| toàn bộ | 799 | 2,58% | −13,41% | **−5,19σ** | −9,45% |
+| >=100 cặp | 187 | 2,04% | −6,21% | **−3,05σ** | −6,60% |
+
+Kỷ nguyên rộng có cú tệ nhất **đúng bằng mức Gauss dự đoán** — tức nó **CHƯA GẶP** cú
+đuôi dày nào, chứ không phải đã chứng minh là không có. Mẫu 187 kỳ = 1,5 năm.
+
+**Phép thử căng thẳng** — giả định 5,19σ lặp lại ở σ hiện tại (2,04%) = **−10,59%/72h**:
+
+| đòn bẩy | mất trong 72h |
+|---|---|
+| 2,5x | 26,5% |
+| 5,0x | **52,9%** |
+| 7,0x | 74,1% |
+| **7,89x** | **83,5%** |
+| 9,45x | **CHÁY SẠCH** |
+
+### Walk-forward: chọn đòn bẩy theo quá khứ KHÔNG chuyển sang tương lai
+
+Chọn L tối ưu trên 1 năm quá khứ rồi chấm trên quý kế tiếp:
+
+| | L* theo quá khứ | cố định 5,0x | cố định 7,89x |
+|---|---|---|---|
+| toàn lịch sử (216 cửa sổ) | +16% | **+21%** | **−111%** |
+| kỷ nguyên >=60 (88 cửa sổ) | +42% | +136% | **+170%** |
+
+Tối ưu hoá L theo quá khứ THUA cả việc cố định 5,0x ở cả hai cơ sở — cùng một cơ chế
+đã đo ở tương quan Sharpe(quá khứ) vs Sharpe(tương lai) = **−0,015**. Không dự báo
+được Sharpe thì không dự báo được Kelly.
+
+⚠️ `g5 = [x for x in g5 if np.isfinite(x)]` — **đừng bao giờ lọc như thế**. Bản nháp
+đầu của script này lọc `isfinite` trong bootstrap, tức vứt đúng những lần CHÁY rồi lấy
+trung vị phần còn lại. Nó biến P(cháy)=65% thành một con số 42%/năm trông lành lặn.
+Cháy phải được báo RIÊNG như một xác suất, không được lẫn vào phân phối tăng trưởng.
+
+## 🧪 22/09/2026 — CỠ VỊ THẾ KHÁC NHAU CHO TỪNG LỆNH: ĐÓNG CẢ BA DẠNG. `scripts/sizing_mode_study.py`
+
+Giả thuyết: mỗi lệnh nên có đòn bẩy/cỡ riêng thay vì giống nhau toàn bộ.
+
+**Điều cần biết trước:** với ký quỹ CHÉO trên perp USDⓈ-M, "đòn bẩy từng lệnh" KHÔNG
+phải đại lượng rủi ro độc lập — cài 20x cho một cặp chỉ đổi bậc ký quỹ ban đầu của cặp
+đó, rủi ro danh mục vẫn là TỔNG NOTIONAL / VỐN. Thứ phân biệt được là TRỌNG SỐ.
+
+Hệ thống **đã** phân biệt qua `zscore_riskparity`, nhưng `max_weight = 0,02 = 1/50`
+kẹp phẳng gần hết (live đo dải 0,0148–0,0202, chênh 1,37 lần). Nới trần để phân biệt
+bung ra, kỷ nguyên >=100 cặp:
+
+| chế độ | trần 0,02 | trần 0,10 | kỳ tệ nhất @0,10 |
+|---|---|---|---|
+| `rank_binary` (đều hoàn toàn) | 2,25 | **2,25** | −6,21% |
+| `rank_riskparity` (theo biến động) | 2,26 | 2,16 | −5,79% |
+| `zscore` (theo độ mạnh tín hiệu) | 2,26 | **1,79** | **−7,50%** |
+| `zscore_riskparity` (cả hai) | 2,23 | 1,85 | −6,06% |
+
+Phân biệt theo tín hiệu thua **cả Sharpe lẫn đuôi** — đòn bẩy an toàn tụt 5,7x -> 3,9x.
+
+**Dạng thứ ba, theo CHI PHÍ** — dạng duy nhất có cơ chế rõ (chi phí đáng 21%/năm ở
+7,89x). Cũng thua, và thua nặng nhất:
+
+| bể chọn | n cặp | Sharpe | ann% |
+|---|---|---|---|
+| TOÀN BỘ (đang chạy) | 127 | **2,23** | 50,3 |
+| bỏ 10% đắt nhất | 114 | 1,91 | 34,1 |
+| bỏ 25% đắt nhất | 95 | 1,60 | 28,0 |
+| chỉ 50% rẻ nhất | 64 | 0,95 | 14,5 |
+| chỉ 25% rẻ nhất | 32 | **0,59** | 8,3 |
+
+Cặp ĐẮT chính là cặp NHỎ và KÉM HIỆU QUẢ — tức nơi alpha sống. Tiết kiệm vài bp không
+bù nổi alpha mất đi.
+
+**Lý do chung cho cả ba, và nó đã nằm sẵn trong repo:** `IR = IC × √độ_rộng`. Edge của
+chiến lược này là ĐỘ RỘNG, không phải độ tin cậy từng lệnh. Mọi phép TẬP TRUNG — theo
+tín hiệu, theo biến động, hay theo chi phí — đều bán đi chính nguồn sinh ra edge. Cùng
+một cơ chế đã đóng `n_positions` nhỏ (18/09: n=4 cho Kelly 1,44x so với n=12 cho 3,54x).
+
 ## 🔴 F43 — CẮT THEO SỨC CHỨA VỐN BIẾN QUỸ TRUNG LẬP THÀNH CƯỢC MỘT CHIỀU. ĐÃ VÁ.
 
 `xs_live_pipeline` cắt danh mục khi vốn không đủ `n_positions` vị thế. Bản cũ lấy
@@ -531,7 +791,11 @@ python -m pytest -q                    # 558 test, ~167s
 python scripts/healthcheck.py          # ⭐ CHẠY ĐẦU TIÊN — daemon còn SỐNG hay đã chết
 python scripts/download_metrics.py     # tải dữ liệu vị thế (OI + long/short)
 python scripts/positioning_study.py    # họ vị thế có đáng thêm không
-python scripts/preflight.py            # ⭐ CHẠY TRƯỚC MỖI LƯỢT — chặn lượt hỏng trước khi nó hỏng
+# ⭐ CHẠY TRƯỚC MỖI LƯỢT — chặn lượt hỏng trước khi nó hỏng.
+# PHẢI truyền cả --config lẫn --leverage: đòn bẩy không nằm trong file cấu hình,
+# `run_daily.py` gán đè từ cờ CLI. Bỏ trống -> preflight kiểm bằng 2.0x mặc định
+# trong khi daemon chạy 5.0x, và ba phép kiểm vốn/ký quỹ đo sai đại lượng.
+python scripts/preflight.py --config artifacts/strategy_v3_wide.json --leverage 5.0
 python scripts/breadth_study.py        # độ rộng danh mục (kết quả: ĐÓNG)
 python scripts/risk_overlay_study.py   # mục tiêu biến động (kết quả: ĐÓNG)
 python scripts/export_returns_v3.py    # tái tạo v3 + KIỂM CHỨNG parity, cache lợi suất
@@ -541,6 +805,8 @@ python scripts/attribution.py          # quy kết từng nâng cấp (train)
 python scripts/stability.py            # chọn cấu hình theo ĐỘ ỔN ĐỊNH, không theo đỉnh
 python scripts/diagnose_oos.py         # chẩn đoán suy giảm ngoài mẫu
 python scripts/refresh_spreads.py      # đo lại spread sổ lệnh thật
+python scripts/trial_sweep.py          # đo variance_of_srs — chạy lại lưới cấu hình, ghi Sharpe từng lần thử
+python scripts/dsr_report.py           # ⭐ PHÁN QUYẾT: Sharpe có vượt nhiễu chọn lọc của 250 lần thử không
 python scripts/readiness_gate.py       # ĐÃ ĐƯỢC PHÉP BƠM TIỀN THẬT CHƯA?
 launchctl list | grep aegis            # 2 job: com.aegis.trading + com.aegis.telegram
 tail -f logs/aegis_daemon.log          # heartbeat mỗi 30 phút

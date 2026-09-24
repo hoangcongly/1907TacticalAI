@@ -52,6 +52,38 @@ GIẢM rủi ro. Phần "bạo phát" của DP (tăng đòn bẩy khi đang thua
 về toán nhưng nguy hiểm nhất đúng lúc đường ống xấu nhất, nên phải bật tường minh sau
 khi `readiness_gate.py` mở.
 
+## 🚫 24/09/2026 — "+20% MỖI TUẦN, BẰNG MỌI CÁCH": ĐÃ ĐO. KHÔNG BẢO ĐẢM ĐƯỢC. `scripts/weekly_target_study.py`
+
++20%/tuần gộp lại là **×13.105/năm**, và muốn nó BỀN VỮNG thì cần Sharpe **4,35**
+(tăng trưởng Kelly = S²/2). Đang có: 1,10 holdout, 1,34 toàn lịch sử, 2,23 in-sample
+kỷ nguyên rộng. Đòn bẩy không thay được Sharpe. Nó nhân lãi tuyến tính nhưng nhân rủi
+ro bậc hai.
+
+Đòn bẩy cố định, cơ sở THẬN TRỌNG, có thanh lý giữa tuần:
+
+| đòn bẩy | P(+20% trong 1 tuần) | trung vị sau 52 tuần | P(cháy trong năm) |
+|---|---|---|---|
+| 5x (daemon) | 15% | **+1,9%/tuần** | 2,5% |
+| 7,89x | 25% | +1,0%/tuần | 8,5% |
+| 10x | 30% | −0,8%/tuần | 19% |
+| 20x | 37% | **cháy** | **82%** |
+
+Càng đẩy đòn bẩy thì xác suất có MỘT tuần +20% càng tăng, nhưng số tiền cuối năm lại
+giảm. Ở 20x, lãi TRUNG BÌNH tuần là +18% (trông như đạt mục tiêu), còn trung vị sau
+một năm là 0.
+
+**Chính sách DP tối ưu cho đích +20%** (`solve_goal_dp`, trần 20x, cơ sở lạc quan)
+đạt 58–66% trong MỘT tuần. Nhưng khi edge = 0 nó vẫn đạt **48–54%**, tức edge chỉ góp
+khoảng 11 điểm, phần còn lại là bán bảo hiểm. Đặt sàn −30% thì **27% số tuần chạm
+sàn**. Đòi đạt MỌI tuần thì xác suất là 11–19% cho 4 tuần, <1% cho 12 tuần, và dưới
+1e-9 cho 52 tuần.
+
+⚠️ Số liệu này đo trên lợi suất TỔNG HỢP hiệu chỉnh theo thống kê đã đo (đuôi −5,4σ so
+với −5,19σ thật), vì container không có dữ liệu thật. Kết luận không phụ thuộc vào
+chi tiết: phần dạng đóng (Sharpe cần có, trần xác suất) không dùng mô phỏng.
+**Đừng nâng đòn bẩy vượt khoảng [4..6]x để đuổi mục tiêu tuần.** Hai đòn bẩy có thật
+là VỐN (nhân tiền tuyến tính, không bị phạt) và tỷ lệ maker (F49, +21%/năm ở 7,89x).
+
 ## 🆕 14/09/2026 — HỌ TÍN HIỆU THỨ 6: VỊ THẾ (open interest + long/short)
 
 26 tín hiệu cũ đều dựng từ GIÁ, KHỐI LƯỢNG, FUNDING. Không cái nào thấy AI ĐANG CẦM GÌ.

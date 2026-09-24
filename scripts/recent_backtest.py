@@ -25,6 +25,7 @@ lời được là: "live có đang đi theo mô phỏng không", và "mô phỏ
     python scripts/recent_backtest.py                       # 28 ngày, 5,0x như daemon
     python scripts/recent_backtest.py --days 14 --leverage 5
     python scripts/recent_backtest.py --cost-bps 15.7        # chi phí đo thật (replay 24/09)
+    python scripts/recent_backtest.py --cost-bps 15.7 --tranches 3   # hệ thống chia 3 lô
     python scripts/recent_backtest.py --synthetic           # CHỈ kiểm tra đường chạy
 """
 import argparse
@@ -90,11 +91,16 @@ def main(argv=None) -> int:
                     help="chi phí một chiều ĐO THẬT (vd 15.7 từ replay 24/09); "
                          "bỏ trống = mô hình phí+spread (~4,5bp)")
     ap.add_argument("--config", default=WIDE_CONFIG_FILE)
+    ap.add_argument("--tranches", type=int, default=None,
+                    help="số lô tái cân bằng lệch pha (ghi đè n_tranches của cấu hình); "
+                         "3 = ba lô lệch 24h, chống timing luck")
     ap.add_argument("--synthetic", action="store_true",
                     help="panel giả lập — CHỈ kiểm tra đường chạy, KHÔNG phải kết quả")
     a = ap.parse_args(argv)
 
     cfg = config_from_json(a.config)
+    if a.tranches is not None:
+        cfg = replace(cfg, n_tranches=a.tranches)
     cfg_v3step = replace(cfg, combiner=replace(cfg.combiner, max_step=0.05))
 
     if a.synthetic:
@@ -119,7 +125,7 @@ def main(argv=None) -> int:
     print("=" * 100)
     print(f"  n={cfg.n_positions}, max_w={cfg.portfolio.max_weight}, "
           f"max_step={cfg.combiner.max_step}, tái cân bằng {cfg.period_hours:.0f}h, "
-          f"maker {a.maker}, đòn bẩy {a.leverage}x, chi phí "
+          f"{cfg.n_tranches} lô, maker {a.maker}, đòn bẩy {a.leverage}x, chi phí "
           f"{'mô hình' if a.cost_bps is None else f'{a.cost_bps}bp/chiều (đo thật)'}")
     print(f"  dữ liệu tới {pd.Timestamp(end_ms + BAR_MS, unit='ms')} UTC", end="")
     if not a.synthetic:
@@ -179,7 +185,8 @@ def main(argv=None) -> int:
           "(mọi Sharpe wide đã báo cáo)")
     print(f"   {'':<22}{'Sharpe >=100 cặp':>18}{'Sharpe toàn bộ':>16}"
           f"{f'{a.days:.0f} ngày @1x':>14}")
-    variants = ((f"max_step {cfg.combiner.max_step} (live)", cfg), ("max_step 0,05", cfg_v3step))
+    variants = ((f"max_step {cfg.combiner.max_step} (live)", replace(cfg, n_tranches=1)),
+                ("max_step 0,05", replace(cfg_v3step, n_tranches=1)))
     for lab, c in variants:
         rr = run_v3(data, c, maker_ratio=a.maker, cost_bps=a.cost_bps).returns.dropna()
         s_hi = _sharpe(rr[rr.index.isin(hi_idx)].to_numpy(), ppy)

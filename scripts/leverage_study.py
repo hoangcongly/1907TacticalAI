@@ -86,7 +86,9 @@ def main(argv=None) -> int:
     # [FIX F51] Bảng "4-6x" trong CLAUDE.md (22/09) đo bằng `WIDE` + tầng gộp V3
     # (`max_step=0,05`) và chi phí mô hình ~4,5bp. Daemon chạy `max_step=0,025`, và
     # replay đo chi phí 15,7bp. Nay mặc định đo ĐÚNG cấu hình daemon; chi phí qua cờ.
-    cfg = dataclasses.replace(config_from_json(a.config), maker_ratio=MAKER)
+    # MỘT lô, tường minh: chia lô giảm phương sai do chọn giờ, nên đòn bẩy đo ở một lô
+    # là cận THẬN TRỌNG. `run_v3` từ chối cấu hình chia lô thay vì âm thầm bỏ qua.
+    cfg = dataclasses.replace(config_from_json(a.config), maker_ratio=MAKER, n_tranches=1)
 
     per = run_v3(data, cfg, maker_ratio=MAKER, cost_bps=a.cost_bps).returns.dropna()
     fin = run_v3_fine(data, cfg, maker_ratio=MAKER, cost_bps=a.cost_bps).returns.dropna()

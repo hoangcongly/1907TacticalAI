@@ -38,7 +38,7 @@ from aegis.risk.portfolio import PortfolioSpec, build_weights
 
 __all__ = ["StrategyV3Config", "V3", "V3_SIGNALS", "V3_VINTAGE_MS", "V3Data", "load_v3_data",
            "combined_signal", "run_v3", "run_v3_fine", "split_train_holdout",
-           "WIDE_CONFIG_FILE", "config_from_json"]
+           "WIDE_CONFIG_FILE", "config_from_json", "run_v3_tranched"]
 
 
 # ---------------------------------------------------------------------------
@@ -83,6 +83,9 @@ class StrategyV3Config:
     #: nếu im lặng sửa thành 2.0 thì parity gãy mà không ai biết vì sao.
     cost_notional_leverage: float = 3.0
     num_trials_declared: int = 250
+    #: Số lô tái cân bằng lệch pha (`research/tranching.py`). 1 = một sổ đổi toàn bộ mỗi
+    #: `rebalance_every` nến — mọi con số đã kiểm định đều ở chế độ này.
+    n_tranches: int = 1
 
     combiner: CombinerSpec = field(default_factory=lambda: CombinerSpec(
         lookback=500, min_periods=120, t_threshold=2.0,
@@ -181,6 +184,7 @@ def config_from_json(path: str = WIDE_CONFIG_FILE) -> StrategyV3Config:
         interval=inner.get("interval", V3.interval),
         rebalance_every=int(inner.get("rebalance_every", V3.rebalance_every)),
         n_positions=n,
+        n_tranches=int(inner.get("n_tranches", 1)),
         maker_ratio=float(inner.get("maker_ratio_assumed", V3.maker_ratio)),
         combiner=replace(
             V3.combiner,
@@ -350,6 +354,13 @@ def run_v3(
     cân bằng; `mask` chỉ áp vào lúc cuối để chọn lợi suất nào được tính vào thống kê.
     Đảo thứ tự này là tái lập lỗi đo lường đã mô tả ở đầu file.
     """
+    if cfg.n_tranches > 1:
+        # Lưới 72h của hàm này chỉ mô phỏng được MỘT lô. Chạy im lặng với cấu hình chia
+        # lô là đo một chiến lược khác thứ daemon chạy — đúng họ lỗi F51.
+        raise ValueError(
+            f"run_v3 chỉ mô phỏng một lô, cấu hình có n_tranches={cfg.n_tranches}. "
+            f"Dùng run_v3_fine (tự chia lô), hoặc replace(cfg, n_tranches=1) nếu CỐ Ý "
+            f"đo một lô.")
     maker_ratio = cfg.maker_ratio if maker_ratio is None else maker_ratio
     close_full = data.close
 
@@ -407,6 +418,9 @@ def run_v3_fine(
     mô phỏng (`simulate_marked_to_market`), thứ GIỮ vị thế và để trọng số trôi giữa
     hai mốc tái cân bằng thay vì kéo về mục tiêu mỗi nến.
     """
+    if cfg.n_tranches > 1:
+        return run_v3_tranched(data, cfg, mask=mask, maker_ratio=maker_ratio,
+                               cost_bps=cost_bps)
     maker_ratio = cfg.maker_ratio if maker_ratio is None else maker_ratio
     close_full = data.close
 
@@ -430,3 +444,51 @@ def run_v3_fine(
                 "turnover", "n_positions", "net_exposure", "gross_exposure"):
         setattr(res, fld, getattr(res, fld)[keep])
     return res
+
+
+def run_v3_tranched(
+    data: V3Data,
+    cfg: StrategyV3Config = V3,
+    n_tranches: Optional[int] = None,
+    phase: int = 0,
+    mask: Optional[np.ndarray] = None,
+    maker_ratio: Optional[float] = None,
+    cost_bps: Optional[float] = None,
+    cache: Optional[dict] = None,
+) -> BacktestV2Result:
+    """
+    Chiến lược v3 CHIA LÔ, đường vốn trên nến 4h — CÙNG hàm trọng số với live
+    (`research/tranching.py`).
+
+    `n_tranches=1, phase=p` là chiến lược một lô bắt đầu ở pha p (p nến 4h sau mốc
+    gốc) — quét p = 0..rebalance_every-1 là đo timing luck bằng backtest.
+
+    Mô phỏng đặt lại CẢ SỔ về đích gộp mỗi khi có một lô tái cân bằng, kể cả phần trôi
+    giá của các lô không tới lượt. Live có dải không giao dịch 20% nên bỏ qua phần lớn
+    điều chỉnh vụn đó; ở đây thì trả phí cho chúng — tức ước lượng chi phí THẬN TRỌNG.
+    """
+    from aegis.research.tranching import tranched_weight_panel
+
+    k = cfg.n_tranches if n_tranches is None else n_tranches
+    maker_ratio = cfg.maker_ratio if maker_ratio is None else maker_ratio
+    names = cfg.signal_names()
+    missing = [n for n in names if n not in data.signals]
+    if missing:
+        raise KeyError(f"V3Data thiếu {len(missing)} tín hiệu cấu hình yêu cầu: {missing[:5]}")
+    close_full = data.close
+    W = tranched_weight_panel({n: data.signals[n] for n in names}, close_full,
+                              cfg.rebalance_every, k, cfg.combiner, cfg.portfolio,
+                              cfg.top_frac, phase=phase, cache=cache)
+    cost = CostModel(maker_ratio=maker_ratio, half_spread_bps=0.0,
+                     per_symbol_bps=data.per_symbol_bps * (1 - maker_ratio), min_bps=0.5,
+                     flat_bps=cost_bps)
+    res = simulate_marked_to_market(W, close_full, data.funding, cost,
+                                    bar_hours=cfg.bar_hours)
+    if mask is None:
+        return res
+    keep = np.isin(res.returns.index, close_full.index[mask])
+    for fld in ("returns", "gross_returns", "cost_drag", "funding_pnl",
+                "turnover", "n_positions", "net_exposure", "gross_exposure"):
+        setattr(res, fld, getattr(res, fld)[keep])
+    return res
+

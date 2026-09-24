@@ -48,11 +48,12 @@ from aegis.research.cross_sectional import (
 from aegis.data.panel_v2 import (
     funding_last_ms, interval_hours, load_funding_panel_v2, load_panel_v2,
 )
-from aegis.research.adaptive_combiner import CombinerSpec, combine_adaptive
+from aegis.research.adaptive_combiner import CombinerSpec
 from aegis.research.signal_library import SIGNAL_REGISTRY, build_signal
 from aegis.research.strategy_v3 import V3_SIGNALS
+from aegis.research.tranching import tranched_target_weights
 from aegis.risk.goal_overlay import GoalOverlay, GoalOverlayConfig
-from aegis.risk.portfolio import PortfolioSpec, build_weights
+from aegis.risk.portfolio import PortfolioSpec
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +158,10 @@ class LiveConfig:
     #: Đây đúng là cơ chế của F3 và F37: research và live đọc hai nguồn sự thật khác
     #: nhau cho cùng một quyết định. Nay cả hai đọc `V3_SIGNALS`.
     v3_signals: Optional[List[str]] = None
+    #: Số lô tái cân bằng lệch pha (chia lô chống timing luck, `research/tranching.py`).
+    #: 1 = một sổ đổi toàn bộ mỗi `rebalance_bars` nến. K > 1: sổ là trung bình K lô,
+    #: mỗi lô vẫn giữ `rebalance_bars` nến, và hệ thống tái cân bằng mỗi 1/K chu kỳ.
+    n_tranches: int = 1
 
     # --- Tầng phủ đòn bẩy theo mục tiêu (research/goal_dp.py) ---
     # None = tắt hoàn toàn, hành vi y hệt trước khi có tầng này. Bật nó KHÔNG đổi
@@ -190,7 +195,11 @@ class LiveConfig:
             kw.update(
                 n_positions=int(inner.get("n_positions", 12)),
                 rebalance_bars=int(inner.get("rebalance_every", 18)),
-                rebalance_hours=float(inner.get("period_hours", 72.0)),
+                # Chia lô: mỗi lô vẫn giữ `period_hours`, nhưng cứ period/K giờ lại có
+                # một lô tới lượt — nên nhịp của CẢ HỆ là period/K.
+                n_tranches=int(inner.get("n_tranches", 1)),
+                rebalance_hours=(float(inner.get("period_hours", 72.0))
+                                 / int(inner.get("n_tranches", 1))),
                 weight_mode=port.get("mode", "zscore_riskparity"),
                 max_weight=float(port.get("max_weight", 0.20)),
                 combiner_lookback=int(comb.get("lookback", 500)),
@@ -355,7 +364,8 @@ class CrossSectionalLivePipeline:
         Đây là điểm mấu chốt về kiến trúc. Lỗi F3 của hệ thống cũ không phải lỗi
         công thức mà là lỗi CÓ HAI ĐƯỜNG: research tính feature một kiểu, live tính
         một kiểu, và chúng trôi xa nhau theo thời gian. Ở đây live gọi nguyên si
-        `build_signal` / `combine_adaptive` / `build_weights` rồi lấy HÀNG CUỐI —
+        `build_signal` rồi `research/tranching.tranched_target_weights` (bên trong là
+        `combine_adaptive` / `build_weights`) và lấy HÀNG CUỐI —
         không có công thức nào được viết lại lần thứ hai.
 
         Hệ quả bắt buộc chấp nhận: live phải nạp đủ lịch sử để tính được đúng những
@@ -385,17 +395,11 @@ class CrossSectionalLivePipeline:
                 f"Không chạy tiếp với bộ tín hiệu khác bộ đã kiểm định.")
         sigs = {n: build_signal(n, panel, funding) for n in names}
 
-        marks = close.index[::self.config.rebalance_bars]
-        close_m = close.reindex(marks)
-        combined = combine_adaptive(
-            {k: v.reindex(marks) for k, v in sigs.items()}, close_m,
-            CombinerSpec(lookback=self.config.combiner_lookback,
-                         min_periods=self.config.combiner_min_periods,
-                         t_threshold=self.config.combiner_t_threshold,
-                         max_abs_weight=self.config.combiner_max_abs_weight,
-                         max_step=self.config.combiner_max_step),
-            top_frac=self.config.top_frac)
-
+        combiner = CombinerSpec(lookback=self.config.combiner_lookback,
+                                min_periods=self.config.combiner_min_periods,
+                                t_threshold=self.config.combiner_t_threshold,
+                                max_abs_weight=self.config.combiner_max_abs_weight,
+                                max_step=self.config.combiner_max_step)
         spec = PortfolioSpec(
             mode=self.config.weight_mode,
             n_positions=self.config.n_positions,
@@ -403,12 +407,15 @@ class CrossSectionalLivePipeline:
             max_weight=1.0 if self.config.weight_mode == "rank_binary" else self.config.max_weight,
             beta_neutral=False,
         )
-        # Chỉ dựng trọng số cho đuôi chuỗi: `build_weights` lặp theo hàng, mà live
-        # chỉ cần hàng cuối. Vẫn phải chừa đủ cửa sổ ước lượng biến động.
-        tail = marks[-(spec.vol_window + 5):]
-        W = build_weights(combined.reindex(tail), close.reindex(tail), spec)
-
-        row = W.iloc[-1]
+        # [FIX F53] Bản cũ dựng lưới `close.index[::rebalance_bars]` — neo ở ĐẦU panel
+        # — rồi lấy hàng cuối của lưới đó: tín hiệu có thể cũ tới 17 nến (68h) so với nến
+        # mới nhất, trong khi hàm vẫn trả về mốc nến mới nhất nên STALE_DATA không thấy.
+        # Nay lưới neo ở NẾN MỚI NHẤT, và đích là trung bình `n_tranches` lô lệch nhau
+        # rebalance_bars/n_tranches nến (chia lô chống timing luck). CÙNG hàm với
+        # backtest (`research/tranching.py`) — không có công thức thứ hai ở tầng live.
+        row = tranched_target_weights(sigs, close, self.config.rebalance_bars,
+                                      self.config.n_tranches, combiner, spec,
+                                      self.config.top_frac, tail_only=True)
         weights = {s: float(w) for s, w in row.items() if abs(w) > 1e-12}
         if not weights:
             raise RuntimeError("Chiến lược v3 không mở vị thế nào ở nến mới nhất "

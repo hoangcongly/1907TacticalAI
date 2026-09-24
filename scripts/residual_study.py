@@ -55,7 +55,9 @@ from aegis.risk.portfolio import PortfolioSpec
 
 #: [F51] So với ĐÚNG cấu hình daemon chạy (`strategy_v3_wide.json`, kể cả tầng gộp
 #: `max_step=0,025`), không phải tầng gộp của V3 (0,05) mà các nghiên cứu wide cũ dùng.
-BASE = config_from_json()
+# Đo trên MỘT lô, tường minh: so sánh TÍN HIỆU không phụ thuộc cách chia lô, và `run_v3`
+# từ chối cấu hình chia lô thay vì âm thầm bỏ qua nó.
+BASE = replace(config_from_json(), n_tranches=1)
 N = BASE.n_positions
 MAKER = 0.39                     # mức THẬT đo ở lượt 19/09
 RMOM = ("rmom_fast", "rmom_mid", "rmom_slow", "rmom_vlong")

@@ -35,7 +35,9 @@ def test_cau_hinh_wide_ma_daemon_chay_trung_research_f51():
     assert live.engine == "v3"
     assert live.n_positions == res.n_positions == res.portfolio.n_positions == 50
     assert live.rebalance_bars == res.rebalance_every
-    assert live.rebalance_hours == pytest.approx(res.period_hours)
+    # Chia lô: mỗi lô giữ `period_hours`, cả hệ tái cân bằng mỗi period/K giờ.
+    assert live.n_tranches == res.n_tranches
+    assert live.rebalance_hours == pytest.approx(res.period_hours / res.n_tranches)
     assert live.interval == res.interval
     assert live.weight_mode == res.portfolio.mode
     assert live.max_weight == pytest.approx(res.portfolio.max_weight)

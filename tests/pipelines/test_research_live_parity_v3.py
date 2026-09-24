@@ -20,6 +20,7 @@ from aegis.data.panel_v2 import load_funding_panel_v2, load_panel_v2
 from aegis.research.adaptive_combiner import CombinerSpec, combine_adaptive
 from aegis.research.signal_library import SIGNAL_REGISTRY, build_signal
 from aegis.research.strategy_v3 import V3_SIGNALS
+from aegis.research.tranching import anchored_marks
 from aegis.risk.portfolio import PortfolioSpec, build_weights
 
 UNIVERSE_FILE = pathlib.Path("artifacts/universe_wide.json")
@@ -49,7 +50,12 @@ def _weights_research(panel, funding, tail_only: bool):
     # [FIX F38] Bộ 26 đã kiểm định — KHÔNG duyệt registry. Registry chứa cả tín hiệu
     # đang thử nghiệm; dùng nó ở đây làm test 'xanh' cả khi research và live đã lệch.
     sigs = {n: build_signal(n, panel, funding) for n in V3_SIGNALS}
-    marks = close.index[::REBAL]
+    # [FIX F53] Lưới neo ở NẾN MỚI NHẤT — đúng thời điểm live khớp lệnh. Bản cũ neo ở
+    # đầu panel (`close.index[::REBAL]`), và vì live cũng làm y hệt nên test này XANH
+    # trong khi cả hai phía cùng dùng tín hiệu cũ tới 68h: parity giữa hai bản sao của
+    # cùng một lỗi. Nay research dựng lưới bằng `anchored_marks` còn live đi qua
+    # `tranched_target_weights` — hai đường độc lập phải ra cùng một con số.
+    marks = anchored_marks(close.index, REBAL, len(close.index) - 1)
     combined = combine_adaptive(
         {k: v.reindex(marks) for k, v in sigs.items()}, close.reindex(marks),
         CombinerSpec(lookback=500, min_periods=120, t_threshold=2.0,

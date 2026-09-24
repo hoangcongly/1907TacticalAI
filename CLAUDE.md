@@ -84,6 +84,42 @@ chi tiết: phần dạng đóng (Sharpe cần có, trần xác suất) không d
 **Đừng nâng đòn bẩy vượt khoảng [4..6]x để đuổi mục tiêu tuần.** Hai đòn bẩy có thật
 là VỐN (nhân tiền tuyến tính, không bị phạt) và tỷ lệ maker (F49, +21%/năm ở 7,89x).
 
+## 🔁 24/09/2026 — CHIA LÔ TÁI CÂN BẰNG (chống timing luck) + F53. `research/tranching.py`
+
+**F53 — live giao dịch tín hiệu cũ tới 68 giờ. ĐÃ VÁ (có hiệu lực khi NẠP LẠI daemon).**
+`_compute_target_weights_v3` dựng lưới `close.index[::18]` neo ở ĐẦU panel rồi lấy hàng
+cuối của lưới. Mốc đó có thể cách nến mới nhất tới 17 nến 4h, nhưng hàm vẫn trả mốc nến
+mới nhất nên STALE_DATA không thấy gì. Test parity cũ XANH vì phía research cũng dựng
+lưới y hệt: hai bản sao của cùng một lỗi. Độ cũ phụ thuộc lúc máy thức dậy, và đây
+nhiều khả năng là "độ trễ tín hiệu thay đổi theo giờ" mà replay thấy. Nay lưới neo ở
+NẾN MỚI NHẤT (`anchored_marks`).
+
+**Chia lô** (Hoffstein-Faber-Braun 2020). Sổ là trung bình K lô; mỗi lô vẫn giữ 72h
+như chiến lược đã kiểm định, nhưng các lô lệch nhau 72/K giờ. Kết quả tiến về TRUNG
+BÌNH các giờ bắt đầu, thay vì phụ thuộc một giờ may hay rủi (replay: −14% đến +231%
+chỉ do giờ). Hàm là THUẦN nên không cần lưu trạng thái từng lô: đích của lô j tính
+lại được từ dữ liệu. Live và backtest gọi CÙNG `tranched_target_weights` /
+`tranched_weight_panel`, và test khoá hai đường trùng nhau tới 1e-9, ở K=1 lẫn K=3,
+không cần dữ liệu thật (`tests/research/test_tranching.py`,
+`tests/pipelines/test_tranching_live_f53.py`).
+
+- `LiveConfig.n_tranches` và `StrategyV3Config.n_tranches` đọc từ khoá `"n_tranches"`
+  trong JSON. Nhịp cả hệ = `period_hours / n_tranches`. Test F51 khoá parity.
+- `run_v3_fine` tự chia lô theo cấu hình. `run_v3` (lưới 72h, một lô) **ném lỗi** khi
+  gặp cấu hình chia lô, thay vì âm thầm đo sai. Script nào cố ý đo một lô phải
+  `replace(cfg, n_tranches=1)` tường minh.
+- Chia lô thêm cặp (hợp của K lô), nên ở vốn $38 sẽ dưới min notional và bị cắt theo
+  F43. Chỉ hợp lý từ vốn khoảng vài trăm USD trở lên; testnet $5.000 thì thoải mái.
+
+⚠️ **CHƯA BẬT trong `strategy_v3_wide.json`.** Sửa file cấu hình daemon đang chạy là
+thay đổi production, nên phải do người vận hành làm. Cách bật: thêm
+`"n_tranches": 3` vào khối `"config"`, rồi nạp lại daemon. Nên chạy trước:
+
+```bash
+python scripts/tranche_study.py --cost-bps 15.7       # 18 pha một lô vs K=3/6/18, luật chốt trước
+python scripts/recent_backtest.py --cost-bps 15.7 --tranches 3   # 28 ngày của hệ thống chia 3 lô
+```
+
 ## 🎯 24/09/2026 — REPLAY LIVE 28 NGÀY: −4,1% Ở GIỜ DAEMON, NHƯNG GIỜ BẮT ĐẦU QUYẾT ĐỊNH TẤT CẢ
 
 Replay gọi ĐÚNG code live (`xs_live_pipeline`: trọng số, ngắt mạch, giảm đòn bẩy, lập

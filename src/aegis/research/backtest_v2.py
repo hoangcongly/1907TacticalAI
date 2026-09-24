@@ -65,6 +65,13 @@ class CostModel:
     impact_coef_bps: float = 0.0
     per_symbol_bps: Optional[pd.Series] = None
     min_bps: float = 0.5
+    #: Chi phí một chiều ĐO TỪ LỆNH THẬT, thay cho toàn bộ mô hình phí + spread + tác
+    #: động ở trên. `None` = dùng mô hình (mặc định, giữ nguyên mọi con số đã kiểm định).
+    #:
+    #: Vì sao cần: mô hình trên KHÔNG có khoản trôi giá trong cửa sổ chờ thụ động (900s)
+    #: và chọn ngược (lệnh chờ chỉ khớp khi giá đi ngược mình). Replay 24/09 đo 15,7bp/
+    #: chiều trên lệnh khớp thật (testnet) so với ~4,5bp mô hình cho ra.
+    flat_bps: Optional[float] = None
 
     def base_bps(self) -> float:
         """Chi phí phẳng khi không có thông tin từng cặp."""
@@ -74,6 +81,8 @@ class CostModel:
 
     def bps_for(self, symbols) -> pd.Series:
         """Vector chi phí một chiều (bp) cho từng cặp."""
+        if self.flat_bps is not None:
+            return pd.Series(float(self.flat_bps), index=list(symbols), dtype=np.float64)
         base = self.base_bps()
         out = pd.Series(base, index=list(symbols), dtype=np.float64)
         if self.per_symbol_bps is not None:

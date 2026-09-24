@@ -174,6 +174,25 @@ def load_funding_panel_v2(
     return pd.DataFrame(series)
 
 
+def funding_last_ms(symbols: List[str], root: str = DATA_ROOT) -> pd.Series:
+    """
+    Mốc funding MỚI NHẤT có trên đĩa cho từng cặp (ms). Thiếu file -> NaN.
+
+    [FIX F52] `load_funding_panel_v2` ffill không giới hạn, nên panel nó trả về KHÔNG
+    phân biệt được "funding vừa công bố" với "funding đứng yên từ hai tuần trước".
+    Độ tươi phải đo ở NGUỒN, trước khi ffill xoá mất thông tin đó.
+    """
+    out = {}
+    for symbol in symbols:
+        path = pathlib.Path(root) / f"{symbol}_funding.parquet"
+        if path.is_file():
+            ft = pd.read_parquet(path, columns=["funding_time"])["funding_time"]
+            out[symbol] = float(ft.max()) if len(ft) else np.nan
+        else:
+            out[symbol] = np.nan
+    return pd.Series(out, dtype=float)
+
+
 def align_panel(panel: Dict[str, pd.DataFrame], funding: pd.DataFrame):
     """Ép mọi trường về cùng bộ cột và cùng thứ tự — tránh lệch cột âm thầm."""
     cols = [c for c in panel["close"].columns if c in funding.columns]

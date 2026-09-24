@@ -84,6 +84,72 @@ chi tiết: phần dạng đóng (Sharpe cần có, trần xác suất) không d
 **Đừng nâng đòn bẩy vượt khoảng [4..6]x để đuổi mục tiêu tuần.** Hai đòn bẩy có thật
 là VỐN (nhân tiền tuyến tính, không bị phạt) và tỷ lệ maker (F49, +21%/năm ở 7,89x).
 
+## 🎯 24/09/2026 — REPLAY LIVE 28 NGÀY: −4,1% Ở GIỜ DAEMON, NHƯNG GIỜ BẮT ĐẦU QUYẾT ĐỊNH TẤT CẢ
+
+Replay gọi ĐÚNG code live (`xs_live_pipeline`: trọng số, ngắt mạch, giảm đòn bẩy, lập
+lệnh), point-in-time (mỗi quyết định chỉ thấy dữ liệu có trước nó, universe lọc lại
+tại chỗ). Vốn $5.000, 5x, chi phí **15,7bp/chiều đo từ lệnh khớp thật trên testnet**.
+Kiểm chứng: ngày 23/09 trùng 48/49 cặp cùng hướng với sổ thật. Từ 19/09, replay ra
+−12,6% còn tài khoản thật −17,1%; khoảng chênh ≈ lệnh không khớp + lệch trung lập.
+⚠️ `replay_live.py` chạy trong phiên cục bộ và **CHƯA được commit**.
+
+| giờ daemon (05:00 UTC), funding đóng băng | 28 ngày | 14 ngày | 7 ngày |
+|---|---|---|---|
+| lời/lỗ | **−4,1%** | −1,5% | **−12,9%** |
+
+maxDD −21,7%. Chạy lại cùng hệ thống ở 61 giờ bắt đầu khác nhau, 28 ngày:
+
+| | trung vị | 10% tệ / tốt | tệ nhất / tốt nhất | % có lời |
+|---|---|---|---|---|
+| như đang chạy | +34,8% | +1,8% / +75% | −16% / +175% | 92% |
+| đã vá funding | +45,2% | +7,8% / +110% | −14% / +231% | 95% |
+
+Giờ của daemon rơi vào **nhóm 5% xấu nhất**, và sau khi vá funding thì giờ đó ra −7,3%.
+Cải thiện +10 điểm trung vị nằm trong nhiễu. **Một tháng không đánh giá được hệ thống**:
+cả tháng dựa vào tuần 10–17/09 (+33%), còn tuần gần nhất chỉ 16% số giờ có lời.
+
+**Năm phát hiện, và trạng thái:**
+1. **F52 — funding đứng yên từ 10/09. ĐÃ VÁ** (xem dưới). Phải NẠP LẠI daemon.
+2. **Chi phí thật 15,7bp/chiều, gấp ~3,5 lần mô hình.** Mô hình thiếu khoản trôi giá
+   trong cửa sổ chờ 900s. Đã thêm `CostModel.flat_bps` và cờ `--cost-bps` cho
+   `recent_backtest`, `residual_study`, `leverage_study`; mặc định không đổi. Ước lượng
+   THÔ (giả định turnover ~1,1 lần gross mỗi kỳ, tức ~134/năm): chi phí thêm khoảng
+   15%/năm ở 1x. Theo đó Sharpe kỷ nguyên ≥100 cặp từ 2,23 còn ~1,6; toàn lịch sử từ
+   1,34 còn ~0,8; Kelly toàn lịch sử từ ~4,7x còn ~2,9x. **Khoảng đòn bẩy "4–6x" đo ở
+   4,5bp, ở chi phí thật có thể không còn đứng.** Chạy
+   `leverage_study.py --cost-bps 15.7`. Lưu ý 15,7bp đo trên testnet (sổ mỏng), nên
+   mainnet có thể thấp hơn.
+3. **Ngắt mạch tính trên EQUITY, không theo đòn bẩy. CHƯA ĐỔI, cần người quyết.**
+   10/20/30% ở 5x chỉ tương đương 2/4/6% sụt giảm chiến lược, trong khi maxDD 1x lịch
+   sử là 45,5%. Replay: sụt giảm trung vị trong tháng −26%, 30% số giờ bắt đầu chạm
+   đóng băng, kill switch ở rất gần. TIER1 (cắt nửa vị thế ở −10%) gần như luôn bật,
+   mà repo đã đo "van drawdown luôn làm tệ đi". Có ba lựa chọn: (a) quy ngưỡng theo
+   đòn bẩy, (b) hạ đòn bẩy, (c) giữ nguyên và chấp nhận dừng thường xuyên.
+   Sổ thật lúc 23/09 +6h: 6.088 → 5.082, tức **DD 16,5%, còn 3,5 điểm tới đóng băng**.
+4. **Timing luck.** Giờ tái cân bằng làm kết quả 28 ngày chạy từ −16% tới +175%.
+   KHÔNG được chọn "giờ tốt nhất" từ một tháng, vì đó là overfit. Chia lô tái cân bằng
+   giảm được nó nhưng cần vốn để vượt min notional.
+5. **Vốn 1 triệu VND (~$38) chưa replay.** Ở 5x chỉ nuôi được khoảng 30 vị thế, nên
+   cắt theo F43 và kết quả sẽ khác bảng trên.
+
+### F52 — funding đứng yên 14 ngày, daemon vẫn giao dịch như thường. ĐÃ VÁ.
+
+Ba mắt xích cùng hỏng:
+- `refresh_data` chỉ tải NẾN.
+- `download_wide_universe.py` chỉ ghi file funding khi file CHƯA có.
+- `load_funding_panel_v2` ffill không giới hạn, nên 5/26 tín hiệu carry thấy con số từ
+  10/09 như số mới.
+
+Cổng STALE_DATA chỉ nhìn nến, nên cả 14 ngày không có cảnh báo nào.
+
+**Vá:**
+- `save_funding_rates()` gộp an toàn.
+- `refresh_data` tải funding mỗi lượt, với `try` riêng để funding hỏng không kéo nến hỏng theo.
+- Cổng **`STALE_FUNDING`** cho engine v3: đo tuổi funding ở NGUỒN (`funding_last_ms`,
+  trước khi ffill), trung vị quá `max_funding_age_hours = 24` thì HALT có lý do. Thiếu
+  sạch file funding cũng HALT, vì đó là trường hợp họ carry tắt câm.
+- Khoá bằng `tests/pipelines/test_funding_refresh_f52.py` (9 test).
+
 ## 🔴 F51 (24/09/2026) — DAEMON CHẠY MỘT CẤU HÌNH CHƯA TỪNG ĐƯỢC BACKTEST
 
 `strategy_v3_wide.json`, file daemon chạy (lượt 23/09 có 50 vị thế), ghi tầng gộp

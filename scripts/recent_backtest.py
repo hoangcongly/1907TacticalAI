@@ -24,6 +24,7 @@ lời được là: "live có đang đi theo mô phỏng không", và "mô phỏ
 
     python scripts/recent_backtest.py                       # 28 ngày, 5,0x như daemon
     python scripts/recent_backtest.py --days 14 --leverage 5
+    python scripts/recent_backtest.py --cost-bps 15.7        # chi phí đo thật (replay 24/09)
     python scripts/recent_backtest.py --synthetic           # CHỈ kiểm tra đường chạy
 """
 import argparse
@@ -85,6 +86,9 @@ def main(argv=None) -> int:
     ap.add_argument("--leverage", type=float, default=5.0,
                     help="đòn bẩy gộp daemon chạy (cờ --leverage của run_daily.py)")
     ap.add_argument("--maker", type=float, default=MAKER)
+    ap.add_argument("--cost-bps", type=float, default=None,
+                    help="chi phí một chiều ĐO THẬT (vd 15.7 từ replay 24/09); "
+                         "bỏ trống = mô hình phí+spread (~4,5bp)")
     ap.add_argument("--config", default=WIDE_CONFIG_FILE)
     ap.add_argument("--synthetic", action="store_true",
                     help="panel giả lập — CHỈ kiểm tra đường chạy, KHÔNG phải kết quả")
@@ -115,7 +119,8 @@ def main(argv=None) -> int:
     print("=" * 100)
     print(f"  n={cfg.n_positions}, max_w={cfg.portfolio.max_weight}, "
           f"max_step={cfg.combiner.max_step}, tái cân bằng {cfg.period_hours:.0f}h, "
-          f"maker {a.maker}, đòn bẩy {a.leverage}x")
+          f"maker {a.maker}, đòn bẩy {a.leverage}x, chi phí "
+          f"{'mô hình' if a.cost_bps is None else f'{a.cost_bps}bp/chiều (đo thật)'}")
     print(f"  dữ liệu tới {pd.Timestamp(end_ms + BAR_MS, unit='ms')} UTC", end="")
     if not a.synthetic:
         stale = "  ⚠️ CŨ — cập nhật dữ liệu trước" if age_h > 12 else ""
@@ -124,7 +129,7 @@ def main(argv=None) -> int:
         print()
 
     # ---- 1. Đường vốn 4h, TOÀN dòng thời gian rồi cắt ------------------------------
-    fine = run_v3_fine(data, cfg, mask=mask, maker_ratio=a.maker)
+    fine = run_v3_fine(data, cfg, mask=mask, maker_ratio=a.maker, cost_bps=a.cost_bps)
     r = fine.returns.dropna()
     rv = r.to_numpy()
     tot1, totL = compound(rv, 1.0), compound(rv, a.leverage)
@@ -176,7 +181,7 @@ def main(argv=None) -> int:
           f"{f'{a.days:.0f} ngày @1x':>14}")
     variants = ((f"max_step {cfg.combiner.max_step} (live)", cfg), ("max_step 0,05", cfg_v3step))
     for lab, c in variants:
-        rr = run_v3(data, c, maker_ratio=a.maker).returns.dropna()
+        rr = run_v3(data, c, maker_ratio=a.maker, cost_bps=a.cost_bps).returns.dropna()
         s_hi = _sharpe(rr[rr.index.isin(hi_idx)].to_numpy(), ppy)
         s_all = _sharpe(rr.to_numpy(), ppy)
         rec = rr[rr.index >= lo_ms].to_numpy()

@@ -31,12 +31,9 @@ import numpy as np
 import pandas as pd
 
 from aegis.research.strategy_v3 import (
-    V3, V3_VINTAGE_MS, load_v3_data, run_v3, run_v3_fine,
+    V3, V3_VINTAGE_MS, WIDE_CONFIG_FILE, config_from_json, load_v3_data, run_v3, run_v3_fine,
 )
-from aegis.risk.portfolio import PortfolioSpec
 
-WIDE = PortfolioSpec(mode="zscore_riskparity", n_positions=50,
-                     max_weight=0.02, beta_neutral=False, vol_window=60)
 MAKER = 0.39                     # mức THẬT đo ở lượt 19/09, không phải giả định 0,50
 GRID = np.arange(1.0, 14.1, 0.5)
 MM = 0.01                        # ký quỹ duy trì ~1% (Binance, vị thế nhỏ)
@@ -76,12 +73,23 @@ def path_risk(fine: np.ndarray, L: float) -> tuple:
     return maxdd, ruined / max(1, n_per)
 
 
-def main() -> int:
-    data = load_v3_data(V3, end_ms=V3_VINTAGE_MS)
-    cfg = dataclasses.replace(V3, n_positions=50, portfolio=WIDE, maker_ratio=MAKER)
+def main(argv=None) -> int:
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--config", default=WIDE_CONFIG_FILE,
+                    help="file cấu hình daemon chạy [F51]")
+    ap.add_argument("--cost-bps", type=float, default=None,
+                    help="chi phí một chiều ĐO THẬT (vd 15.7 từ replay 24/09)")
+    a = ap.parse_args(argv)
 
-    per = run_v3(data, V3, maker_ratio=MAKER, portfolio=WIDE).returns.dropna()
-    fin = run_v3_fine(data, cfg, maker_ratio=MAKER).returns.dropna()
+    data = load_v3_data(V3, end_ms=V3_VINTAGE_MS)
+    # [FIX F51] Bảng "4-6x" trong CLAUDE.md (22/09) đo bằng `WIDE` + tầng gộp V3
+    # (`max_step=0,05`) và chi phí mô hình ~4,5bp. Daemon chạy `max_step=0,025`, và
+    # replay đo chi phí 15,7bp. Nay mặc định đo ĐÚNG cấu hình daemon; chi phí qua cờ.
+    cfg = dataclasses.replace(config_from_json(a.config), maker_ratio=MAKER)
+
+    per = run_v3(data, cfg, maker_ratio=MAKER, cost_bps=a.cost_bps).returns.dropna()
+    fin = run_v3_fine(data, cfg, maker_ratio=MAKER, cost_bps=a.cost_bps).returns.dropna()
     ppy = 365.0 * 24.0 / V3.period_hours
 
     hi = data.close.notna().sum(axis=1) >= 100

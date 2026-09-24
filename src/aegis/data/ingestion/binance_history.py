@@ -196,6 +196,33 @@ def save_klines(
     return path
 
 
+def save_funding_rates(
+    rates: Dict[int, float],
+    symbol: str,
+    root: str = DEFAULT_DATA_ROOT,
+) -> pathlib.Path:
+    """
+    Ghi/GỘP funding vào `{symbol}_funding.parquet` (cột `funding_time`, `rate` — đúng định
+    dạng `panel_v2.load_funding_panel_v2` đọc). Gộp theo `funding_time`, nên tải chồng
+    lặp vẫn cho ra đúng một kết quả.
+
+    [FIX F52] Trước đây file funding chỉ được GHI MỘT LẦN (`download_wide_universe.py`
+    bỏ qua nếu file đã có) và daemon không bao giờ tải lại. Kết quả: funding đứng yên
+    từ 10/09, trong khi `load_funding_panel_v2` ffill không giới hạn nên 5 tín hiệu
+    carry thấy một con số CŨ trông như số mới — không lỗi, không cảnh báo.
+    """
+    path = pathlib.Path(root) / f"{symbol.upper()}_funding.parquet"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    df = pd.DataFrame({"funding_time": [int(k) for k in rates],
+                       "rate": [float(v) for v in rates.values()]})
+    if path.is_file():
+        df = pd.concat([pd.read_parquet(path), df], ignore_index=True)
+    df = (df.drop_duplicates(subset="funding_time", keep="last")
+          .sort_values("funding_time").reset_index(drop=True))
+    df.to_parquet(path, index=False)
+    return path
+
+
 def load_klines(
     symbol: str,
     interval: str = "1m",

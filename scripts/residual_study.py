@@ -158,6 +158,8 @@ def synthetic_data(n_bars: int = 6 * 365 * 3, n_assets: int = 130, seed: int = 0
 # ---------------------------------------------------------------------------
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--cost-bps", type=float, default=None,
+                    help="chi phí một chiều ĐO THẬT (vd 15.7); bỏ trống = mô hình")
     ap.add_argument("--synthetic", action="store_true",
                     help="panel giả lập — CHỈ kiểm tra đường chạy, KHÔNG phải kết quả")
     a = ap.parse_args(argv)
@@ -184,7 +186,7 @@ def main(argv=None) -> int:
         cfg = replace(BASE, signals=tuple(names))
         sig = combined_signal(data, cfg)
         rets[label] = run_v3(data, cfg, maker_ratio=MAKER, portfolio=_spec(bn),
-                             sig=sig).returns.dropna()
+                             sig=sig, cost_bps=a.cost_bps).returns.dropna()
         print(f"  xong: {label}", flush=True)
 
     base_label = variants()[0][0]

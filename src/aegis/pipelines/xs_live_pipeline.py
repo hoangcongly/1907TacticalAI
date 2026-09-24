@@ -30,7 +30,9 @@ import pandas as pd
 
 from aegis.core.execution_log import ExecutionLog, ExecutionRecord
 from aegis.core.state_store import LiveState, StateStore
-from aegis.data.ingestion.binance_history import download_klines, save_klines
+from aegis.data.ingestion.binance_history import (
+    download_funding_rates, download_klines, save_funding_rates, save_klines,
+)
 from aegis.data.ingestion.binance_rest import BinanceFuturesREST
 from aegis.data.panel import load_funding_panel, load_panel
 from aegis.execution.portfolio_rebalancer import (
@@ -43,7 +45,9 @@ from aegis.research.cross_sectional import (
     combine_signals_zscore, rank_to_weights, rank_to_weights_buffered,
     signal_funding_carry, signal_funding_momentum, signal_momentum, signal_ofi,
 )
-from aegis.data.panel_v2 import interval_hours, load_funding_panel_v2, load_panel_v2
+from aegis.data.panel_v2 import (
+    funding_last_ms, interval_hours, load_funding_panel_v2, load_panel_v2,
+)
 from aegis.research.adaptive_combiner import CombinerSpec, combine_adaptive
 from aegis.research.signal_library import SIGNAL_REGISTRY, build_signal
 from aegis.research.strategy_v3 import V3_SIGNALS
@@ -66,6 +70,9 @@ class LiveConfig:
     leverage: float = 2.0
     rebalance_hours: float = 24.0
     max_data_age_hours: float = 8.0
+    #: [FIX F52] Trần tuổi funding (trung vị qua universe). Funding công bố mỗi 8h (vài
+    #: cặp 4h) — 24h là đã lỡ ít nhất 3 mốc liên tiếp, không còn là trễ ngẫu nhiên.
+    max_funding_age_hours: float = 24.0
     post_only: bool = True
     min_notional_safety: float = 1.2
     passive_offset_ticks: int = 1     # đệm khỏi BBO để lệnh post-only không bị -5022
@@ -242,9 +249,9 @@ class CrossSectionalLivePipeline:
         return self.config.source_interval if self.config.engine == "v3" else self.config.interval
 
     def refresh_data(self, days: float = 30.0) -> int:
-        """Tải nến mới nhất cho universe (gộp vào parquet đã có)."""
+        """Tải nến VÀ funding mới nhất cho universe (gộp vào parquet đã có)."""
         interval = self.data_interval()
-        updated, failed = 0, []
+        updated, failed, f_failed = 0, [], []
         for symbol in self.config.universe:
             try:
                 bars = download_klines(symbol, interval, days=days, client=self.data_client)
@@ -253,9 +260,23 @@ class CrossSectionalLivePipeline:
             except Exception as exc:
                 logger.warning("Không cập nhật được %s (%s): %s", symbol, interval, exc)
                 failed.append(symbol)
+            # [FIX F52] Funding là ĐẦU VÀO của 5/26 tín hiệu (họ carry). Trước đây hàm này
+            # chỉ tải nến, nên funding đứng yên từ lần tải tay cuối (10/09) mà không ai
+            # biết: `load_funding_panel_v2` ffill giá trị cuối tới vô hạn. Tách try riêng:
+            # funding hỏng không được kéo nến hỏng theo, và ngược lại.
+            try:
+                rates = download_funding_rates(symbol, days=days, client=self.data_client)
+                if rates:
+                    save_funding_rates(rates, symbol)
+            except Exception as exc:
+                logger.warning("Không cập nhật được funding %s: %s", symbol, exc)
+                f_failed.append(symbol)
         if failed:
             logger.warning("[F26] %d/%d cặp không cập nhật được dữ liệu %s",
                            len(failed), len(self.config.universe), interval)
+        if f_failed:
+            logger.warning("[F52] %d/%d cặp không cập nhật được funding",
+                           len(f_failed), len(self.config.universe))
         return updated
 
     def load_filters(self) -> Dict[str, SymbolFilters]:
@@ -801,6 +822,25 @@ class CrossSectionalLivePipeline:
                                      f"(trần {self.config.max_data_age_hours}h)")
                 self.store.save(state)
                 return result
+
+            # [FIX F52] Nến tươi KHÔNG có nghĩa funding tươi — hai nguồn, hai đường tải.
+            # Cổng STALE_DATA ở trên chưa từng nhìn funding, nên 14 ngày funding đứng yên
+            # lọt qua mọi lượt. Đo ở NGUỒN (mốc cuối trong file), không đo trên panel đã
+            # ffill. Chỉ áp cho v3: đó là engine daemon chạy và là nơi họ carry quyết định.
+            if self.config.engine == "v3":
+                last = funding_last_ms(list(self.config.universe))
+                f_age = (now_ms - last) / 3_600_000
+                med = float(f_age.median()) if f_age.notna().any() else float("inf")
+                result["funding_age_hours"] = round(med, 2) if np.isfinite(med) else None
+                if not med <= self.config.max_funding_age_hours:
+                    n_old = int((f_age > self.config.max_funding_age_hours).sum()
+                                + f_age.isna().sum())
+                    result.update(action="HALT", reason="STALE_FUNDING",
+                                  detail=f"funding trung vị đã {med:.1f}h tuổi "
+                                         f"(trần {self.config.max_funding_age_hours}h), "
+                                         f"{n_old}/{len(f_age)} cặp quá hạn hoặc thiếu")
+                    self.store.save(state)
+                    return result
 
         # --- 4. Sức chứa vốn ---
         cap = max_positions_for_capital(equity, self.config.leverage,

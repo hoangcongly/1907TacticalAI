@@ -338,6 +338,7 @@ def run_v3(
     n_positions: Optional[int] = None,
     portfolio: Optional[PortfolioSpec] = None,
     sig: Optional[pd.DataFrame] = None,
+    cost_bps: Optional[float] = None,
 ) -> BacktestV2Result:
     """
     Chạy v3 rồi CẮT lợi suất về đoạn `mask` yêu cầu.
@@ -365,8 +366,10 @@ def run_v3(
         spec = replace(spec, n_positions=n_positions)
     W = build_weights(sig, close, spec)
 
+    # `cost_bps` = chi phí một chiều ĐO THẬT, thay cả mô hình (xem `CostModel.flat_bps`).
     cost = CostModel(maker_ratio=maker_ratio, half_spread_bps=0.0,
-                     per_symbol_bps=data.per_symbol_bps * (1 - maker_ratio), min_bps=0.5)
+                     per_symbol_bps=data.per_symbol_bps * (1 - maker_ratio), min_bps=0.5,
+                     flat_bps=cost_bps)
     res = simulate(W, close, data.funding.reindex(marks), cost,
                    bar_hours=cfg.bar_hours * cfg.rebalance_every, rebalance_every=1)
 
@@ -392,6 +395,7 @@ def run_v3_fine(
     cfg: StrategyV3Config = V3,
     mask: Optional[np.ndarray] = None,
     maker_ratio: Optional[float] = None,
+    cost_bps: Optional[float] = None,
 ) -> BacktestV2Result:
     """
     ĐÚNG chiến lược v3 (tái cân bằng 72h), nhưng đường vốn đo trên nến 4h.
@@ -412,8 +416,10 @@ def run_v3_fine(
     sig = combined_signal(data, cfg)
     W = build_weights(sig, close_full.reindex(marks), cfg.portfolio)
 
+    # `cost_bps` = chi phí một chiều ĐO THẬT, thay cả mô hình (xem `CostModel.flat_bps`).
     cost = CostModel(maker_ratio=maker_ratio, half_spread_bps=0.0,
-                     per_symbol_bps=data.per_symbol_bps * (1 - maker_ratio), min_bps=0.5)
+                     per_symbol_bps=data.per_symbol_bps * (1 - maker_ratio), min_bps=0.5,
+                     flat_bps=cost_bps)
     res = simulate_marked_to_market(W, close_full, data.funding, cost,
                                     bar_hours=cfg.bar_hours)
 

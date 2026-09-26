@@ -52,6 +52,29 @@ GIẢM rủi ro. Phần "bạo phát" của DP (tăng đòn bẩy khi đang thua
 về toán nhưng nguy hiểm nhất đúng lúc đường ống xấu nhất, nên phải bật tường minh sau
 khi `readiness_gate.py` mở.
 
+## ✂️ 26/09/2026 — ÍT LỆNH, ÍT ĐỒNG Ở VỐN VÀI TRIỆU. `docs/fewer_trades_plan.md`, `scripts/fewer_trades_study.py`
+
+**Lệnh nhỏ KHÔNG tự làm lời ít đi**: phí Binance tính theo bp, không có phí cố định mỗi
+lệnh. Thứ gắn với cỡ lệnh chỉ là min notional $5 (sàn đòn bẩy 6n/vốn, F54, F55).
+
+Ước lượng ở 3 triệu VND, chi phí thật, có kill 30% (từ `breadth_study.csv` +
+`rebalance_period_study.csv`, CHƯA phải backtest): 12 đồng @1,0x ~22.100 VND/tuần
+(P(kill) 10%); @1,5x ~21.300 (47%); @2x ~11.000 (81%). 8 đồng @1x ~14.000, 6 đồng ~6.900,
+4 đồng lỗ. 144h cắt nửa số lệnh nhưng mất ~60% lời. **Ít đồng hơn thua ở mọi đòn bẩy.**
+Cách giảm lệnh còn mở là nới dải không giao dịch — nay đo được đúng như live.
+
+- `research/trade_band.plan_band_trades`: bản sao trên trọng số của `build_rebalance_plan`
+  (dải, bỏ lệnh mở/tăng < $5, cân trung lập F42). Test đối chiếu 48 sổ ngẫu nhiên
+  (`tests/research/test_trade_band.py`). `simulate_marked_to_market(no_trade_band=,
+  min_trade=)` và `run_v3_fine(no_trade_band=, smooth_halflife=)`; số lệnh ở
+  `meta["orders"]`. Mặc định 0 giữ nguyên mọi con số cũ. ⚠️ Live chạy dải 0,20, còn
+  backtest mặc định tái cân bằng toàn phần — lệch có chủ ý để không đổi số đã ghi.
+- **[FIX F55]** `build_rebalance_plan`: lệnh TĂNG bị bỏ vì < $5 làm vị thế cũ biến mất
+  khỏi gross/net kế hoạch (họ lỗi thứ hai của F42). Đã vá (`tests/execution/test_plan_accounting_f55.py`).
+- `LiveConfig.no_trade_band` đọc khoá `"no_trade_band"` từ JSON, mặc định 0,20 như cũ.
+- Bootstrap + chấm có ngắt mạch dùng chung: `small_capital.block_bootstrap_paths`,
+  `evaluate_paths`.
+
 ## 🚫 26/09/2026 — FOREX Ở VỐN VÀI TRIỆU VND: ĐÃ ĐO, KHÔNG ĐÁNG. `docs/forex_small_capital_plan.md`
 
 Đo trên tỷ giá Fed H.10 thật, 9 đồng chính, 1976–09/2026, tham số lấy nguyên từ bài báo

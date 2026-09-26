@@ -359,9 +359,17 @@ def simulate_marked_to_market(
     funding: Optional[pd.DataFrame] = None,
     cost: Optional[CostModel] = None,
     bar_hours: float = 4.0,
+    no_trade_band: float = 0.0,
+    min_trade: float = 0.0,
+    neutrality_tolerance: float = 0.02,
 ) -> BacktestV2Result:
     """
     Cùng một chiến lược, nhưng đo đường vốn trên lưới NẾN thay vì lưới TÁI CÂN BẰNG.
+
+    `no_trade_band` / `min_trade` / `neutrality_tolerance`: giao dịch như LIVE — bỏ điều
+    chỉnh nhỏ, bỏ lệnh mở/tăng dưới min notional, cân lại trung lập (F42). Xem
+    `research/trade_band.py`. Mặc định 0/0 = tái cân bằng TOÀN PHẦN như mọi con số cũ.
+    Số lệnh mỗi nến nằm ở `meta["orders"]`.
 
     VÌ SAO CẦN HÀM RIÊNG THAY VÌ GỌI `simulate` VỚI LƯỚI MỊN: `simulate` coi mỗi hàng
     của `weights` là một lần TÁI CÂN BẰNG — nó kéo danh mục về đúng trọng số mục tiêu
@@ -408,7 +416,10 @@ def simulate_marked_to_market(
     n = len(idx)
     out_r = np.zeros(n); out_g = np.zeros(n); out_c = np.zeros(n)
     out_f = np.zeros(n); out_t = np.zeros(n); out_n = np.zeros(n)
-    out_net = np.zeros(n); out_gross = np.zeros(n)
+    out_net = np.zeros(n); out_gross = np.zeros(n); out_o = np.zeros(n)
+    live_like = no_trade_band > 0.0 or min_trade > 0.0
+    if live_like:
+        from aegis.research.trade_band import plan_band_trades
 
     # THỨ TỰ LÀ TẤT CẢ. Trọng số mục tiêu tại mốc `ts` được tính từ giá ĐÓNG của `ts`,
     # nên nó chỉ được ăn lợi suất từ `ts` TRỞ ĐI. Làm ngược lại — đặt trọng số rồi áp
@@ -432,7 +443,14 @@ def simulate_marked_to_market(
         # (3) Giao dịch ở giá đóng nến này, tính phí vào chính nến này.
         if ts in rebal_at:
             target = W.loc[ts]
+            if live_like:
+                new, mask = plan_band_trades(w.to_numpy(), target.to_numpy(), no_trade_band,
+                                             min_trade, neutrality_tolerance)
+                target = pd.Series(new, index=cols)
+                out_o[i] = float(mask.sum())
             traded = (target - w).abs()
+            if not live_like:
+                out_o[i] = float((traded > 1e-12).sum())
             out_t[i] = float(traded.sum())
             out_c[i] = float((traded.to_numpy() * cost_vec).sum())
             w = target
@@ -448,5 +466,6 @@ def simulate_marked_to_market(
         funding_pnl=s(out_f), turnover=s(out_t), n_positions=s(out_n),
         net_exposure=s(out_net), gross_exposure=s(out_gross), weights=W,
         meta={"bar_hours": bar_hours, "marked_to_market": True,
-              "n_rebalances": int(len(W)), "cost_bps_mean": float(cost_vec.mean() * 1e4)},
+              "n_rebalances": int(len(W)), "cost_bps_mean": float(cost_vec.mean() * 1e4),
+              "orders": s(out_o), "no_trade_band": no_trade_band, "min_trade": min_trade},
     )

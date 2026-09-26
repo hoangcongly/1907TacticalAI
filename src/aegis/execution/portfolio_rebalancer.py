@@ -213,6 +213,14 @@ def build_rebalance_plan(
             plan.skipped[symbol] = (
                 f"lệnh ${abs(delta)*price:.2f} < min_notional ${filt.min_notional:.2f}"
             )
+            # [FIX F55] Lệnh TĂNG bị bỏ thì vị thế vẫn đứng ở khối lượng cũ — nó vẫn
+            # nằm trong sổ. Bản cũ `continue` thẳng nên nó biến mất khỏi gross/net của
+            # kế hoạch (cùng họ lỗi thứ hai của F42), và `_repair_neutrality` quyết định
+            # trên một sổ sai. Ở vốn nhỏ nhánh này chạy THƯỜNG XUYÊN: mọi điều chỉnh
+            # dưới $5 đều rơi vào đây.
+            if held != 0.0:
+                plan.gross_notional += abs(held) * price
+                plan.net_notional += held * price
             continue
 
         plan.orders.append(RebalanceOrder(

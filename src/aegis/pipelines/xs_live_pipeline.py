@@ -36,7 +36,8 @@ from aegis.data.ingestion.binance_history import (
 from aegis.data.ingestion.binance_rest import BinanceFuturesREST
 from aegis.data.panel import load_funding_panel, load_panel
 from aegis.execution.portfolio_rebalancer import (
-    RebalancePlan, SymbolFilters, build_rebalance_plan, max_positions_for_capital,
+    DEFAULT_NO_TRADE_BAND, RebalancePlan, SymbolFilters, build_rebalance_plan,
+    max_positions_for_capital,
 )
 from aegis.oms.order_router import BinanceOrderRouter
 from aegis.oms.reconciliation import ReconciliationError, assert_clean_or_raise, reconcile
@@ -128,6 +129,10 @@ class LiveConfig:
     min_quote_volume_24h: float = 5e6
     max_net_exposure: float = 0.02     # trần |net|/gross sau khi thực thi [FIX F25]
     max_gross_error: float = 0.15      # sai lệch đòn bẩy gộp cho phép [FIX F29]
+    #: Bỏ điều chỉnh nhỏ hơn tỷ lệ này × vị thế đích. Đọc từ khoá `"no_trade_band"` của
+    #: JSON; mặc định = hằng số cũ 0,20 nên file không có khoá chạy y như trước. Rộng hơn
+    #: là ít lệnh hơn — đo đánh đổi bằng `scripts/fewer_trades_study.py`.
+    no_trade_band: float = DEFAULT_NO_TRADE_BAND
     signals: List[str] = field(default_factory=lambda: [
         "funding_carry", "momentum_90", "ofi_flow", "funding_mom",
     ])
@@ -200,6 +205,7 @@ class LiveConfig:
                 n_tranches=int(inner.get("n_tranches", 1)),
                 rebalance_hours=(float(inner.get("period_hours", 72.0))
                                  / int(inner.get("n_tranches", 1))),
+                no_trade_band=float(inner.get("no_trade_band", DEFAULT_NO_TRADE_BAND)),
                 weight_mode=port.get("mode", "zscore_riskparity"),
                 max_weight=float(port.get("max_weight", 0.20)),
                 combiner_lookback=int(comb.get("lookback", 500)),
@@ -962,6 +968,7 @@ class CrossSectionalLivePipeline:
             # dải không giao dịch phá net exposure, và mãi tới bước 6b — khi lệnh ĐÃ
             # nằm trên sàn — mới có thứ đo nó. Chặn trước rẻ hơn hét sau.
             neutrality_tolerance=self.config.max_net_exposure,
+            no_trade_band=self.config.no_trade_band,
         )
         result.update(n_orders=len(plan.orders), turnover=plan.total_turnover,
                       gross_notional=plan.gross_notional, skipped=len(plan.skipped),

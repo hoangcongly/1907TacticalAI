@@ -421,9 +421,16 @@ def run_v3_fine(
     sig: Optional[pd.DataFrame] = None,
     capital_usd: Optional[float] = None,
     leverage: Optional[float] = None,
+    no_trade_band: float = 0.0,
+    smooth_halflife: Optional[float] = None,
 ) -> BacktestV2Result:
     """
     ĐÚNG chiến lược v3 (tái cân bằng 72h), nhưng đường vốn đo trên nến 4h.
+
+    `no_trade_band` > 0: giao dịch như live (`research/trade_band.py`) — bỏ điều chỉnh
+    nhỏ, bỏ lệnh mở/tăng dưới min notional ở `capital_usd` × `leverage`, cân lại trung
+    lập. Live đang chạy dải 0,20; mặc định 0 giữ nguyên mọi con số cũ.
+    `smooth_halflife`: làm mượt điểm tổng hợp (chỉ nghiên cứu, live chưa có).
 
     `sig` = tín hiệu gộp tính sẵn bằng `combined_signal(data, cfg)` — tái dùng khi quét
     nhiều cấu hình DANH MỤC trên cùng tầng gộp (tầng gộp không phụ thuộc danh mục).
@@ -440,6 +447,8 @@ def run_v3_fine(
     hai mốc tái cân bằng thay vì kéo về mục tiêu mỗi nến.
     """
     if cfg.n_tranches > 1:
+        if no_trade_band or smooth_halflife:
+            raise ValueError("chia lô chưa hỗ trợ dải không giao dịch / làm mượt")
         return run_v3_tranched(data, cfg, mask=mask, maker_ratio=maker_ratio,
                                cost_bps=cost_bps, capital_usd=capital_usd, leverage=leverage)
     maker_ratio = cfg.maker_ratio if maker_ratio is None else maker_ratio
@@ -450,15 +459,21 @@ def run_v3_fine(
     # nên nạp dữ liệu một lần cho nhiều cấu hình là âm thầm chạy sai bộ tín hiệu.
     if sig is None:
         sig = combined_signal(data, cfg)
+    if smooth_halflife:
+        from aegis.research.trade_band import smooth_signal
+        sig = smooth_signal(sig, smooth_halflife)
     W = _live_orderable(build_weights(sig, close_full.reindex(marks), cfg.portfolio),
                         cfg, capital_usd, leverage)
+    min_trade = (cfg.min_notional_usd / (capital_usd * leverage)
+                 if capital_usd and leverage else 0.0)
 
     # `cost_bps` = chi phí một chiều ĐO THẬT, thay cả mô hình (xem `CostModel.flat_bps`).
     cost = CostModel(maker_ratio=maker_ratio, half_spread_bps=0.0,
                      per_symbol_bps=data.per_symbol_bps * (1 - maker_ratio), min_bps=0.5,
                      flat_bps=cost_bps)
     res = simulate_marked_to_market(W, close_full, data.funding, cost,
-                                    bar_hours=cfg.bar_hours)
+                                    bar_hours=cfg.bar_hours, no_trade_band=no_trade_band,
+                                    min_trade=min_trade if no_trade_band else 0.0)
 
     if mask is None:
         return res

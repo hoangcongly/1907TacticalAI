@@ -52,7 +52,7 @@ import numpy as np
 import pandas as pd
 
 from aegis.research.small_capital import (
-    drop_below_min_notional, drop_stats, equity_with_breakers, min_leverage,
+    block_bootstrap_paths, drop_below_min_notional, drop_stats, evaluate_paths, min_leverage,
 )
 from aegis.research.strategy_v3 import (
     combined_signal, config_from_json, load_v3_data, run_v3_fine,
@@ -79,30 +79,6 @@ FAMILIES = (
     ("zscore trần 1/n", "zscore_riskparity", lambda n: 1.0 / n),
     ("đều tuyệt đối", "rank_binary", lambda n: 1.0),
 )
-
-
-def block_paths(r: np.ndarray, n_bars: int, n_paths: int, seed: int) -> np.ndarray:
-    """Đường lợi suất (n_paths, n_bars) lấy mẫu theo KHỐI 72h — giữ cụm biến động."""
-    rng = np.random.default_rng(seed)
-    nb = int(np.ceil(n_bars / BLOCK))
-    starts = rng.integers(0, len(r) - BLOCK, size=(n_paths, nb))
-    idx = (starts[:, :, None] + np.arange(BLOCK)[None, None, :]).reshape(n_paths, -1)
-    return r[idx[:, :n_bars]]
-
-
-def evaluate(paths: np.ndarray, lev: float) -> dict:
-    """Hai phép chấm trên CÙNG các đường: không ngắt mạch (rủi ro gốc) và có ngắt mạch như live."""
-    eq = np.cumprod(np.maximum(1.0 + lev * paths, 0.0), axis=1)
-    dead = (eq <= 0.10).any(axis=1)                # cháy là HẤP THỤ, không bị lọc bỏ
-    live = equity_with_breakers(paths, lev, rebalance_every=BLOCK)
-    fin = live["final"]
-    return {"median_raw": float(np.median(np.where(dead, 0.0, eq[:, -1]))),
-            "p_ruin": float(dead.mean()),
-            "median_live": float(np.median(fin)),
-            "p10_live": float(np.percentile(fin, 10)),
-            "p_kill": float(live["killed"].mean()),
-            "p_loss_live": float((fin < 1.0).mean()),
-            "tier1_share": float(live["tier1_share"].mean())}
 
 
 def weekly(x: float) -> float:
@@ -193,12 +169,13 @@ def main(argv=None) -> int:
                     if len(rv) < BLOCK * 20:
                         continue
                     seed = zlib.crc32(f"{fam}|{n}|{bname}".encode())   # tái lập được
-                    paths = block_paths(rv, BARS_YEAR, a.paths, seed=seed)
+                    paths = block_bootstrap_paths(rv, BARS_YEAR, a.paths, seed, BLOCK)
                     rows.append({"weighting": fam, "mode": mode, "max_weight": cap_fn(n),
                                  "n": n, "L": L, "L_min": lmin, "basis": bname,
                                  "sharpe_4h": float(rv.mean() / rv.std(ddof=1)
                                                     * np.sqrt(BARS_YEAR)),
-                                 "worst72_at_L": worst72 * L, **ds, **evaluate(paths, L)})
+                                 "worst72_at_L": worst72 * L, **ds,
+                                 **evaluate_paths(paths, L, BLOCK)})
             print(f"  xong: {fam}, n={n} (L sàn {lmin:.2f}x, {len(cache)} lần mô phỏng)",
                   flush=True)
 

@@ -30,7 +30,7 @@ import numpy as np
 import pandas as pd
 
 __all__ = ["drop_below_min_notional", "min_leverage", "drop_stats", "equity_with_breakers",
-           "TIER1_DD", "TIER3_DD"]
+           "block_bootstrap_paths", "evaluate_paths", "TIER1_DD", "TIER3_DD"]
 
 #: Cùng ngưỡng với `xs_live_pipeline` (TIER1 cắt nửa vị thế, TIER3 kill switch).
 TIER1_DD, TIER3_DD = 0.10, 0.30
@@ -115,3 +115,28 @@ def equity_with_breakers(paths: np.ndarray, leverage: float, rebalance_every: in
         peak = np.maximum(peak, eq)
         alive &= eq / peak > 1.0 - tier3
     return {"final": eq, "killed": ~alive, "tier1_share": halved / max(marks, 1)}
+
+
+def block_bootstrap_paths(r: np.ndarray, n_bars: int, n_paths: int, seed: int,
+                          block: int = 18) -> np.ndarray:
+    """Đường lợi suất (n_paths, n_bars) lấy mẫu theo KHỐI `block` nến — giữ cụm biến động."""
+    rng = np.random.default_rng(seed)
+    nb = int(np.ceil(n_bars / block))
+    starts = rng.integers(0, len(r) - block, size=(n_paths, nb))
+    idx = (starts[:, :, None] + np.arange(block)[None, None, :]).reshape(n_paths, -1)
+    return r[idx[:, :n_bars]]
+
+
+def evaluate_paths(paths: np.ndarray, lev: float, rebalance_every: int = 18) -> Dict[str, float]:
+    """Hai phép chấm trên CÙNG các đường: không ngắt mạch (rủi ro gốc) và có ngắt mạch như live."""
+    eq = np.cumprod(np.maximum(1.0 + lev * paths, 0.0), axis=1)
+    dead = (eq <= 0.10).any(axis=1)                # cháy là HẤP THỤ, không bị lọc bỏ
+    live = equity_with_breakers(paths, lev, rebalance_every=rebalance_every)
+    fin = live["final"]
+    return {"median_raw": float(np.median(np.where(dead, 0.0, eq[:, -1]))),
+            "p_ruin": float(dead.mean()),
+            "median_live": float(np.median(fin)),
+            "p10_live": float(np.percentile(fin, 10)),
+            "p_kill": float(live["killed"].mean()),
+            "p_loss_live": float((fin < 1.0).mean()),
+            "tier1_share": float(live["tier1_share"].mean())}

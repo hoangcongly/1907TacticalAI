@@ -52,6 +52,57 @@ GIẢM rủi ro. Phần "bạo phát" của DP (tăng đòn bẩy khi đang thua
 về toán nhưng nguy hiểm nhất đúng lúc đường ống xấu nhất, nên phải bật tường minh sau
 khi `readiness_gate.py` mở.
 
+## 💸 26/09/2026 — VỐN CỐ ĐỊNH 1 TRIỆU VND (~$38): TÍNH LẠI TỪ ĐẦU. `scripts/small_capital_study.py`
+
+Mọi cấu hình từ 18/09 được chọn ở vốn testnet $5.000 rồi mới mang sang vốn thật. Ở $38
+có ba ràng buộc mà backtest cũ không thấy, và chính chúng quyết định kết quả, không
+phải Sharpe:
+
+1. **Min notional ép đòn bẩy.** Mỗi lệnh phải ≥ $6 ($5 × an toàn 1,2), nên n vị thế
+   cần ít nhất 6n/38 lần đòn bẩy. n=50 bị ÉP lên 7,89x; daemon chạy `--leverage 5` thì
+   F43 cắt còn khoảng 30 vị thế.
+2. **F54: live BỎ mọi vị thế dưới $5, backtest thì KHÔNG. ĐÃ VÁ phía đo.**
+   `build_rebalance_plan` quy vị thế mục tiêu < min_notional về 0 và không co giãn lại
+   phần còn lại. `zscore_riskparity` với trần 0,2 cho trọng số chênh nhau nhiều lần, nên
+   ở $38 các vị thế nhỏ bị bỏ, sổ co lại và lệch trung lập (cổng F25 báo
+   NEUTRALITY_BREACH). Vá: `research/small_capital.drop_below_min_notional`, và
+   `run_v3_fine(..., capital_usd=, leverage=)`. Test đối chiếu thẳng với
+   `build_rebalance_plan` (`tests/research/test_small_capital_f54.py`, 30 test). Trọng
+   số ĐỀU (`rank_binary`) ở đòn bẩy sàn không mất vị thế nào.
+3. **Ngắt mạch tính trên sụt giảm EQUITY chiếm phần lớn kết quả.** Kill 30% bắn ở
+   60–100% số đường trong vòng một năm, ở MỌI cấu hình khả thi. Ngoài ra,
+   ⚠️ **kill tự động KHÔNG đóng vị thế**: `_check_circuit_breaker` chỉ đặt `is_dead`
+   rồi HALT, sổ cũ vẫn nằm trên sàn. Chỉ `/kill` (telegram) hoặc
+   `run_daily.py --kill` mới đóng. CHƯA ĐỔI, cần người quyết.
+
+**Ước lượng** (mô phỏng lợi suất Student-t df=4 hiệu chỉnh theo số đã đo, chưa có cụm
+biến động; đã trừ thêm 14,9%/năm cho chi phí 15,7bp. Đây KHÔNG phải backtest thật,
+vì container không có `data/`):
+
+| cấu hình | L | không ngắt mạch: x/năm tv | P(lỗ) | P(cháy) | kill 30% như live: x/năm | P(kill) |
+|---|---|---|---|---|---|---|
+| V3 n=10 (toàn LS) | 1,58x | 1,89 | 21% | 0,1% | 1,17 | 68% |
+| **V3 n=12 (toàn LS)** | **1,89x** | **2,36** | 16% | 0,1% | **1,22** | 78% |
+| V3 n=12 (holdout 4h, S=1,10) | 1,89x | 1,40 | 39% | 3,1% | 0,95 | 99% |
+| n=30 @5x (daemon ở $38 sau F43; kỷ nguyên ≥100) | 5,00x | — | — | 16% | 0,90 | 100% |
+| **n=50 đều (toàn LS)** | **7,89x** | **0,37** | 64% | **41%** | 0,88 | 100% |
+| n=50 đều (kỷ nguyên ≥100) | 7,89x | 3,39 | 26% | 7,4% | 0,96 | 100% |
+
+**Kết luận.** Cấu hình wide (n=50) SAI về cấu trúc ở vốn 1 triệu: trên toàn lịch sử,
+tăng trưởng của nó ÂM và xác suất cháy là 41%. Tăng đòn bẩy ở vốn này chỉ làm tệ
+đi, ở mọi hàng của bảng. Ứng viên tốt nhất có bằng chứng là **V3 12 vị thế ở đúng
+đòn bẩy sàn (~1,9x)**, tức `artifacts/strategy_v3.json`. Trung vị khoảng
+**+0,4%/tuần (~4.000 VND) nếu kill 30% dừng hẳn hệ thống**, và 1,0–1,6%/tuần
+(10–16 nghìn VND) nếu chạy xuyên sụt giảm. Cơ sở holdout nói còn thấp hơn.
+
+**Việc phải chạy trên máy có `data/`** (luật chọn đã chốt trước, in ra trong script):
+```bash
+python scripts/small_capital_study.py          # ~30-60 phút; ghi artifacts/strategy_v3_small.json
+```
+Script so ba cách đánh trọng số (V3 trần 0,2 / zscore trần 1/n / đều tuyệt đối) × n ×
+L, có F54, có ngắt mạch như live, trên bootstrap khối 72h. Đổi daemon sang file đó là
+thay đổi đường tiền, nên người vận hành phải tự làm (kèm `--leverage` script in ra).
+
 ## 🚫 24/09/2026 — "+20% MỖI TUẦN, BẰNG MỌI CÁCH": ĐÃ ĐO. KHÔNG BẢO ĐẢM ĐƯỢC. `scripts/weekly_target_study.py`
 
 +20%/tuần gộp lại là **×13.105/năm**, và muốn nó BỀN VỮNG thì cần Sharpe **4,35**

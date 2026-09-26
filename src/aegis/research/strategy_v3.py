@@ -401,15 +401,36 @@ def split_train_holdout(data: V3Data, cfg: StrategyV3Config = V3, **kw):
             run_v3(data, cfg, mask=idx >= data.split_ts, **kw))
 
 
+def _live_orderable(W: pd.DataFrame, cfg: StrategyV3Config,
+                    capital_usd: Optional[float], leverage: Optional[float]) -> pd.DataFrame:
+    """[FIX F54] Bỏ vị thế dưới min notional như live, khi đã cho vốn + đòn bẩy."""
+    if capital_usd is None and leverage is None:
+        return W
+    if capital_usd is None or leverage is None:
+        raise ValueError("capital_usd và leverage phải đi CÙNG nhau — thiếu một là lọc sai")
+    from aegis.research.small_capital import drop_below_min_notional
+    return drop_below_min_notional(W, capital_usd, leverage, cfg.min_notional_usd)
+
+
 def run_v3_fine(
     data: V3Data,
     cfg: StrategyV3Config = V3,
     mask: Optional[np.ndarray] = None,
     maker_ratio: Optional[float] = None,
     cost_bps: Optional[float] = None,
+    sig: Optional[pd.DataFrame] = None,
+    capital_usd: Optional[float] = None,
+    leverage: Optional[float] = None,
 ) -> BacktestV2Result:
     """
     ĐÚNG chiến lược v3 (tái cân bằng 72h), nhưng đường vốn đo trên nến 4h.
+
+    `sig` = tín hiệu gộp tính sẵn bằng `combined_signal(data, cfg)` — tái dùng khi quét
+    nhiều cấu hình DANH MỤC trên cùng tầng gộp (tầng gộp không phụ thuộc danh mục).
+
+    `capital_usd` + `leverage` [FIX F54]: bỏ mọi vị thế có notional < min notional ở
+    đúng vốn và đòn bẩy đó, như live làm (`research/small_capital.py`). Bỏ trống = giả
+    định mọi vị thế đặt được, chỉ đúng ở vốn đủ lớn.
 
     Dùng để (a) đo sụt giảm TRONG KỲ mà lưới 72h không nhìn thấy, và (b) có đủ điểm
     quyết định cho bài toán điều khiển đòn bẩy — xem `research/goal_dp.py`.
@@ -420,15 +441,17 @@ def run_v3_fine(
     """
     if cfg.n_tranches > 1:
         return run_v3_tranched(data, cfg, mask=mask, maker_ratio=maker_ratio,
-                               cost_bps=cost_bps)
+                               cost_bps=cost_bps, capital_usd=capital_usd, leverage=leverage)
     maker_ratio = cfg.maker_ratio if maker_ratio is None else maker_ratio
     close_full = data.close
 
     marks = close_full.index[::cfg.rebalance_every]
     # [FIX F39] Lọc tín hiệu theo CẤU HÌNH như `run_v3`. Bản cũ gộp CẢ `data.signals`,
     # nên nạp dữ liệu một lần cho nhiều cấu hình là âm thầm chạy sai bộ tín hiệu.
-    sig = combined_signal(data, cfg)
-    W = build_weights(sig, close_full.reindex(marks), cfg.portfolio)
+    if sig is None:
+        sig = combined_signal(data, cfg)
+    W = _live_orderable(build_weights(sig, close_full.reindex(marks), cfg.portfolio),
+                        cfg, capital_usd, leverage)
 
     # `cost_bps` = chi phí một chiều ĐO THẬT, thay cả mô hình (xem `CostModel.flat_bps`).
     cost = CostModel(maker_ratio=maker_ratio, half_spread_bps=0.0,
@@ -455,6 +478,8 @@ def run_v3_tranched(
     maker_ratio: Optional[float] = None,
     cost_bps: Optional[float] = None,
     cache: Optional[dict] = None,
+    capital_usd: Optional[float] = None,
+    leverage: Optional[float] = None,
 ) -> BacktestV2Result:
     """
     Chiến lược v3 CHIA LÔ, đường vốn trên nến 4h — CÙNG hàm trọng số với live
@@ -479,6 +504,7 @@ def run_v3_tranched(
     W = tranched_weight_panel({n: data.signals[n] for n in names}, close_full,
                               cfg.rebalance_every, k, cfg.combiner, cfg.portfolio,
                               cfg.top_frac, phase=phase, cache=cache)
+    W = _live_orderable(W, cfg, capital_usd, leverage)
     cost = CostModel(maker_ratio=maker_ratio, half_spread_bps=0.0,
                      per_symbol_bps=data.per_symbol_bps * (1 - maker_ratio), min_bps=0.5,
                      flat_bps=cost_bps)

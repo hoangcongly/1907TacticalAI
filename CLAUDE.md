@@ -52,6 +52,17 @@ GIẢM rủi ro. Phần "bạo phát" của DP (tăng đòn bẩy khi đang thua
 về toán nhưng nguy hiểm nhất đúng lúc đường ống xấu nhất, nên phải bật tường minh sau
 khi `readiness_gate.py` mở.
 
+## 🚫 26/09/2026 — FOREX Ở VỐN VÀI TRIỆU VND: ĐÃ ĐO, KHÔNG ĐÁNG. `docs/forex_small_capital_plan.md`
+
+Đo trên tỷ giá Fed H.10 thật, 9 đồng chính, 1976–09/2026, tham số lấy nguyên từ bài báo
+(`scripts/fx_small_capital_study.py`, cần clone `datasets/exchange-rates` vào
+`../datasets/`). TSMOM (MOP 2012), TREND 1/3/12 (HOP 2017), XS-MOM (Menkhoff 2012),
+MA 50/200: Sharpe sau chi phí bán lẻ **âm ở mọi chiến lược từ 1999**, và âm cả TRƯỚC
+chi phí từ 2010 (TREND −0,28 gộp, −0,47 ròng). Lô 0,01 ≈ $1.000 nên 3 triệu VND chỉ
+vào được MỘT lệnh ở 8,8x: biến động 76%/năm, mất trắng 2010–nay. Danh mục đa dạng cần
+~38 triệu VND (lô 0,001) hoặc ~383 triệu (lô 0,01). Pháp lý: NHNN không cấp phép sàn
+forex nào. Carry chưa kiểm (không có dữ liệu lãi suất).
+
 ## 💸 26/09/2026 — VỐN CỐ ĐỊNH 1 TRIỆU VND (~$38): TÍNH LẠI TỪ ĐẦU. `scripts/small_capital_study.py`
 
 Mọi cấu hình từ 18/09 được chọn ở vốn testnet $5.000 rồi mới mang sang vốn thật. Ở $38

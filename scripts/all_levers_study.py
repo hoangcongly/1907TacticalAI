@@ -2,14 +2,10 @@
 """
 MỌI CÁCH giảm số đồng, giảm số lệnh, tăng lời ở vốn vài triệu VND — đo trên DỮ LIỆU THẬT.
 
-Dữ liệu: Bybit USDT perp, nến 1 phút gộp lên 1h (`meldar1986/bybit-1m-data`, release v1),
-285 hợp đồng GỒM 185 hợp đồng đã huỷ niêm yết (chống thiên lệch sống sót), 01/2024 ->
-05/2026. OFI ước lượng bằng phân loại khối lượng (BVC). Funding chỉ có cho 100 hợp đồng
-còn sống: cặp thiếu funding giữ lại, tín hiệu carry của nó là NaN. Chuẩn bị dữ liệu:
-`scripts/fetch_bybit_1m.py`.
-
-Đây là sàn KHÁC với sàn live (Binance) và giai đoạn KHÁC một phần với mọi nghiên cứu cũ —
-tức là một phép TÁI LẬP độc lập, không phải chấm lại trên cùng dữ liệu đã dùng để chọn.
+Dữ liệu: BINANCE USDⓈ-M — đúng sàn và đúng rổ live (`data/binance`, rổ
+`artifacts/universe_wide.json`, 127 cặp). Chạy trên máy có `data/` (máy Mac), hoặc trong
+container sau khi mở Network access cho `data.binance.vision` và `fapi.binance.com` rồi tải
+bằng `scripts/download_wide_universe.py`.
 
 Mọi cấu hình giao dịch NHƯ LIVE: bỏ vị thế và lệnh mở/tăng dưới $5 ở đúng vốn × đòn bẩy
 (F54/F55), dải không giao dịch, cân lại trung lập (F42); chi phí thật 15,7bp/chiều; chỉ
@@ -37,8 +33,9 @@ là trong nhiễu, không được coi là cải thiện.
 ⚠️ Cửa sổ đánh giá ~16 tháng. Quét nhiều cấu hình trên một cửa sổ ngắn là chọn lọc nhiều
 lần: đọc P(hơn gốc), đừng đọc riêng con số lớn nhất.
 
-    python scripts/all_levers_study.py
-    python scripts/all_levers_study.py --capital-vnd 5000000 --paths 2000
+    python scripts/all_levers_study.py                          # Binance, 3 triệu VND
+    python scripts/all_levers_study.py --capital-vnd 5000000
+    python scripts/all_levers_study.py --eval-start 2025-02-01  # chỉ kỷ nguyên >=100 cặp
 """
 import argparse
 import sys
@@ -57,10 +54,11 @@ from aegis.research.strategy_v3 import combined_signal, config_from_json, load_v
 from aegis.research.trade_band import smooth_signal
 from aegis.risk.portfolio import build_weights
 
-DATA_ROOT = "../bybit_data/layout"
+DATA_ROOT = "data/binance"
+UNIVERSE = "artifacts/universe_wide.json"
 BASE_CONFIG = "artifacts/strategy_v3.json"
 OUT_CSV = "artifacts/all_levers_study.csv"
-EVAL_START = "2025-02-01"
+EVAL_START = "2021-07-01"          # sau 1 năm khởi động tầng gộp; --eval-start 2025-02-01 = kỷ nguyên >=100 cặp
 VND_PER_USD = 26_300.0
 BARS_YEAR = 2190
 BLOCK = 18
@@ -70,10 +68,9 @@ MAJORS = ("BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT")
 
 
 # ---------------------------------------------------------------------------- dữ liệu
-def load(data_root: str):
-    syms = sorted(p.name[:-len("_1h.parquet")] for p in Path(data_root).glob("*_1h.parquet"))
-    cfg0 = replace(config_from_json(BASE_CONFIG), n_tranches=1)
-    data = load_v3_data(cfg0, data_root=data_root, symbols=syms, keep_unfunded=True)
+def load(data_root: str, universe: str):
+    cfg0 = replace(config_from_json(BASE_CONFIG), n_tranches=1, universe_file=universe)
+    data = load_v3_data(cfg0, data_root=data_root)
     close = data.close
     dv = (close * data.panel["volume"]).rolling(180, min_periods=90).sum() / 30.0
     return cfg0, data, dv
@@ -88,11 +85,11 @@ def liquid_mask(dv_marks: pd.DataFrame, topk=None) -> pd.DataFrame:
 
 # ---------------------------------------------------------------------------- chạy
 class Runner:
-    def __init__(self, cfg0, data, dv, capital_usd, cost_bps, paths):
+    def __init__(self, cfg0, data, dv, capital_usd, cost_bps, paths, eval_start=EVAL_START):
         self.cfg0, self.data, self.dv = cfg0, data, dv
         self.cap, self.cost, self.paths = capital_usd, cost_bps, paths
         self.sigs = {}
-        self.eval_ms = int(pd.Timestamp(EVAL_START, tz="UTC").value // 10**6)
+        self.eval_ms = int(pd.Timestamp(eval_start, tz="UTC").value // 10**6)
         self.base = None
 
     def sig(self, period: int) -> pd.DataFrame:
@@ -217,18 +214,21 @@ def pick(rows):
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-root", default=DATA_ROOT)
+    ap.add_argument("--universe", default=UNIVERSE)
+    ap.add_argument("--eval-start", default=EVAL_START)
     ap.add_argument("--capital-vnd", type=float, default=3_000_000.0)
     ap.add_argument("--cost-bps", type=float, default=15.7)
     ap.add_argument("--paths", type=int, default=2000)
     a = ap.parse_args(argv)
     if not Path(a.data_root).exists():
-        sys.exit(f"thiếu {a.data_root} — chạy fetch_resample.py trước")
+        sys.exit(f"thiếu {a.data_root}: chạy trên máy có dữ liệu Binance, hoặc tải bằng "
+                 f"scripts/download_wide_universe.py")
     cap = a.capital_vnd / VND_PER_USD
-    cfg0, data, dv = load(a.data_root)
-    R = Runner(cfg0, data, dv, cap, a.cost_bps, a.paths)
+    cfg0, data, dv = load(a.data_root, a.universe)
+    R = Runner(cfg0, data, dv, cap, a.cost_bps, a.paths, a.eval_start)
     close = data.close
     print(f"dữ liệu: {close.shape[1]} cặp, {pd.to_datetime(close.index[0], unit='ms').date()} -> "
-          f"{pd.to_datetime(close.index[-1], unit='ms').date()}, chấm từ {EVAL_START}; "
+          f"{pd.to_datetime(close.index[-1], unit='ms').date()}, chấm từ {a.eval_start}; "
           f"cặp đạt thanh khoản trung vị/kỳ: "
           f"{int((dv >= MIN_DV_DAY).sum(axis=1)[close.index >= R.eval_ms].median())}", flush=True)
 

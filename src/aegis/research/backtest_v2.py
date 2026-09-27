@@ -362,6 +362,7 @@ def simulate_marked_to_market(
     no_trade_band: float = 0.0,
     min_trade: float = 0.0,
     neutrality_tolerance: float = 0.02,
+    partial: float = 1.0,
 ) -> BacktestV2Result:
     """
     Cùng một chiến lược, nhưng đo đường vốn trên lưới NẾN thay vì lưới TÁI CÂN BẰNG.
@@ -370,6 +371,9 @@ def simulate_marked_to_market(
     chỉnh nhỏ, bỏ lệnh mở/tăng dưới min notional, cân lại trung lập (F42). Xem
     `research/trade_band.py`. Mặc định 0/0 = tái cân bằng TOÀN PHẦN như mọi con số cũ.
     Số lệnh mỗi nến nằm ở `meta["orders"]`.
+
+    `partial` < 1: mỗi mốc chỉ đi `partial` phần quãng đường tới đích (Gârleanu &
+    Pedersen 2013). CHỈ nghiên cứu — live luôn đi hết quãng đường.
 
     VÌ SAO CẦN HÀM RIÊNG THAY VÌ GỌI `simulate` VỚI LƯỚI MỊN: `simulate` coi mỗi hàng
     của `weights` là một lần TÁI CÂN BẰNG — nó kéo danh mục về đúng trọng số mục tiêu
@@ -443,6 +447,9 @@ def simulate_marked_to_market(
         # (3) Giao dịch ở giá đóng nến này, tính phí vào chính nến này.
         if ts in rebal_at:
             target = W.loc[ts]
+            if partial < 1.0:
+                target = w + partial * (target - w)
+                target[target.abs() < 1e-12] = 0.0
             if live_like:
                 new, mask = plan_band_trades(w.to_numpy(), target.to_numpy(), no_trade_band,
                                              min_trade, neutrality_tolerance)

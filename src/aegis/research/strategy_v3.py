@@ -247,7 +247,9 @@ class V3Data:
 
 
 def load_v3_data(cfg: StrategyV3Config = V3, verbose: bool = True,
-                 end_ms: Optional[int] = None, with_metrics: bool = False) -> V3Data:
+                 end_ms: Optional[int] = None, with_metrics: bool = False,
+                 data_root: Optional[str] = None, symbols: Optional[List[str]] = None,
+                 keep_unfunded: bool = False) -> V3Data:
     """
     Nạp panel, funding và dựng toàn bộ tín hiệu TRÊN TOÀN CHUỖI.
 
@@ -258,17 +260,26 @@ def load_v3_data(cfg: StrategyV3Config = V3, verbose: bool = True,
 
     `end_ms` cắt panel TRƯỚC khi lọc `min_coverage`, nên nó ghim luôn cả THÀNH PHẦN
     rổ — đó là điều kiện đủ để tái lập một kết quả cũ (xem `V3_VINTAGE_MS`).
+
+    `data_root` / `symbols`: nạp từ thư mục khác cùng định dạng (vd dữ liệu Bybit,
+    `scripts/bybit_replication.py`). `keep_unfunded`: GIỮ cặp không có file funding (tín
+    hiệu carry của nó là NaN, tầng gộp dùng các họ còn lại). Mặc định `align_panel` bỏ
+    các cặp đó — với một bộ dữ liệu chỉ có funding cho cặp CÒN SỐNG, bỏ chúng là tái
+    tạo thiên lệch sống sót.
     """
     import json
 
     from aegis.data.panel_v2 import align_panel, load_funding_panel_v2, load_panel_v2
 
-    syms = json.load(open(cfg.universe_file))
+    syms = list(symbols) if symbols is not None else json.load(open(cfg.universe_file))
+    root_kw = {"root": data_root} if data_root else {}
     if verbose:
         print(f"nạp panel: {len(syms)} cặp, {cfg.interval} (từ {cfg.source_interval})...", flush=True)
     panel = load_panel_v2(syms, cfg.interval, source_interval=cfg.source_interval,
-                          min_coverage=cfg.min_coverage, end_ms=end_ms)
-    funding = load_funding_panel_v2(syms, panel["close"].index)
+                          min_coverage=cfg.min_coverage, end_ms=end_ms, **root_kw)
+    funding = load_funding_panel_v2(syms, panel["close"].index, **root_kw)
+    if keep_unfunded:
+        funding = funding.reindex(columns=panel["close"].columns)
     panel, funding = align_panel(panel, funding)
 
     if with_metrics:

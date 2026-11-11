@@ -22,7 +22,7 @@ tụt, ta biết tầng nào gây ra.
 """
 
 from dataclasses import dataclass, field, asdict
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -48,13 +48,19 @@ class StrategyV2Config:
     universe_file: str = "artifacts/universe_filtered.json"
     interval: str = "4h"
     source_interval: str = "1h"
-    rebalance_every: int = 6           # số nến giữa hai lần tái cân bằng
+    rebalance_every: int = 6  # số nến giữa hai lần tái cân bằng
     families: List[str] = field(default_factory=lambda: list(FAMILIES))
 
-    portfolio: PortfolioSpec = field(default_factory=lambda: PortfolioSpec(
-        mode="zscore_riskparity", top_frac=0.10, beta_neutral=True, max_weight=0.20))
-    combiner: CombinerSpec = field(default_factory=lambda: CombinerSpec(
-        lookback=500, min_periods=90, t_threshold=1.5, max_step=0.10))
+    portfolio: PortfolioSpec = field(
+        default_factory=lambda: PortfolioSpec(
+            mode="zscore_riskparity", top_frac=0.10, beta_neutral=True, max_weight=0.20
+        )
+    )
+    combiner: CombinerSpec = field(
+        default_factory=lambda: CombinerSpec(
+            lookback=500, min_periods=90, t_threshold=1.5, max_step=0.10
+        )
+    )
     leverage: LeverageSpec = field(default_factory=LeverageSpec)
 
     maker_ratio: float = 0.5
@@ -65,6 +71,7 @@ class StrategyV2Config:
 
     def bar_hours(self) -> float:
         from aegis.data.panel_v2 import interval_hours
+
         return interval_hours(self.interval)
 
     def period_hours(self) -> float:
@@ -88,8 +95,12 @@ class StrategyV2:
         self.diagnostics: Dict = {}
 
     # -- tầng 1 + 2 ---------------------------------------------------------
-    def score(self, panel: Dict[str, pd.DataFrame], funding: pd.DataFrame,
-              marks: Optional[pd.Index] = None) -> pd.DataFrame:
+    def score(
+        self,
+        panel: Dict[str, pd.DataFrame],
+        funding: pd.DataFrame,
+        marks: Optional[pd.Index] = None,
+    ) -> pd.DataFrame:
         """
         Điểm số tổng hợp trên lưới tái cân bằng.
 
@@ -99,12 +110,16 @@ class StrategyV2:
         """
         fam_full = build_all_families(panel, funding, families=self.cfg.families)
         close = panel["close"]
-        marks = marks if marks is not None else close.index[::self.cfg.rebalance_every]
+        marks = marks if marks is not None else close.index[:: self.cfg.rebalance_every]
 
         fam = {k: v.reindex(marks) for k, v in fam_full.items()}
         combined, weights, fac = combine_adaptive(
-            fam, close.reindex(marks), self.cfg.combiner,
-            top_frac=self.cfg.portfolio.top_frac, return_diagnostics=True)
+            fam,
+            close.reindex(marks),
+            self.cfg.combiner,
+            top_frac=self.cfg.portfolio.top_frac,
+            return_diagnostics=True,
+        )
 
         self.diagnostics["family_weights"] = weights
         self.diagnostics["factor_returns"] = fac
@@ -112,14 +127,18 @@ class StrategyV2:
         return combined
 
     # -- tầng 3 -------------------------------------------------------------
-    def target_weights(self, panel: Dict[str, pd.DataFrame], funding: pd.DataFrame,
-                       marks: Optional[pd.Index] = None) -> pd.DataFrame:
+    def target_weights(
+        self,
+        panel: Dict[str, pd.DataFrame],
+        funding: pd.DataFrame,
+        marks: Optional[pd.Index] = None,
+    ) -> pd.DataFrame:
         """
         Trọng số mục tiêu (gross = 1.0, chưa đòn bẩy) — ĐIỂM VÀO DUY NHẤT cho cả
         backtest lẫn live. Live lấy `.iloc[-1]`.
         """
         close = panel["close"]
-        marks = marks if marks is not None else close.index[::self.cfg.rebalance_every]
+        marks = marks if marks is not None else close.index[:: self.cfg.rebalance_every]
         sig = self.score(panel, funding, marks)
         return build_weights(sig, close.reindex(marks), self.cfg.portfolio)
 
@@ -155,28 +174,53 @@ class StrategyV2:
         #
         # Cắt SAU là hợp lệ vì mọi tín hiệu đều nhân quả: đổi dữ liệu sau một mốc bất
         # kỳ không làm đổi một chữ số nào của lợi suất trước mốc đó.
-        marks = close.index[::self.cfg.rebalance_every]
+        marks = close.index[:: self.cfg.rebalance_every]
         W = self.target_weights(panel, funding, marks)
 
         if cost is None:
             per_sym = estimate_cost_bps(
-                panel, notional_usd=self.cfg.notional_per_order,
-                bars_per_day=max(1, int(round(24 / self.cfg.bar_hours()))))
-            cost = CostModel(maker_ratio=self.cfg.maker_ratio, half_spread_bps=0.0,
-                             per_symbol_bps=per_sym * (1 - self.cfg.maker_ratio), min_bps=1.0)
+                panel,
+                notional_usd=self.cfg.notional_per_order,
+                bars_per_day=max(1, int(round(24 / self.cfg.bar_hours()))),
+            )
+            cost = CostModel(
+                maker_ratio=self.cfg.maker_ratio,
+                half_spread_bps=0.0,
+                per_symbol_bps=per_sym * (1 - self.cfg.maker_ratio),
+                min_bps=1.0,
+            )
 
-        res = simulate(W, close.reindex(marks), funding.reindex(marks), cost,
-                       bar_hours=self.cfg.period_hours(), rebalance_every=1)
+        res = simulate(
+            W,
+            close.reindex(marks),
+            funding.reindex(marks),
+            cost,
+            bar_hours=self.cfg.period_hours(),
+            rebalance_every=1,
+        )
 
         if mask is not None:
             keep = np.isin(res.returns.index, close.index[mask])
-            for fld in ("returns", "gross_returns", "cost_drag", "funding_pnl",
-                        "turnover", "n_positions", "net_exposure", "gross_exposure"):
+            for fld in (
+                "returns",
+                "gross_returns",
+                "cost_drag",
+                "funding_pnl",
+                "turnover",
+                "n_positions",
+                "net_exposure",
+                "gross_exposure",
+            ):
                 setattr(res, fld, getattr(res, fld)[keep])
 
         ppy = self.cfg.periods_per_year()
-        out = {"unlevered": res.stats(ppy), "result": res, "weights": W,
-               "cost_bps_mean": res.meta["cost_bps_mean"], "periods_per_year": ppy}
+        out = {
+            "unlevered": res.stats(ppy),
+            "result": res,
+            "weights": W,
+            "cost_bps_mean": res.meta["cost_bps_mean"],
+            "periods_per_year": ppy,
+        }
 
         if with_leverage:
             lev = apply_leverage(res.returns, self.cfg.leverage)

@@ -101,13 +101,28 @@ def monitor_brier_score_cusum_drift(
     scores_np = np.asarray(brier_scores, dtype=np.float64)
     if scores_np.ndim != 1 or len(scores_np) == 0:
         raise ValueError("brier_scores phải là mảng 1D không rỗng.")
-    if not isinstance(baseline_brier, (int, float)) or baseline_brier < 0 or math.isnan(baseline_brier):
+    if (
+        not isinstance(baseline_brier, (int, float))
+        or baseline_brier < 0
+        or math.isnan(baseline_brier)
+    ):
         raise ValueError(f"baseline_brier không hợp lệ: {baseline_brier}")
-    if not isinstance(drift_threshold, (int, float)) or drift_threshold <= 0 or math.isnan(drift_threshold):
+    if (
+        not isinstance(drift_threshold, (int, float))
+        or drift_threshold <= 0
+        or math.isnan(drift_threshold)
+    ):
         raise ValueError(f"drift_threshold phải là số thực dương: {drift_threshold}")
 
-    if np.any(np.isnan(scores_np)) or np.any(np.isinf(scores_np)) or np.any(scores_np < 0) or np.any(scores_np > 1.0):
-        raise ValueError("brier_scores chứa giá trị rác NaN/Inf hoặc ngoài đoạn [0, 1].")
+    if (
+        np.any(np.isnan(scores_np))
+        or np.any(np.isinf(scores_np))
+        or np.any(scores_np < 0)
+        or np.any(scores_np > 1.0)
+    ):
+        raise ValueError(
+            "brier_scores chứa giá trị rác NaN/Inf hoặc ngoài đoạn [0, 1]."
+        )
 
     s_plus = 0.0
     alarms = []
@@ -119,11 +134,13 @@ def monitor_brier_score_cusum_drift(
         accumulated_series.append(float(s_plus))
 
         if s_plus > drift_threshold:
-            alarms.append({
-                "bar_idx": int(idx),
-                "brier_score": float(score),
-                "s_plus_at_trigger": float(s_plus),
-            })
+            alarms.append(
+                {
+                    "bar_idx": int(idx),
+                    "brier_score": float(score),
+                    "s_plus_at_trigger": float(s_plus),
+                }
+            )
             if reset_on_alarm:
                 s_plus = 0.0
 

@@ -43,7 +43,11 @@ def test_mda_basic(synthetic_data):
     cv = KFold(n_splits=3, shuffle=False)
     mda = compute_mda(
         clf=RandomForestClassifier(n_estimators=10, random_state=42, max_depth=3),
-        X=X, y=y, cv_gen=cv, scoring=accuracy_score, is_higher_better=True,
+        X=X,
+        y=y,
+        cv_gen=cv,
+        scoring=accuracy_score,
+        is_higher_better=True,
     )
     assert "MDA_mean" in mda.columns
     assert len(mda) == 3
@@ -58,11 +62,16 @@ def test_sfi_all_features_have_scores(synthetic_data):
     cv = KFold(n_splits=3, shuffle=False)
     sfi = compute_sfi(
         clf=RandomForestClassifier(n_estimators=10, random_state=42, max_depth=3),
-        X=X, y=y, cv_gen=cv, scoring=accuracy_score,
+        X=X,
+        y=y,
+        cv_gen=cv,
+        scoring=accuracy_score,
     )
     assert "SFI_mean" in sfi.columns
     assert len(sfi) == 3
-    assert not sfi["SFI_mean"].isna().any(), f"SFI có NaN (generator exhaustion?): {sfi}"
+    assert (
+        not sfi["SFI_mean"].isna().any()
+    ), f"SFI có NaN (generator exhaustion?): {sfi}"
 
 
 def test_triple_consensus_noise_ranked_last(synthetic_data):
@@ -100,7 +109,10 @@ def test_mda_with_event_times():
     # event_times truyền vào nhưng KFold không dùng -> không crash
     mda = compute_mda(
         clf=RandomForestClassifier(n_estimators=5, random_state=42),
-        X=X, y=y, cv_gen=cv, scoring=accuracy_score,
+        X=X,
+        y=y,
+        cv_gen=cv,
+        scoring=accuracy_score,
         event_times=et,
     )
     assert not mda["MDA_mean"].isna().any()

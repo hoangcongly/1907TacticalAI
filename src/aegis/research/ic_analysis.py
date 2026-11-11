@@ -200,17 +200,24 @@ def ic_by_period(
     if s.empty:
         return pd.DataFrame()
     idx = pd.to_datetime(s.index, unit="ms")
-    grouped = s.groupby(pd.Series(idx, index=s.index).dt.to_period(
-        {"YE": "Y", "QE": "Q", "ME": "M"}.get(freq, "Y")))
-    return pd.DataFrame({
-        "ic_mean": grouped.mean(),
-        "ic_std": grouped.std(),
-        "n": grouped.size(),
-        "hit_rate": grouped.apply(lambda x: float((x > 0).mean())),
-    })
+    grouped = s.groupby(
+        pd.Series(idx, index=s.index).dt.to_period(
+            {"YE": "Y", "QE": "Q", "ME": "M"}.get(freq, "Y")
+        )
+    )
+    return pd.DataFrame(
+        {
+            "ic_mean": grouped.mean(),
+            "ic_std": grouped.std(),
+            "n": grouped.size(),
+            "hit_rate": grouped.apply(lambda x: float((x > 0).mean())),
+        }
+    )
 
 
-def signal_autocorrelation(signal: pd.DataFrame, lags: Optional[List[int]] = None) -> pd.Series:
+def signal_autocorrelation(
+    signal: pd.DataFrame, lags: Optional[List[int]] = None
+) -> pd.Series:
     """
     Tự tương quan mặt cắt ngang của tín hiệu qua các độ trễ.
 
@@ -348,18 +355,24 @@ def quantile_returns(
         # Khử trung bình mặt cắt ngang: ta chỉ quan tâm lợi suất TƯƠNG ĐỐI, phần
         # chung của thị trường đã bị khử bởi thiết kế dollar-neutral.
         rel = rv - rv.mean()
-        rows.append({f"Q{int(q)+1}": float(rel[bucket == q].mean()) for q in range(n_quantiles)})
+        rows.append(
+            {f"Q{int(q)+1}": float(rel[bucket == q].mean()) for q in range(n_quantiles)}
+        )
 
     if not rows:
         return pd.DataFrame()
 
     df = pd.DataFrame(rows)
-    out = pd.DataFrame({
-        "mean_rel_return": df.mean(),
-        "std": df.std(),
-        "n": df.notna().sum(),
-    })
-    out["t_stat"] = out["mean_rel_return"] / (out["std"] / np.sqrt(out["n"].clip(lower=1)))
+    out = pd.DataFrame(
+        {
+            "mean_rel_return": df.mean(),
+            "std": df.std(),
+            "n": df.notna().sum(),
+        }
+    )
+    out["t_stat"] = out["mean_rel_return"] / (
+        out["std"] / np.sqrt(out["n"].clip(lower=1))
+    )
     return out
 
 
@@ -392,7 +405,12 @@ def decile_spread(
 
     ser = pd.Series(vals).sort_index()
     if len(ser) < 20:
-        return {"n": float(len(ser)), "mean": 0.0, "t_stat": 0.0, "sharpe_per_period": 0.0}
+        return {
+            "n": float(len(ser)),
+            "mean": 0.0,
+            "t_stat": 0.0,
+            "sharpe_per_period": 0.0,
+        }
 
     mu, sd = float(ser.mean()), float(ser.std(ddof=1))
     n_eff = _effective_n(ser)
@@ -406,8 +424,9 @@ def decile_spread(
     }
 
 
-def monotonicity(signal: pd.DataFrame, close: pd.DataFrame, horizon: int = 1,
-                 n_quantiles: int = 5) -> float:
+def monotonicity(
+    signal: pd.DataFrame, close: pd.DataFrame, horizon: int = 1, n_quantiles: int = 5
+) -> float:
     """
     Mức độ đơn điệu: tương quan Spearman giữa số thứ tự nhóm và lợi suất nhóm.
 

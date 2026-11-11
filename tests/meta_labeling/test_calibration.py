@@ -2,8 +2,12 @@ import pytest
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import KFold
-from aegis.meta_labeling.calibration import build_calibrated_classifier, PurgedKFoldAdapter
-from aegis.meta_labeling.weighted_bootstrap_forest import WeightedBootstrapForestClassifier
+from aegis.meta_labeling.calibration import (
+    build_calibrated_classifier,
+)
+from aegis.meta_labeling.weighted_bootstrap_forest import (
+    WeightedBootstrapForestClassifier,
+)
 
 
 def test_calibration_with_kfold():

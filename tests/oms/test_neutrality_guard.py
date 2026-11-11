@@ -10,14 +10,16 @@ Bản trước chặn rủi ro đó GIÁN TIẾP bằng cách để thời gian 
 giá là tỷ lệ maker thấp (đo được 0,378-0,49) và vì thế chi phí cao. Van này chặn rủi
 ro TRỰC TIẾP, nên thời gian chờ có thể dài ra mà vẫn an toàn hơn trước.
 """
+
 import pytest
 
 from aegis.oms.order_router import BinanceOrderRouter
-from aegis.oms.state_machine import ManagedOrder, OrderState
+from aegis.oms.state_machine import ManagedOrder
 
 
 class _StubClient:
     """Sàn giả tối thiểu — van trung lập chỉ đọc sổ nội bộ, không gọi sàn."""
+
     credentials = None
 
 
@@ -26,8 +28,9 @@ def _router():
 
 
 def _mo(symbol, side, qty, price, filled):
-    m = ManagedOrder(client_order_id=f"c_{symbol}", symbol=symbol, side=side,
-                     qty=qty, price=price)
+    m = ManagedOrder(
+        client_order_id=f"c_{symbol}", symbol=symbol, side=side, qty=qty, price=price
+    )
     m.filled_qty = filled
     m.avg_fill_price = price
     return m
@@ -37,8 +40,8 @@ def test_khop_dung_ty_le_thi_khong_lech():
     """Mọi cặp khớp cùng một tỷ lệ => trung lập được giữ nguyên ở mọi thời điểm."""
     r = _router()
     r._cycle_orders = {
-        "A": [_mo("A", "BUY", 10, 100.0, 5)],      # khớp 50%
-        "B": [_mo("B", "SELL", 10, 100.0, 5)],     # khớp 50%
+        "A": [_mo("A", "BUY", 10, 100.0, 5)],  # khớp 50%
+        "B": [_mo("B", "SELL", 10, 100.0, 5)],  # khớp 50%
     }
     out = r.fill_imbalance(plan_net=0.0, plan_gross=2000.0)
     assert out["drift"] == pytest.approx(0.0, abs=1e-12)
@@ -49,8 +52,8 @@ def test_mot_chan_khop_truoc_thi_bao_lech():
     """Chân BUY khớp hết còn chân SELL treo => sổ đang thành long, phải báo."""
     r = _router()
     r._cycle_orders = {
-        "A": [_mo("A", "BUY", 10, 100.0, 10)],     # khớp 100%
-        "B": [_mo("B", "SELL", 10, 100.0, 0)],     # chưa khớp
+        "A": [_mo("A", "BUY", 10, 100.0, 10)],  # khớp 100%
+        "B": [_mo("B", "SELL", 10, 100.0, 0)],  # chưa khớp
     }
     out = r.fill_imbalance(plan_net=0.0, plan_gross=2000.0)
     assert out["drift"] == pytest.approx(1.0), "khớp một chiều hoàn toàn => lệch 100%"
@@ -67,10 +70,11 @@ def test_ke_hoach_von_di_lech_thi_khong_bao_dong_gia():
         "A": [_mo("A", "BUY", 10, 100.0, 5)],
         "B": [_mo("B", "BUY", 10, 100.0, 5)],
     }
-    plan_net = 2000.0        # cả hai lệnh đều là BUY
+    plan_net = 2000.0  # cả hai lệnh đều là BUY
     out = r.fill_imbalance(plan_net=plan_net, plan_gross=2000.0)
-    assert out["drift"] == pytest.approx(0.0, abs=1e-12), \
-        "khớp đúng tỷ lệ trên một kế hoạch lệch sẵn vẫn phải cho drift = 0"
+    assert out["drift"] == pytest.approx(
+        0.0, abs=1e-12
+    ), "khớp đúng tỷ lệ trên một kế hoạch lệch sẵn vẫn phải cho drift = 0"
 
 
 def test_chua_khop_gi_thi_khong_lech():
@@ -83,7 +87,9 @@ def test_chua_khop_gi_thi_khong_lech():
 def test_lech_co_dau_dung_chieu():
     """Dấu phải nói được sổ đang nghiêng về phía nào — nếu không thì không sửa được."""
     r = _router()
-    r._cycle_orders = {"A": [_mo("A", "SELL", 10, 100.0, 10)],
-                       "B": [_mo("B", "BUY", 10, 100.0, 0)]}
+    r._cycle_orders = {
+        "A": [_mo("A", "SELL", 10, 100.0, 10)],
+        "B": [_mo("B", "BUY", 10, 100.0, 0)],
+    }
     out = r.fill_imbalance(plan_net=0.0, plan_gross=2000.0)
     assert out["drift"] < 0, "chân SELL khớp trước => sổ nghiêng short => drift âm"

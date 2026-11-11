@@ -2,6 +2,7 @@
 Local Linear Trend Kalman Filter 2D [P_t, nu_t], xuất Trend_Score theo ATR.
 Triển khai thuần bằng Numpy để hỗ trợ Gap-handling predict-only (không update khi dữ liệu NaN).
 """
+
 import numpy as np
 
 
@@ -25,27 +26,31 @@ def _ensure_symmetric_pd_2x2(mat: np.ndarray, min_jitter: float = 1e-12) -> np.n
         sym[1, 1] = max(sym[1, 1], jitter + 1e-9)
     return sym
 
+
 class LocalLinearTrendKalman:
-    def __init__(self, process_noise_level: float = 1e-4, process_noise_trend: float = 1e-5, observation_noise: float = 1e-2):
+    def __init__(
+        self,
+        process_noise_level: float = 1e-4,
+        process_noise_trend: float = 1e-5,
+        observation_noise: float = 1e-2,
+    ):
         """
         Khởi tạo bộ lọc Kalman Local Linear Trend (LLT).
         x = [mu, nu]^T (Level, Trend)
         """
-        self.F = np.array([[1.0, 1.0], 
-                           [0.0, 1.0]])
+        self.F = np.array([[1.0, 1.0], [0.0, 1.0]])
         self.H = np.array([[1.0, 0.0]])
-        
+
         # Ma trận hiệp phương sai nhiễu quá trình (Q)
-        self.Q = np.array([[process_noise_level, 0.0],
-                           [0.0, process_noise_trend]])
-                           
+        self.Q = np.array([[process_noise_level, 0.0], [0.0, process_noise_trend]])
+
         # Ma trận hiệp phương sai nhiễu quan sát (R)
         self.R = np.array([[observation_noise]])
-        
+
         # Trạng thái hiện tại
         self.x = np.zeros((2, 1))
         self.P = np.eye(2)
-        
+
         self.is_initialized = False
 
     def reset(self):
@@ -66,7 +71,7 @@ class LocalLinearTrendKalman:
             self.P = np.eye(2) * 1.0
             self.is_initialized = True
             return float(self.x[0, 0]), float(self.x[1, 0])
-            
+
         if not self.is_initialized:
             # Nếu truyền NaN ngay từ đầu, giữ nguyên 0
             return 0.0, 0.0
@@ -83,9 +88,9 @@ class LocalLinearTrendKalman:
             return float(self.x[0, 0]), float(self.x[1, 0])
 
         # --- UPDATE ---
-        y = z - (self.H @ x_pred)[0, 0] # Innovation
-        S = self.H @ P_pred @ self.H.T + self.R # Innovation covariance
-        K = (P_pred @ self.H.T) / S[0, 0] # Kalman Gain
+        y = z - (self.H @ x_pred)[0, 0]  # Innovation
+        S = self.H @ P_pred @ self.H.T + self.R  # Innovation covariance
+        K = (P_pred @ self.H.T) / S[0, 0]  # Kalman Gain
 
         self.x = x_pred + K * y
         self.P = (np.eye(2) - K @ self.H) @ P_pred
@@ -101,11 +106,11 @@ class LocalLinearTrendKalman:
         """
         levels = np.zeros_like(prices, dtype=float)
         trends = np.zeros_like(prices, dtype=float)
-        
+
         self.reset()
         for i, z in enumerate(prices):
             lvl, trnd = self.step(z)
             levels[i] = lvl
             trends[i] = trnd
-            
+
         return levels, trends

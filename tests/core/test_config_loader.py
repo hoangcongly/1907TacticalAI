@@ -1,6 +1,6 @@
 """Unit tests for config_loader.py."""
+
 import os
-import pytest
 from aegis.core.config_loader import (
     load_canonical_parameters,
     load_unified_config,
@@ -27,7 +27,7 @@ def test_load_unified_config_merging():
     assert "system" in cfg
     assert "strategic_parameters" in cfg
     assert "strategy" in cfg or "strategy_selection" in cfg
-    
+
     # Invariant checks from Constitution
     strat = cfg.get("strategy_selection", {}) or cfg.get("strategy", {})
     assert strat.get("t_max_live_follow") == 120

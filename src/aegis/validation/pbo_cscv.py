@@ -5,14 +5,12 @@ Thực hiện chia S sub-blocks đối xứng, đánh giá xác suất chiến l
 
 import math
 import itertools
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 import numpy as np
 
 
 def compute_pbo_cscv(
-    performance_matrix: np.ndarray,
-    n_splits: int = 16,
-    approval_threshold: float = 0.40
+    performance_matrix: np.ndarray, n_splits: int = 16, approval_threshold: float = 0.40
 ) -> Dict[str, Any]:
     """
     Tính Probability of Backtest Overfitting (PBO) theo phương pháp Combinatorial Symmetric Cross-Validation (CSCV).
@@ -54,7 +52,9 @@ def compute_pbo_cscv(
         )
 
     if np.any(np.isnan(performance_matrix)) or np.any(np.isinf(performance_matrix)):
-        raise ValueError("Lỗi hải quan PBO: performance_matrix chứa giá trị NaN hoặc Inf!")
+        raise ValueError(
+            "Lỗi hải quan PBO: performance_matrix chứa giá trị NaN hoặc Inf!"
+        )
 
     # Bước 1: Chia T quan sát thành S = n_splits khối liên tục (contiguous sub-blocks)
     indices = np.array_split(np.arange(T), n_splits)
@@ -79,7 +79,7 @@ def compute_pbo_cscv(
         # Hiệu suất In-Sample (IS) trên tập Train
         is_perf = np.sum(block_returns[list(train_blocks), :], axis=0)  # shape (N,)
         # Hiệu suất Out-of-Sample (OOS) trên tập Test
-        oos_perf = np.sum(block_returns[test_blocks, :], axis=0)        # shape (N,)
+        oos_perf = np.sum(block_returns[test_blocks, :], axis=0)  # shape (N,)
 
         # Chọn cấu hình tốt nhất In-Sample
         best_is_idx = int(np.argmax(is_perf))
@@ -116,5 +116,5 @@ def compute_pbo_cscv(
         "relative_ranks": relative_ranks,
         "n_splits": int(n_splits),
         "n_combinations": len(combinations),
-        "approval_threshold": float(approval_threshold)
+        "approval_threshold": float(approval_threshold),
     }

@@ -36,6 +36,7 @@ def load_dotenv(path: Optional[str] = None, override: bool = False) -> Dict[str,
 @dataclass(frozen=True)
 class ExchangeCredentials:
     """Khoá API của sàn. `__repr__` được che để khoá không lọt vào log/traceback."""
+
     api_key: str
     api_secret: str
     testnet: bool
@@ -63,7 +64,9 @@ def load_binance_credentials(
 
     if testnet is None:
         testnet = os.environ.get("BINANCE_TESTNET", "true").strip().lower() not in (
-            "false", "0", "no",
+            "false",
+            "0",
+            "no",
         )
 
     prefix = "BINANCE_TESTNET" if testnet else "BINANCE"

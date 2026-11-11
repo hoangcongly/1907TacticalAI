@@ -35,7 +35,7 @@ TÍNH NHÂN QUẢ: `beta` dùng tại t chỉ học từ các kỳ có lợi su�
 """
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 import numpy as np
 import pandas as pd
@@ -47,14 +47,14 @@ __all__ = ["XSRegressionSpec", "cross_sectional_betas", "combine_xs_regression"]
 class XSRegressionSpec:
     """Tham số tầng gộp bằng hồi quy mặt cắt ngang."""
 
-    beta_window: int = 60        # số kỳ lấy trung bình hệ số
-    min_periods: int = 20        # chưa đủ thì chưa dự báo
-    min_names: int = 15          # số tài sản tối thiểu để hồi quy một kỳ
-    method: str = "ols"          # "ols" | "ridge" | "elastic_net"
-    alpha: float = 1e-3          # cường độ phạt cho ridge / elastic_net
-    l1_ratio: float = 0.5        # chỉ dùng cho elastic_net
-    winsorize: float = 0.02      # cắt đuôi lợi suất trước khi hồi quy
-    standardize: bool = True     # chuẩn hoá lại tín hiệu theo hàng
+    beta_window: int = 60  # số kỳ lấy trung bình hệ số
+    min_periods: int = 20  # chưa đủ thì chưa dự báo
+    min_names: int = 15  # số tài sản tối thiểu để hồi quy một kỳ
+    method: str = "ols"  # "ols" | "ridge" | "elastic_net"
+    alpha: float = 1e-3  # cường độ phạt cho ridge / elastic_net
+    l1_ratio: float = 0.5  # chỉ dùng cho elastic_net
+    winsorize: float = 0.02  # cắt đuôi lợi suất trước khi hồi quy
+    standardize: bool = True  # chuẩn hoá lại tín hiệu theo hàng
 
 
 def _winsorize(x: np.ndarray, frac: float) -> np.ndarray:
@@ -71,13 +71,15 @@ def _winsorize(x: np.ndarray, frac: float) -> np.ndarray:
     return np.clip(x, lo, hi)
 
 
-def _fit_one(X: np.ndarray, y: np.ndarray, spec: XSRegressionSpec) -> Optional[np.ndarray]:
+def _fit_one(
+    X: np.ndarray, y: np.ndarray, spec: XSRegressionSpec
+) -> Optional[np.ndarray]:
     """Hệ số của MỘT kỳ. Trả None nếu không đủ dữ liệu hoặc ma trận suy biến."""
     if len(y) < spec.min_names:
         return None
 
     y = _winsorize(y, spec.winsorize)
-    y = y - y.mean()                      # khử phần chung của thị trường
+    y = y - y.mean()  # khử phần chung của thị trường
 
     if spec.method == "ols":
         try:
@@ -96,9 +98,15 @@ def _fit_one(X: np.ndarray, y: np.ndarray, spec: XSRegressionSpec) -> Optional[n
 
     if spec.method == "elastic_net":
         from sklearn.linear_model import ElasticNet
+
         try:
-            m = ElasticNet(alpha=spec.alpha, l1_ratio=spec.l1_ratio,
-                           fit_intercept=False, max_iter=2000, tol=1e-5)
+            m = ElasticNet(
+                alpha=spec.alpha,
+                l1_ratio=spec.l1_ratio,
+                fit_intercept=False,
+                max_iter=2000,
+                tol=1e-5,
+            )
             m.fit(X, y)
         except Exception:
             return None
@@ -130,8 +138,9 @@ def cross_sectional_betas(
         r = fwd.loc[ts]
         cols = close.columns
 
-        S = np.column_stack([signals[n].reindex(index=[ts], columns=cols).to_numpy()[0]
-                             for n in names])
+        S = np.column_stack(
+            [signals[n].reindex(index=[ts], columns=cols).to_numpy()[0] for n in names]
+        )
         y = r.reindex(cols).to_numpy(dtype=np.float64)
 
         ok = np.isfinite(y) & np.isfinite(S).all(axis=1)
@@ -171,9 +180,11 @@ def combine_xs_regression(
     names = list(signals)
     betas = cross_sectional_betas(signals, close, spec)
     if betas.empty:
-        return (pd.DataFrame(np.nan, index=close.index, columns=close.columns),
-                betas) if return_betas else pd.DataFrame(
-                    np.nan, index=close.index, columns=close.columns)
+        return (
+            (pd.DataFrame(np.nan, index=close.index, columns=close.columns), betas)
+            if return_betas
+            else pd.DataFrame(np.nan, index=close.index, columns=close.columns)
+        )
 
     # NHÂN QUẢ: hệ số tại hàng t học từ lợi suất t->t+1. Muốn dùng để dự báo TẠI t
     # thì chỉ được lấy trung bình các hàng <= t-1. `shift(1)` trước rồi `rolling`.

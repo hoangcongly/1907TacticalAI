@@ -14,9 +14,7 @@ Với vốn nhỏ, (1) là ràng buộc quyết định: nó giới hạn số v
 
 import math
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
-
-import numpy as np
+from typing import Dict, List
 
 # Không giao dịch nếu lệch trọng số nhỏ hơn ngưỡng này — chống churn phí vô ích.
 DEFAULT_NO_TRADE_BAND = 0.20
@@ -27,6 +25,7 @@ DEFAULT_NEUTRALITY_TOLERANCE = 0.02
 @dataclass
 class SymbolFilters:
     """Ràng buộc giao dịch của một cặp (lấy từ /fapi/v1/exchangeInfo)."""
+
     symbol: str
     tick_size: float
     step_size: float
@@ -53,7 +52,9 @@ class SymbolFilters:
             return float(qty)
         sign = -1.0 if qty < 0 else 1.0
         steps = math.floor((abs(qty) + 1e-12) / self.step_size)
-        return float(round(sign * steps * self.step_size, self._decimals(self.step_size)))
+        return float(
+            round(sign * steps * self.step_size, self._decimals(self.step_size))
+        )
 
     def round_price(self, price: float) -> float:
         """Làm tròn về đúng bội số tick_size VÀ đúng số chữ số thập phân cho phép."""
@@ -85,7 +86,7 @@ class SymbolFilters:
 @dataclass
 class TargetPosition:
     symbol: str
-    weight: float          # trọng số mục tiêu (âm = short), tổng |w| = gross
+    weight: float  # trọng số mục tiêu (âm = short), tổng |w| = gross
     price: float
     target_notional: float = 0.0
     target_qty: float = 0.0
@@ -94,7 +95,7 @@ class TargetPosition:
 @dataclass
 class RebalanceOrder:
     symbol: str
-    side: str              # "BUY" hoặc "SELL"
+    side: str  # "BUY" hoặc "SELL"
     qty: float
     price: float
     reason: str
@@ -194,13 +195,17 @@ def build_rebalance_plan(
                 plan.net_notional += held * price
             continue
 
-        is_closing = (held != 0.0 and target_qty == 0.0) or (abs(target_qty) < abs(held) and held * target_qty >= 0)
+        is_closing = (held != 0.0 and target_qty == 0.0) or (
+            abs(target_qty) < abs(held) and held * target_qty >= 0
+        )
 
         # Dải không giao dịch: bỏ qua điều chỉnh vụn (nhưng LUÔN cho phép đóng hẳn).
         if not (held != 0.0 and target_qty == 0.0):
             ref = abs(target_qty) if target_qty != 0.0 else abs(held)
             if ref > 0 and abs(delta) < no_trade_band * ref:
-                plan.skipped[symbol] = f"lệch {abs(delta)/ref:.0%} < dải {no_trade_band:.0%}"
+                plan.skipped[symbol] = (
+                    f"lệch {abs(delta)/ref:.0%} < dải {no_trade_band:.0%}"
+                )
                 if target_qty != 0.0:
                     plan.gross_notional += abs(held) * price
                     plan.net_notional += held * price
@@ -215,14 +220,20 @@ def build_rebalance_plan(
             )
             continue
 
-        plan.orders.append(RebalanceOrder(
-            symbol=symbol,
-            side="BUY" if delta > 0 else "SELL",
-            qty=abs(delta),
-            price=filt.round_price(price),
-            reason="đóng" if target_qty == 0.0 else ("mở" if held == 0.0 else "điều chỉnh"),
-            notional=abs(delta) * price,
-        ))
+        plan.orders.append(
+            RebalanceOrder(
+                symbol=symbol,
+                side="BUY" if delta > 0 else "SELL",
+                qty=abs(delta),
+                price=filt.round_price(price),
+                reason=(
+                    "đóng"
+                    if target_qty == 0.0
+                    else ("mở" if held == 0.0 else "điều chỉnh")
+                ),
+                notional=abs(delta) * price,
+            )
+        )
         if target_qty != 0.0:
             plan.gross_notional += abs(target_qty) * price
             plan.net_notional += target_qty * price
@@ -281,14 +292,16 @@ def _repair_neutrality(
         if abs(plan.net_notional + delta * price) >= abs(plan.net_notional):
             continue
 
-        plan.orders.append(RebalanceOrder(
-            symbol=symbol,
-            side="BUY" if delta > 0 else "SELL",
-            qty=abs(delta),
-            price=filt.round_price(price),
-            reason="cân trung lập",
-            notional=abs(delta) * price,
-        ))
+        plan.orders.append(
+            RebalanceOrder(
+                symbol=symbol,
+                side="BUY" if delta > 0 else "SELL",
+                qty=abs(delta),
+                price=filt.round_price(price),
+                reason="cân trung lập",
+                notional=abs(delta) * price,
+            )
+        )
         # Cặp này nay theo khối lượng ĐÍCH, không còn theo khối lượng CŨ.
         plan.gross_notional += abs(target_qty) * price - abs(held) * price
         plan.net_notional += delta * price

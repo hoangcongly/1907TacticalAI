@@ -100,7 +100,8 @@ class BinanceFuturesREST:
         if signed:
             if self.credentials is None:
                 raise BinanceAPIError(
-                    0, None,
+                    0,
+                    None,
                     f"Không thể gọi endpoint có ký `{path}` ở chế độ public_only "
                     f"(client này chỉ dùng để đọc dữ liệu thị trường mainnet).",
                 )
@@ -124,7 +125,9 @@ class BinanceFuturesREST:
             except requests.RequestException as exc:
                 if attempt == _MAX_RETRIES:
                     raise
-                logger.warning("Lỗi mạng %s (lần %d), thử lại sau %.1fs", exc, attempt, backoff)
+                logger.warning(
+                    "Lỗi mạng %s (lần %d), thử lại sau %.1fs", exc, attempt, backoff
+                )
                 time.sleep(backoff)
                 backoff *= 2
                 continue
@@ -142,14 +145,20 @@ class BinanceFuturesREST:
                         {k: v for k, v in params.items() if k != "signature"}
                     )
                     params["signature"] = hmac.new(
-                        self.credentials.api_secret.encode(), query.encode(), hashlib.sha256
+                        self.credentials.api_secret.encode(),
+                        query.encode(),
+                        hashlib.sha256,
                     ).hexdigest()
                 continue
 
             if response.status_code in _RETRY_STATUS and attempt < _MAX_RETRIES:
                 wait = float(response.headers.get("Retry-After", backoff))
                 logger.warning(
-                    "HTTP %d từ %s (lần %d), lùi %.1fs", response.status_code, path, attempt, wait
+                    "HTTP %d từ %s (lần %d), lùi %.1fs",
+                    response.status_code,
+                    path,
+                    attempt,
+                    wait,
                 )
                 time.sleep(wait)
                 backoff *= 2
@@ -203,7 +212,9 @@ class BinanceFuturesREST:
             "quote_asset": entry.get("quoteAsset"),
             "price_precision": int(entry.get("pricePrecision", 8)),
             "quantity_precision": int(entry.get("quantityPrecision", 8)),
-            "tick_size": float(filters.get("PRICE_FILTER", {}).get("tickSize", 0.0) or 0.0),
+            "tick_size": float(
+                filters.get("PRICE_FILTER", {}).get("tickSize", 0.0) or 0.0
+            ),
             "step_size": float(filters.get("LOT_SIZE", {}).get("stepSize", 0.0) or 0.0),
             "min_qty": float(filters.get("LOT_SIZE", {}).get("minQty", 0.0) or 0.0),
             "max_qty": float(filters.get("LOT_SIZE", {}).get("maxQty", 0.0) or 0.0),
@@ -299,28 +310,40 @@ class BinanceFuturesREST:
 
     def position_risk(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
         """Vị thế thật trên sàn — dùng để đối chiếu khi khởi động lại."""
-        return self._request("GET", "/fapi/v2/positionRisk", {"symbol": symbol}, signed=True)
+        return self._request(
+            "GET", "/fapi/v2/positionRisk", {"symbol": symbol}, signed=True
+        )
 
     def open_orders(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
-        return self._request("GET", "/fapi/v1/openOrders", {"symbol": symbol}, signed=True)
+        return self._request(
+            "GET", "/fapi/v1/openOrders", {"symbol": symbol}, signed=True
+        )
 
     def set_leverage(self, symbol: str, leverage: int) -> Dict[str, Any]:
         return self._request(
-            "POST", "/fapi/v1/leverage",
-            {"symbol": symbol.upper(), "leverage": int(leverage)}, signed=True,
+            "POST",
+            "/fapi/v1/leverage",
+            {"symbol": symbol.upper(), "leverage": int(leverage)},
+            signed=True,
         )
 
-    def set_margin_type(self, symbol: str, margin_type: str = "ISOLATED") -> Dict[str, Any]:
+    def set_margin_type(
+        self, symbol: str, margin_type: str = "ISOLATED"
+    ) -> Dict[str, Any]:
         """
         Đặt chế độ ký quỹ. Hệ thống thiết kế cho ISOLATED (ký quỹ cô lập):
         lỗ tối đa của một vị thế bị chặn ở đúng phần margin đã cọc.
         """
         if margin_type not in ("ISOLATED", "CROSSED"):
-            raise ValueError(f"margin_type phải là ISOLATED hoặc CROSSED, nhận {margin_type}")
+            raise ValueError(
+                f"margin_type phải là ISOLATED hoặc CROSSED, nhận {margin_type}"
+            )
         try:
             return self._request(
-                "POST", "/fapi/v1/marginType",
-                {"symbol": symbol.upper(), "marginType": margin_type}, signed=True,
+                "POST",
+                "/fapi/v1/marginType",
+                {"symbol": symbol.upper(), "marginType": margin_type},
+                signed=True,
             )
         except BinanceAPIError as exc:
             # -4046: "No need to change margin type" -> đã đúng chế độ rồi.

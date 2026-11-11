@@ -10,6 +10,7 @@ F25: lệch hướng sau thực thi phải bị phát hiện.
      Sự cố thật: danh mục chạy 27 giờ ở mức long ròng +34.95% gross mà không có
      bất kỳ cảnh báo nào, vì không tồn tại phép kiểm nào trên đại lượng đó.
 """
+
 import pytest
 
 from aegis.pipelines.xs_live_pipeline import CrossSectionalLivePipeline, LiveConfig
@@ -53,16 +54,24 @@ def test_f25_tai_hien_dung_so_lech_3495_phan_tram():
     assert r["short_notional"] == pytest.approx(-2058.0)
 
 
-@pytest.mark.parametrize("ratio,expected_ok", [
-    (0.000, True), (0.019, True), (0.021, False), (0.100, False), (-0.350, False),
-])
+@pytest.mark.parametrize(
+    "ratio,expected_ok",
+    [
+        (0.000, True),
+        (0.019, True),
+        (0.021, False),
+        (0.100, False),
+        (-0.350, False),
+    ],
+)
 def test_f25_nguong_duoc_ton_trong_ca_hai_chieu(ratio, expected_ok):
     p = _pipe()
     # dựng long/short sao cho net/gross = ratio với gross = 100
     long_n = 100.0 * (1.0 + ratio) / 2.0
     short_n = -100.0 * (1.0 - ratio) / 2.0
-    r = p.check_neutrality({"L": long_n, "S": short_n}, {"L": 1.0, "S": 1.0},
-                           tolerance=0.02)
+    r = p.check_neutrality(
+        {"L": long_n, "S": short_n}, {"L": 1.0, "S": 1.0}, tolerance=0.02
+    )
     assert r["net_ratio"] == pytest.approx(ratio, abs=1e-9)
     assert r["ok"] is expected_ok
 
@@ -76,7 +85,7 @@ def test_f25_so_rong_khong_gay_chia_cho_khong():
 def test_f25_thieu_gia_thi_coi_notional_bang_khong():
     """Thiếu giá của một cặp không được âm thầm biến nó thành trung lập giả."""
     p = _pipe()
-    r = p.check_neutrality({"A": 100.0, "B": -100.0}, {"A": 1.0})   # thiếu giá B
+    r = p.check_neutrality({"A": 100.0, "B": -100.0}, {"A": 1.0})  # thiếu giá B
     assert r["net_ratio"] == pytest.approx(1.0), "phải lộ ra là lệch hoàn toàn"
     assert r["ok"] is False
 
@@ -94,6 +103,7 @@ class _LaggyClient:
     Mô phỏng tính nhất quán kiểu eventual của `/fapi/v2/positionRisk`:
     vài lần đọc đầu còn thiếu vị thế vừa khớp.
     """
+
     def __init__(self, settle_after=2):
         self.n = 0
         self.settle_after = settle_after
@@ -102,8 +112,10 @@ class _LaggyClient:
         self.n += 1
         if self.n <= self.settle_after:
             return [{"symbol": "AAAUSDT", "positionAmt": "10"}]
-        return [{"symbol": "AAAUSDT", "positionAmt": "10"},
-                {"symbol": "COTIUSDT", "positionAmt": "-21269"}]
+        return [
+            {"symbol": "AAAUSDT", "positionAmt": "10"},
+            {"symbol": "COTIUSDT", "positionAmt": "-21269"},
+        ]
 
 
 def test_f24_doc_toi_khi_on_dinh_bat_duoc_vi_the_ve_muon():
@@ -120,8 +132,11 @@ def test_f24_doc_toi_khi_on_dinh_bat_duoc_vi_the_ve_muon():
 def test_f24_loc_vi_the_bang_khong():
     class _C:
         def position_risk(self, symbol=None):
-            return [{"symbol": "A", "positionAmt": "5"},
-                    {"symbol": "B", "positionAmt": "0"}]
+            return [
+                {"symbol": "A", "positionAmt": "5"},
+                {"symbol": "B", "positionAmt": "0"},
+            ]
+
     p = _pipe()
     p.client = _C()
     assert p._settle_positions(tries=3, delay=0.0) == {"A": 5.0}
@@ -130,9 +145,11 @@ def test_f24_loc_vi_the_bang_khong():
 def test_f24_doc_that_bai_hoan_toan_tra_ve_rong_chu_khong_nem_loi():
     """Không đọc được sàn thì trả về rỗng + log lỗi; KHÔNG được ném ra ngoài,
     vì hàm này chạy trong `finally` và ngoại lệ ở đó sẽ nuốt mất lỗi gốc."""
+
     class _Broken:
         def position_risk(self, symbol=None):
             raise RuntimeError("sàn không trả lời")
+
     p = _pipe()
     p.client = _Broken()
     assert p._settle_positions(tries=2, delay=0.0) == {}
@@ -193,8 +210,13 @@ def test_f29_so_nhan_doi_van_trung_lap_nhung_phai_bi_bat():
     p = _pipe()
     eq = 5000.0
     # nhân đôi cả hai chân: net vẫn 0, gross gấp đôi
-    r = p.check_neutrality({"L": 10000.0, "S": -10000.0}, {"L": 1.0, "S": 1.0},
-                           tolerance=0.02, equity=eq, target_leverage=2.0)
+    r = p.check_neutrality(
+        {"L": 10000.0, "S": -10000.0},
+        {"L": 1.0, "S": 1.0},
+        tolerance=0.02,
+        equity=eq,
+        target_leverage=2.0,
+    )
     assert r["net_ok"] is True, "sổ nhân đôi đối xứng vẫn trung lập"
     assert r["leverage"] == pytest.approx(4.0)
     assert r["gross_ok"] is False, "đòn bẩy 4x so với mục tiêu 2x phải bị bắt"
@@ -203,8 +225,13 @@ def test_f29_so_nhan_doi_van_trung_lap_nhung_phai_bi_bat():
 
 def test_f29_don_bay_dung_thi_qua_cong():
     p = _pipe()
-    r = p.check_neutrality({"L": 5000.0, "S": -5000.0}, {"L": 1.0, "S": 1.0},
-                           tolerance=0.02, equity=5000.0, target_leverage=2.0)
+    r = p.check_neutrality(
+        {"L": 5000.0, "S": -5000.0},
+        {"L": 1.0, "S": 1.0},
+        tolerance=0.02,
+        equity=5000.0,
+        target_leverage=2.0,
+    )
     assert r["leverage"] == pytest.approx(2.0)
     assert r["gross_ok"] is True and r["ok"] is True
 
@@ -212,9 +239,14 @@ def test_f29_don_bay_dung_thi_qua_cong():
 def test_f29_sai_lech_nho_duoc_chap_nhan():
     """Trượt giá và làm tròn khiến gross không bao giờ khớp tuyệt đối."""
     p = _pipe()
-    r = p.check_neutrality({"L": 5250.0, "S": -5250.0}, {"L": 1.0, "S": 1.0},
-                           tolerance=0.02, equity=5000.0, target_leverage=2.0,
-                           gross_tolerance=0.15)
+    r = p.check_neutrality(
+        {"L": 5250.0, "S": -5250.0},
+        {"L": 1.0, "S": 1.0},
+        tolerance=0.02,
+        equity=5000.0,
+        target_leverage=2.0,
+        gross_tolerance=0.15,
+    )
     assert r["leverage"] == pytest.approx(2.1)
     assert r["gross_ok"] is True
 
@@ -231,6 +263,7 @@ def test_f29_khong_co_equity_thi_bo_qua_kiem_don_bay():
 # =====================================================================
 def test_f28_khoa_chan_tien_trinh_thu_hai(tmp_path):
     from aegis.core.process_lock import ProcessLockBusy, acquire_lock
+
     lock = str(tmp_path / "test.lock")
     h = acquire_lock(lock)
     try:
@@ -242,16 +275,18 @@ def test_f28_khoa_chan_tien_trinh_thu_hai(tmp_path):
 
 def test_f28_nha_khoa_thi_chiem_lai_duoc(tmp_path):
     from aegis.core.process_lock import acquire_lock, exclusive_lock
+
     lock = str(tmp_path / "test.lock")
     with exclusive_lock(lock):
         pass
-    h = acquire_lock(lock)     # phải chiếm lại được sau khi nhả
+    h = acquire_lock(lock)  # phải chiếm lại được sau khi nhả
     h.close()
 
 
 def test_f28_ghi_pid_vao_file_khoa(tmp_path):
     import os
     from aegis.core.process_lock import acquire_lock
+
     lock = tmp_path / "test.lock"
     h = acquire_lock(str(lock))
     try:
@@ -268,23 +303,28 @@ class _MiniPipe:
 
     def __init__(self, rebalance_hours=72.0):
         from aegis.pipelines.xs_live_pipeline import LiveConfig
+
         self.config = LiveConfig(universe=["A"], rebalance_hours=rebalance_hours)
 
     def due(self, hours_since, rebalance_count, force=False):
-        return (force or rebalance_count == 0
-                or hours_since >= self.config.rebalance_hours)
+        return (
+            force or rebalance_count == 0 or hours_since >= self.config.rebalance_hours
+        )
 
 
-@pytest.mark.parametrize("hours,count,force,expected", [
-    (0.0,   0, False, True),    # lần chạy đầu -> luôn cân
-    (2.7,   1, False, False),   # cron 07:00 ngay sau khi mở sổ -> KHÔNG được cân
-    (24.0,  1, False, False),   # cron ngày hôm sau -> vẫn chưa tới hạn 72h
-    (48.0,  1, False, False),
-    (71.9,  1, False, False),
-    (72.0,  1, False, True),    # đúng hạn
-    (99.0,  1, False, True),
-    (2.7,   1, True,  True),    # can thiệp thủ công --force
-])
+@pytest.mark.parametrize(
+    "hours,count,force,expected",
+    [
+        (0.0, 0, False, True),  # lần chạy đầu -> luôn cân
+        (2.7, 1, False, False),  # cron 07:00 ngay sau khi mở sổ -> KHÔNG được cân
+        (24.0, 1, False, False),  # cron ngày hôm sau -> vẫn chưa tới hạn 72h
+        (48.0, 1, False, False),
+        (71.9, 1, False, False),
+        (72.0, 1, False, True),  # đúng hạn
+        (99.0, 1, False, True),
+        (2.7, 1, True, True),  # can thiệp thủ công --force
+    ],
+)
 def test_f30_chot_nhip_dung_han(hours, count, force, expected):
     """
     `crontab` chạy 07:00 hằng ngày. Không có chốt nhịp thì hệ thống tái cân bằng
@@ -297,14 +337,17 @@ def test_f30_chot_nhip_dung_han(hours, count, force, expected):
 
 def test_f30_chu_ky_lay_tu_cau_hinh_v3():
     from aegis.pipelines.xs_live_pipeline import LiveConfig
+
     cfg = LiveConfig.from_artifacts("artifacts/strategy_v3.json")
-    assert cfg.rebalance_hours == pytest.approx(72.0), (
-        "chu kỳ live phải khớp cấu hình đã kiểm định (18 nến x 4h)")
+    assert cfg.rebalance_hours == pytest.approx(
+        72.0
+    ), "chu kỳ live phải khớp cấu hình đã kiểm định (18 nến x 4h)"
 
 
 def test_f30_run_once_nhan_co_force():
     import inspect
     from aegis.pipelines.xs_live_pipeline import CrossSectionalLivePipeline
+
     sig = inspect.signature(CrossSectionalLivePipeline.run_once)
     assert "force" in sig.parameters
     assert sig.parameters["force"].default is False, "mặc định PHẢI là không ép"

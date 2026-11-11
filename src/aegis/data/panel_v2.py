@@ -23,9 +23,17 @@ import pandas as pd
 DATA_ROOT = "data/binance"
 
 INTERVAL_MS = {
-    "1m": 60_000, "5m": 300_000, "15m": 900_000, "30m": 1_800_000,
-    "1h": 3_600_000, "2h": 7_200_000, "4h": 14_400_000, "6h": 21_600_000,
-    "8h": 28_800_000, "12h": 43_200_000, "1d": 86_400_000,
+    "1m": 60_000,
+    "5m": 300_000,
+    "15m": 900_000,
+    "30m": 1_800_000,
+    "1h": 3_600_000,
+    "2h": 7_200_000,
+    "4h": 14_400_000,
+    "6h": 21_600_000,
+    "8h": 28_800_000,
+    "12h": 43_200_000,
+    "1d": 86_400_000,
 }
 
 __all__ = [
@@ -65,14 +73,16 @@ def resample_bars(df: pd.DataFrame, source: str, target: str) -> pd.DataFrame:
     d["bucket"] = (d["timestamp_ms"] // tgt_ms) * tgt_ms
     g = d.groupby("bucket", sort=True)
 
-    out = pd.DataFrame({
-        "timestamp_ms": g["timestamp_ms"].first().index.to_numpy(),
-        "open": g["open"].first().to_numpy(),
-        "high": g["high"].max().to_numpy(),
-        "low": g["low"].min().to_numpy(),
-        "close": g["close"].last().to_numpy(),
-        "volume": g["volume"].sum().to_numpy(),
-    })
+    out = pd.DataFrame(
+        {
+            "timestamp_ms": g["timestamp_ms"].first().index.to_numpy(),
+            "open": g["open"].first().to_numpy(),
+            "high": g["high"].max().to_numpy(),
+            "low": g["low"].min().to_numpy(),
+            "close": g["close"].last().to_numpy(),
+            "volume": g["volume"].sum().to_numpy(),
+        }
+    )
     if "tick_count" in d.columns:
         out["tick_count"] = g["tick_count"].sum().to_numpy()
 
@@ -121,10 +131,18 @@ def load_panel_v2(
         direct = root_p / f"{symbol}_{interval}.parquet"
 
         if src.is_file():
-            raw = pd.read_parquet(src).drop_duplicates("timestamp_ms").sort_values("timestamp_ms")
+            raw = (
+                pd.read_parquet(src)
+                .drop_duplicates("timestamp_ms")
+                .sort_values("timestamp_ms")
+            )
             df = resample_bars(raw, source_interval, interval)
         elif direct.is_file():
-            df = pd.read_parquet(direct).drop_duplicates("timestamp_ms").sort_values("timestamp_ms")
+            df = (
+                pd.read_parquet(direct)
+                .drop_duplicates("timestamp_ms")
+                .sort_values("timestamp_ms")
+            )
         else:
             continue
 
@@ -137,7 +155,9 @@ def load_panel_v2(
 
     panel = {f: pd.DataFrame(cols).sort_index() for f, cols in frames.items() if cols}
     if "close" not in panel:
-        raise RuntimeError("Không nạp được panel — chạy scripts/download_wide_universe.py trước")
+        raise RuntimeError(
+            "Không nạp được panel — chạy scripts/download_wide_universe.py trước"
+        )
 
     if start_ms is not None or end_ms is not None:
         lo = start_ms if start_ms is not None else -np.inf
@@ -167,7 +187,11 @@ def load_funding_panel_v2(
         path = pathlib.Path(root) / f"{symbol}_funding.parquet"
         if not path.is_file():
             continue
-        df = pd.read_parquet(path).drop_duplicates("funding_time").sort_values("funding_time")
+        df = (
+            pd.read_parquet(path)
+            .drop_duplicates("funding_time")
+            .sort_values("funding_time")
+        )
         s = pd.Series(df["rate"].to_numpy(), index=df["funding_time"].to_numpy())
         union = s.index.union(idx)
         series[symbol] = s.reindex(union).ffill().reindex(idx)
@@ -188,12 +212,12 @@ METRICS_ROOT = "data/binance_metrics"
 #: Trường vị thế lấy từ kho dump `data.binance.vision/.../metrics`.
 #: Đây là những đại lượng mà GIÁ và KHỐI LƯỢNG không chứa: ai đang cầm gì.
 METRICS_FIELDS = [
-    "sum_open_interest",                 # OI theo đơn vị cơ sở
-    "sum_open_interest_value",           # OI theo USD
+    "sum_open_interest",  # OI theo đơn vị cơ sở
+    "sum_open_interest_value",  # OI theo USD
     "count_toptrader_long_short_ratio",  # long/short theo SỐ TÀI KHOẢN của top trader
-    "sum_toptrader_long_short_ratio",    # long/short theo VỊ THẾ của top trader
-    "count_long_short_ratio",            # long/short của TOÀN BỘ tài khoản (đám đông)
-    "sum_taker_long_short_vol_ratio",    # khối lượng taker mua/bán
+    "sum_toptrader_long_short_ratio",  # long/short theo VỊ THẾ của top trader
+    "count_long_short_ratio",  # long/short của TOÀN BỘ tài khoản (đám đông)
+    "sum_taker_long_short_vol_ratio",  # khối lượng taker mua/bán
 ]
 
 
@@ -227,7 +251,11 @@ def load_metrics_panel_v2(
         if not path.is_file():
             continue
         try:
-            df = pd.read_parquet(path).drop_duplicates("timestamp_ms").sort_values("timestamp_ms")
+            df = (
+                pd.read_parquet(path)
+                .drop_duplicates("timestamp_ms")
+                .sort_values("timestamp_ms")
+            )
         except Exception:
             continue
         df = df.set_index("timestamp_ms")
@@ -237,6 +265,11 @@ def load_metrics_panel_v2(
                 # cặp ngừng báo cáo vẫn có "vị thế" y như lần cuối, mãi mãi.
                 cols[f][symbol] = df[f].astype(np.float64).reindex(idx)
 
-    return {f: (pd.DataFrame(c).reindex(index=idx) if c
-                else pd.DataFrame(index=idx, dtype=np.float64))
-            for f, c in cols.items()}
+    return {
+        f: (
+            pd.DataFrame(c).reindex(index=idx)
+            if c
+            else pd.DataFrame(index=idx, dtype=np.float64)
+        )
+        for f, c in cols.items()
+    }

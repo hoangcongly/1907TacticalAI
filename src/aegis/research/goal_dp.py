@@ -89,8 +89,9 @@ __all__ = [
 # ---------------------------------------------------------------------------
 # Mốc chặn dạng đóng
 # ---------------------------------------------------------------------------
-def constant_leverage_ceiling(sharpe_ann: float, ann_vol: float,
-                              horizon_years: float, target_return: float) -> Dict[str, float]:
+def constant_leverage_ceiling(
+    sharpe_ann: float, ann_vol: float, horizon_years: float, target_return: float
+) -> Dict[str, float]:
     """
     Mốc (1): xác suất TỐT NHẤT đạt được bằng một mức đòn bẩy CỐ ĐỊNH, và mức đó là bao nhiêu.
 
@@ -102,7 +103,7 @@ def constant_leverage_ceiling(sharpe_ann: float, ann_vol: float,
 
     b = float(np.log1p(target_return))
     sT = float(np.sqrt(max(horizon_years, 1e-12)))
-    sig_T = float(ann_vol * sT)                      # độ lệch chuẩn trên cả chân trời
+    sig_T = float(ann_vol * sT)  # độ lệch chuẩn trên cả chân trời
 
     z = sharpe_ann * sT - np.sqrt(2.0 * b)
     lev_star = np.sqrt(2.0 * b) / sig_T if sig_T > 1e-12 else np.inf
@@ -110,14 +111,17 @@ def constant_leverage_ceiling(sharpe_ann: float, ann_vol: float,
         "p_max_constant": float(norm.cdf(z)),
         "leverage_star": float(lev_star),
         "z_score": float(z),
-        "edge_term": float(sharpe_ann * sT),          # phần do chiến lược đóng góp
-        "goal_cost_term": float(np.sqrt(2.0 * b)),    # cái giá của mục tiêu, không phụ thuộc S
+        "edge_term": float(sharpe_ann * sT),  # phần do chiến lược đóng góp
+        "goal_cost_term": float(
+            np.sqrt(2.0 * b)
+        ),  # cái giá của mục tiêu, không phụ thuộc S
         "horizon_vol": sig_T,
     }
 
 
-def dynamic_leverage_ceiling(sharpe_ann: float, horizon_years: float,
-                             target_return: float) -> Dict[str, float]:
+def dynamic_leverage_ceiling(
+    sharpe_ann: float, horizon_years: float, target_return: float
+) -> Dict[str, float]:
     """
     Mốc (2): trần lý thuyết khi đòn bẩy KHÔNG bị chặn và giao dịch liên tục.
 
@@ -150,11 +154,11 @@ class GoalSpec:
     sách nhảy nhót mỗi nến — và đó là chính sách chỉ tồn tại được trên giấy.
     """
 
-    target_return: float = 0.05          # +5% = 50.000 VND trên vốn 1.000.000
-    horizon_periods: int = 42            # 42 nến 4h = 7 ngày
-    ruin_floor: float = 0.70             # còn 70% vốn là dừng cuộc chơi
+    target_return: float = 0.05  # +5% = 50.000 VND trên vốn 1.000.000
+    horizon_periods: int = 42  # 42 nến 4h = 7 ngày
+    ruin_floor: float = 0.70  # còn 70% vốn là dừng cuộc chơi
     max_leverage: float = 5.0
-    n_leverage: int = 21                 # số mức trong khoảng [min_executable, max]
+    n_leverage: int = 21  # số mức trong khoảng [min_executable, max]
     #: Đòn bẩy gộp THẤP NHẤT còn đặt được lệnh. Không phải sở thích rủi ro — là số học:
     #: chiến lược cần `n_positions` vị thế để trung lập, mỗi vị thế phải vượt min notional
     #: của sàn. Vốn $38, 12 vị thế, min $5 => gross tối thiểu 12*5/38 = 1.58x.
@@ -165,9 +169,9 @@ class GoalSpec:
     #: đã xảy ra: nó chọn trung bình 1.27x, tương đương $4.01/vị thế, dưới min $5.
     min_executable_leverage: float = 0.0
     cost_per_leverage_turn: float = 0.0005
-    n_wealth: int = 361                  # số nút lưới log-vốn
-    n_quantiles: int = 64                # số nút rời rạc hoá phân phối lợi suất
-    wealth_headroom: float = 0.06        # nới trần lưới trên mức mục tiêu
+    n_wealth: int = 361  # số nút lưới log-vốn
+    n_quantiles: int = 64  # số nút rời rạc hoá phân phối lợi suất
+    wealth_headroom: float = 0.06  # nới trần lưới trên mức mục tiêu
 
     def leverage_grid(self) -> np.ndarray:
         """{0} hợp [min_executable, max_leverage]. Xem `min_executable_leverage`."""
@@ -176,11 +180,14 @@ class GoalSpec:
             return np.linspace(0.0, self.max_leverage, self.n_leverage)
         if lo >= self.max_leverage:
             return np.array([0.0, self.max_leverage])
-        return np.concatenate([[0.0], np.linspace(lo, self.max_leverage, self.n_leverage)])
+        return np.concatenate(
+            [[0.0], np.linspace(lo, self.max_leverage, self.n_leverage)]
+        )
 
     @staticmethod
-    def executable_floor(capital_usd: float, n_positions: int,
-                         min_notional_usd: float) -> float:
+    def executable_floor(
+        capital_usd: float, n_positions: int, min_notional_usd: float
+    ) -> float:
         """Gross tối thiểu để mọi vị thế vượt min notional của sàn."""
         return float(n_positions * min_notional_usd / max(capital_usd, 1e-9))
 
@@ -192,8 +199,9 @@ class GoalSpec:
 
     def wealth_grid(self) -> np.ndarray:
         """Lưới log-vốn, từ ngưỡng cháy tới trên mục tiêu một khoảng."""
-        return np.linspace(self.log_floor(), self.log_target() + self.wealth_headroom,
-                           self.n_wealth)
+        return np.linspace(
+            self.log_floor(), self.log_target() + self.wealth_headroom, self.n_wealth
+        )
 
 
 @dataclass
@@ -214,32 +222,47 @@ class GoalPolicy:
     """
 
     spec: GoalSpec
-    policy: np.ndarray          # (T, n_wealth, n_leverage_prev) -> chỉ số hành động
-    value: np.ndarray           # (T+1, n_wealth, n_leverage_prev) -> xác suất đạt đích
+    policy: np.ndarray  # (T, n_wealth, n_leverage_prev) -> chỉ số hành động
+    value: np.ndarray  # (T+1, n_wealth, n_leverage_prev) -> xác suất đạt đích
     wealth_grid: np.ndarray
     leverage_grid: np.ndarray
     meta: Dict = field(default_factory=dict)
 
-    def p_success(self, wealth_ratio: float = 1.0, periods_left: Optional[int] = None,
-                  current_leverage: float = 0.0) -> float:
+    def p_success(
+        self,
+        wealth_ratio: float = 1.0,
+        periods_left: Optional[int] = None,
+        current_leverage: float = 0.0,
+    ) -> float:
         """Xác suất đạt đích từ trạng thái hiện tại — con số duy nhất đáng nhìn lúc vận hành."""
         k = self.spec.horizon_periods if periods_left is None else periods_left
         k = int(np.clip(k, 0, self.spec.horizon_periods))
-        i = float(np.interp(np.log(max(wealth_ratio, 1e-12)),
-                            self.wealth_grid, np.arange(len(self.wealth_grid))))
+        i = float(
+            np.interp(
+                np.log(max(wealth_ratio, 1e-12)),
+                self.wealth_grid,
+                np.arange(len(self.wealth_grid)),
+            )
+        )
         j = int(np.argmin(np.abs(self.leverage_grid - current_leverage)))
         lo, hi = int(np.floor(i)), min(int(np.ceil(i)), len(self.wealth_grid) - 1)
         f = i - lo
-        v = self.value[k]                       # value[k] <-> còn k kỳ
+        v = self.value[k]  # value[k] <-> còn k kỳ
         return float(v[lo, j] * (1 - f) + v[hi, j] * f)
 
-    def leverage_for(self, wealth_ratio: float, periods_left: int,
-                     current_leverage: float = 0.0) -> float:
+    def leverage_for(
+        self, wealth_ratio: float, periods_left: int, current_leverage: float = 0.0
+    ) -> float:
         """Đòn bẩy nên đặt ngay bây giờ. Đây là toàn bộ đầu ra dùng được lúc vận hành."""
         k = int(np.clip(periods_left, 1, self.spec.horizon_periods))
-        row = k - 1                             # hành động khi còn k kỳ nằm ở policy[k-1]
-        i = int(np.clip(np.searchsorted(self.wealth_grid, np.log(max(wealth_ratio, 1e-12))),
-                        0, len(self.wealth_grid) - 1))
+        row = k - 1  # hành động khi còn k kỳ nằm ở policy[k-1]
+        i = int(
+            np.clip(
+                np.searchsorted(self.wealth_grid, np.log(max(wealth_ratio, 1e-12))),
+                0,
+                len(self.wealth_grid) - 1,
+            )
+        )
         j = int(np.argmin(np.abs(self.leverage_grid - current_leverage)))
         return float(self.leverage_grid[self.policy[row, i, j]])
 
@@ -268,8 +291,11 @@ def _quantise(returns: np.ndarray, n: int) -> Tuple[np.ndarray, np.ndarray]:
 # ---------------------------------------------------------------------------
 # Quy hoạch động
 # ---------------------------------------------------------------------------
-def solve_goal_dp(returns: pd.Series | np.ndarray, spec: Optional[GoalSpec] = None,
-                  verbose: bool = False) -> GoalPolicy:
+def solve_goal_dp(
+    returns: pd.Series | np.ndarray,
+    spec: Optional[GoalSpec] = None,
+    verbose: bool = False,
+) -> GoalPolicy:
     """
     Giải bài toán bằng quy nạp lùi từ hạn chót về hiện tại.
 
@@ -288,29 +314,31 @@ def solve_goal_dp(returns: pd.Series | np.ndarray, spec: Optional[GoalSpec] = No
     r = returns.to_numpy() if isinstance(returns, pd.Series) else np.asarray(returns)
     nodes, probs = _quantise(r, spec.n_quantiles)
 
-    x = spec.wealth_grid()                      # lưới log-vốn
+    x = spec.wealth_grid()  # lưới log-vốn
     L = spec.leverage_grid()
     nx, nL, nq = len(x), len(L), len(nodes)
     x_target = spec.log_target()
 
     # Hệ số tăng trưởng log cho mọi bộ ba (đòn bẩy trước, hành động, nút lợi suất).
     # Kẹp sàn ở -0.999: tài khoản không âm được, và chạm sàn là kết thúc.
-    dcost = spec.cost_per_leverage_turn * np.abs(L[:, None] - L[None, :])   # (nL_prev, nL_act)
+    dcost = spec.cost_per_leverage_turn * np.abs(
+        L[:, None] - L[None, :]
+    )  # (nL_prev, nL_act)
     step = 1.0 + L[None, :, None] * nodes[None, None, :] - dcost[:, :, None]
-    G = np.log(np.maximum(step, 1e-3))                                     # (nL_prev, nL_act, nq)
+    G = np.log(np.maximum(step, 1e-3))  # (nL_prev, nL_act, nq)
 
     V = np.zeros((spec.horizon_periods + 1, nx, nL))
-    V[0] = (x >= x_target).astype(np.float64)[:, None]        # V[0] = hết giờ
+    V[0] = (x >= x_target).astype(np.float64)[:, None]  # V[0] = hết giờ
     policy = np.zeros((spec.horizon_periods, nx, nL), dtype=np.int16)
 
     for t in range(1, spec.horizon_periods + 1):
         Vn = V[t - 1]
         best = np.full((nx, nL), -1.0)
         arg = np.zeros((nx, nL), dtype=np.int16)
-        for a in range(nL):                                   # hành động: đặt đòn bẩy L[a]
-            col = Vn[:, a]                                    # trạng thái kế: đòn bẩy giữ = L[a]
-            for pj in range(nL):                              # đòn bẩy đang giữ
-                xn = x[:, None] + G[pj, a, :][None, :]        # (nx, nq)
+        for a in range(nL):  # hành động: đặt đòn bẩy L[a]
+            col = Vn[:, a]  # trạng thái kế: đòn bẩy giữ = L[a]
+            for pj in range(nL):  # đòn bẩy đang giữ
+                xn = x[:, None] + G[pj, a, :][None, :]  # (nx, nq)
                 ev = np.interp(xn.ravel(), x, col).reshape(nx, nq) @ probs
                 upd = ev > best[:, pj]
                 best[upd, pj] = ev[upd]
@@ -319,20 +347,31 @@ def solve_goal_dp(returns: pd.Series | np.ndarray, spec: Optional[GoalSpec] = No
         best[0, :] = 0.0
         V[t], policy[t - 1] = best, arg
         if verbose and t % 10 == 0:
-            print(f"  t={t:>3}/{spec.horizon_periods}  V(vốn=1)={best[np.argmin(np.abs(x)), 0]:.4f}")
+            print(
+                f"  t={t:>3}/{spec.horizon_periods}  V(vốn=1)={best[np.argmin(np.abs(x)), 0]:.4f}"
+            )
 
-    return GoalPolicy(spec=spec, policy=policy, value=V,
-                      wealth_grid=x, leverage_grid=L,
-                      meta={"n_obs": int(len(r)), "n_quantiles": nq,
-                            "mean_per_period": float(np.mean(r)),
-                            "std_per_period": float(np.std(r, ddof=1))})
+    return GoalPolicy(
+        spec=spec,
+        policy=policy,
+        value=V,
+        wealth_grid=x,
+        leverage_grid=L,
+        meta={
+            "n_obs": int(len(r)),
+            "n_quantiles": nq,
+            "mean_per_period": float(np.mean(r)),
+            "std_per_period": float(np.std(r, ddof=1)),
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
 # Đánh giá TRUNG THỰC: block bootstrap ngoài mẫu
 # ---------------------------------------------------------------------------
-def _bootstrap_paths(r: np.ndarray, n_periods: int, n_paths: int,
-                     block: int, seed: int) -> np.ndarray:
+def _bootstrap_paths(
+    r: np.ndarray, n_periods: int, n_paths: int, block: int, seed: int
+) -> np.ndarray:
     """Ma trận (n_paths, n_periods) lợi suất chưa đòn bẩy, lấy mẫu theo KHỐI."""
     rng = np.random.default_rng(seed)
     n = len(r)
@@ -365,7 +404,11 @@ def evaluate_policy(
     tài khoản xuống ngưỡng cháy.
     """
     spec = spec or (policy.spec if policy is not None else GoalSpec())
-    r = returns_oos.to_numpy() if isinstance(returns_oos, pd.Series) else np.asarray(returns_oos)
+    r = (
+        returns_oos.to_numpy()
+        if isinstance(returns_oos, pd.Series)
+        else np.asarray(returns_oos)
+    )
     r = r[np.isfinite(r)]
 
     paths = _bootstrap_paths(r, spec.horizon_periods, n_paths, block, seed)
@@ -409,23 +452,31 @@ def evaluate_policy(
     for Lc in constant_leverages:
         step = np.log(np.maximum(1.0 + Lc * paths, 1e-3))
         cum = np.cumsum(step, axis=1)
-        ruined = (cum.min(axis=1) <= x_floor)
+        ruined = cum.min(axis=1) <= x_floor
         final_log = np.where(ruined, x_floor, cum[:, -1])
-        rows.append(_measure(f"cố định {Lc:.2f}x", final_log, ruined,
-                             np.full(n_paths, Lc), np.zeros(n_paths),
-                             lev_paths=np.full((n_paths, spec.horizon_periods), Lc)))
+        rows.append(
+            _measure(
+                f"cố định {Lc:.2f}x",
+                final_log,
+                ruined,
+                np.full(n_paths, Lc),
+                np.zeros(n_paths),
+                lev_paths=np.full((n_paths, spec.horizon_periods), Lc),
+            )
+        )
 
     # -- chính sách quy hoạch động -------------------------------------------
     if policy is not None:
         xg, Lg = policy.wealth_grid, policy.leverage_grid
         cur_x = np.zeros(n_paths)
-        cur_j = np.zeros(n_paths, dtype=np.int64)        # chỉ số đòn bẩy đang giữ
+        cur_j = np.zeros(n_paths, dtype=np.int64)  # chỉ số đòn bẩy đang giữ
         dead = np.zeros(n_paths, dtype=bool)
-        lev_sum = np.zeros(n_paths); turns = np.zeros(n_paths)
+        lev_sum = np.zeros(n_paths)
+        turns = np.zeros(n_paths)
         lev_hist = np.zeros((n_paths, spec.horizon_periods))
 
         for t in range(spec.horizon_periods):
-            left = spec.horizon_periods - t      # số kỳ CÒN LẠI trước khi hành động
+            left = spec.horizon_periods - t  # số kỳ CÒN LẠI trước khi hành động
             row = policy.policy[left - 1]
             i = np.clip(np.searchsorted(xg, cur_x), 0, len(xg) - 1)
             a = row[i, cur_j]
@@ -444,17 +495,28 @@ def evaluate_policy(
             lev_hist[:, t] = Lt
             cur_j = a
 
-        rows.append(_measure("DP mục tiêu", cur_x, dead,
-                             lev_sum / spec.horizon_periods, turns,
-                             lev_paths=lev_hist))
+        rows.append(
+            _measure(
+                "DP mục tiêu",
+                cur_x,
+                dead,
+                lev_sum / spec.horizon_periods,
+                turns,
+                lev_paths=lev_hist,
+            )
+        )
 
     return pd.DataFrame(rows)
 
 
-def policy_frontier(returns_train, returns_oos, base_spec: Optional[GoalSpec] = None,
-                    ruin_floors: Optional[List[float]] = None,
-                    max_leverages: Optional[List[float]] = None,
-                    **eval_kw) -> pd.DataFrame:
+def policy_frontier(
+    returns_train,
+    returns_oos,
+    base_spec: Optional[GoalSpec] = None,
+    ruin_floors: Optional[List[float]] = None,
+    max_leverages: Optional[List[float]] = None,
+    **eval_kw,
+) -> pd.DataFrame:
     """
     Quét đánh đổi: mỗi (ngưỡng cháy, trần đòn bẩy) -> xác suất đạt đích ngoài mẫu.
 
@@ -466,11 +528,13 @@ def policy_frontier(returns_train, returns_oos, base_spec: Optional[GoalSpec] = 
 
     base = base_spec or GoalSpec()
     out = []
-    for floor in (ruin_floors or [0.70]):
-        for mx in (max_leverages or [base.max_leverage]):
+    for floor in ruin_floors or [0.70]:
+        for mx in max_leverages or [base.max_leverage]:
             spec = replace(base, ruin_floor=floor, max_leverage=mx)
             pol = solve_goal_dp(returns_train, spec)
-            df = evaluate_policy(returns_oos, pol, spec, constant_leverages=[], **eval_kw)
+            df = evaluate_policy(
+                returns_oos, pol, spec, constant_leverages=[], **eval_kw
+            )
             # constant_leverages=[] => CHỈ chấm DP (xem ghi chú `is None` trong evaluate_policy)
             row = df.iloc[-1].to_dict()
             row.update(ruin_floor=floor, max_leverage=mx)

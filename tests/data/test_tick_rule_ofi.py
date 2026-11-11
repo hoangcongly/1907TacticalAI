@@ -1,4 +1,5 @@
 """Unit tests for Tick Rule Order Flow Imbalance (OFI)."""
+
 import numpy as np
 import pytest
 from aegis.data.bars.tick_rule_ofi import (

@@ -29,15 +29,18 @@ SCHEMA_VERSION = 1
 @dataclass
 class LiveState:
     """Toàn bộ trạng thái phải sống sót qua restart."""
+
     schema_version: int = SCHEMA_VERSION
 
     # --- Ngắt mạch rủi ro ---
     peak_equity: float = 0.0
-    is_dead: bool = False           # kill switch vĩnh viễn
+    is_dead: bool = False  # kill switch vĩnh viễn
     frozen_until_ms: int = 0
 
     # --- Vị thế & lệnh ---
-    positions: Dict[str, float] = field(default_factory=dict)   # symbol -> qty (âm = short)
+    positions: Dict[str, float] = field(
+        default_factory=dict
+    )  # symbol -> qty (âm = short)
     last_rebalance_ms: int = 0
     rebalance_count: int = 0
 
@@ -74,7 +77,11 @@ class StateStore:
             return LiveState()
 
         if data.get("schema_version") != SCHEMA_VERSION:
-            logger.warning("Schema state store lệch: %s != %s", data.get("schema_version"), SCHEMA_VERSION)
+            logger.warning(
+                "Schema state store lệch: %s != %s",
+                data.get("schema_version"),
+                SCHEMA_VERSION,
+            )
 
         known = {f for f in LiveState.__dataclass_fields__}
         return LiveState(**{k: v for k, v in data.items() if k in known})

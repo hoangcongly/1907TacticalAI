@@ -32,12 +32,14 @@ __all__ = ["build_position_report", "position_rows", "chunk_message", "TELEGRAM_
 # gửi tin trả về False, KHÔNG ném ngoại lệ. Nghĩa là báo cáo sẽ im lặng không
 # bao giờ tới nơi. Danh mục 12 vị thế dài 4482 ký tự, tức vượt ngay từ lần đầu.
 # [FIX F34]
-TELEGRAM_LIMIT = 4000   # chừa biên cho ký tự HTML và emoji nhiều byte
+TELEGRAM_LIMIT = 4000  # chừa biên cho ký tự HTML và emoji nhiều byte
 
 TIER1_DD, TIER2_DD, TIER3_DD = 0.10, 0.20, 0.30
 
 
-def position_rows(positions: List[Dict[str, Any]], equity: float) -> List[Dict[str, Any]]:
+def position_rows(
+    positions: List[Dict[str, Any]], equity: float
+) -> List[Dict[str, Any]]:
     """
     Chuẩn hoá dữ liệu vị thế thô từ sàn thành các trường để hiển thị.
 
@@ -62,28 +64,37 @@ def position_rows(positions: List[Dict[str, Any]], equity: float) -> List[Dict[s
         # hiển thị 0, vì "0" trông như sắp bị thanh lý.
         dist = (abs(mark - liq) / mark * 100.0) if (liq > 0 and mark > 0) else None
 
-        rows.append({
-            "symbol": p["symbol"],
-            "side": "LONG" if amt > 0 else "SHORT",
-            "qty": abs(amt),
-            "notional": notional,
-            "margin": notional / lev if lev > 0 else 0.0,
-            "pct_account": (notional / equity * 100.0) if equity > 0 else 0.0,
-            "exchange_leverage": lev,
-            "entry": entry,
-            "mark": mark,
-            "liq": liq if liq > 0 else None,
-            "liq_distance_pct": dist,
-            "upnl": upnl,
-            # Hai cách quy đổi, CẢ HAI đều cần vì chúng nói hai chuyện khác nhau:
-            #   `price_move_pct` — giá đã chạy bao nhiêu (con số trực giác)
-            #   `upnl_pct_margin` — lãi/lỗ trên ký quỹ. Ở đòn bẩy sàn 20x, con số này
-            #     bị khuếch đại 20 lần và nhìn rất đáng sợ (+582%) dù giá chỉ chạy 41%.
-            #     Hiển thị riêng nó mà không kèm mức giá là gây hiểu nhầm.
-            "price_move_pct": (((mark - entry) / entry * 100.0 * (1 if amt > 0 else -1))
-                               if entry > 0 else 0.0),
-            "upnl_pct_margin": (upnl / (notional / lev) * 100.0) if (notional > 0 and lev > 0) else 0.0,
-        })
+        rows.append(
+            {
+                "symbol": p["symbol"],
+                "side": "LONG" if amt > 0 else "SHORT",
+                "qty": abs(amt),
+                "notional": notional,
+                "margin": notional / lev if lev > 0 else 0.0,
+                "pct_account": (notional / equity * 100.0) if equity > 0 else 0.0,
+                "exchange_leverage": lev,
+                "entry": entry,
+                "mark": mark,
+                "liq": liq if liq > 0 else None,
+                "liq_distance_pct": dist,
+                "upnl": upnl,
+                # Hai cách quy đổi, CẢ HAI đều cần vì chúng nói hai chuyện khác nhau:
+                #   `price_move_pct` — giá đã chạy bao nhiêu (con số trực giác)
+                #   `upnl_pct_margin` — lãi/lỗ trên ký quỹ. Ở đòn bẩy sàn 20x, con số này
+                #     bị khuếch đại 20 lần và nhìn rất đáng sợ (+582%) dù giá chỉ chạy 41%.
+                #     Hiển thị riêng nó mà không kèm mức giá là gây hiểu nhầm.
+                "price_move_pct": (
+                    ((mark - entry) / entry * 100.0 * (1 if amt > 0 else -1))
+                    if entry > 0
+                    else 0.0
+                ),
+                "upnl_pct_margin": (
+                    (upnl / (notional / lev) * 100.0)
+                    if (notional > 0 and lev > 0)
+                    else 0.0
+                ),
+            }
+        )
     return sorted(rows, key=lambda r: -r["notional"])
 
 
@@ -129,8 +140,11 @@ def build_position_report(
 
     for r in rows[:max_rows]:
         icon = "🟢" if r["side"] == "LONG" else "🔴"
-        liq = (f"{_fmt_price(r['liq'])} (cách {r['liq_distance_pct']:.0f}%)"
-               if r["liq_distance_pct"] is not None else "— (ví đủ đỡ)")
+        liq = (
+            f"{_fmt_price(r['liq'])} (cách {r['liq_distance_pct']:.0f}%)"
+            if r["liq_distance_pct"] is not None
+            else "— (ví đủ đỡ)"
+        )
         out += [
             f"{icon} <b>{r['symbol']}</b> {r['side']}",
             f"   vốn vào lệnh : ${r['margin']:,.2f}  "
@@ -185,11 +199,13 @@ def chunk_message(text: str, limit: int = TELEGRAM_LIMIT) -> List[str]:
         # Dòng đơn lẻ quá dài: cắt cứng, không còn lựa chọn nào khác.
         while len(line) > limit:
             if cur:
-                parts.append("\n".join(cur)); cur, size = [], 0
+                parts.append("\n".join(cur))
+                cur, size = [], 0
             parts.append(line[:limit])
             line = line[limit:]
         if size + len(line) + 1 > limit and cur:
-            parts.append("\n".join(cur)); cur, size = [], 0
+            parts.append("\n".join(cur))
+            cur, size = [], 0
         cur.append(line)
         size += len(line) + 1
     if cur:

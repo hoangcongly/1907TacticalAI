@@ -1,11 +1,11 @@
 """
 Aegis AI Agent — Tích hợp Google Gemini 2.5 Flash làm bộ não định lượng cho Telegram Bot.
 """
+
 from datetime import datetime, timezone
-import json
 import logging
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 import requests
 
 from aegis.core.credentials import load_dotenv
@@ -59,7 +59,7 @@ class GeminiAIAssistant:
             f"=== DỮ LIỆU TÀI KHOẢN & HỆ THỐNG THỜI GIAN THỰC ===\n"
             f"{live_context}\n"
             f"====================================================\n\n"
-            f"Người dùng hỏi: \"{user_message}\"\n\n"
+            f'Người dùng hỏi: "{user_message}"\n\n'
             f"Hãy trả lời câu hỏi trên:"
         )
 
@@ -82,7 +82,9 @@ class GeminiAIAssistant:
                         return parts[0].get("text", "").strip()
                 return "Xin lỗi sếp, tôi không nhận được nội dung trả lời từ mô hình."
             else:
-                logger.error("Gemini API error: %d - %s", resp.status_code, resp.text[:200])
+                logger.error(
+                    "Gemini API error: %d - %s", resp.status_code, resp.text[:200]
+                )
                 return f"⚠️ Lỗi kết nối Gemini API (HTTP {resp.status_code})."
         except Exception as exc:
             logger.error("Lỗi khi gọi Gemini: %s", exc)
@@ -117,7 +119,9 @@ def build_live_context_snapshot(client: Any, state_store: Any) -> str:
             mark = float(p.get("markPrice", 0))
             pnl = float(p.get("unRealizedProfit", 0))
             side = "LONG" if amt > 0 else "SHORT"
-            lines.append(f"  • {sym} ({side}): {abs(amt)} @ ${entry:,.4f} | Giá hiện tại: ${mark:,.4f} | uPnL: ${pnl:+,.2f}")
+            lines.append(
+                f"  • {sym} ({side}): {abs(amt)} @ ${entry:,.4f} | Giá hiện tại: ${mark:,.4f} | uPnL: ${pnl:+,.2f}"
+            )
     except Exception as e:
         lines.append(f"- Lỗi đọc vị thế: {e}")
 
@@ -126,9 +130,14 @@ def build_live_context_snapshot(client: Any, state_store: Any) -> str:
         lines.append(f"- Số lần đã tái cân bằng: {state.rebalance_count}")
         lines.append(f"- Đỉnh vốn (Peak Equity): ${state.peak_equity:,.2f}")
         if state.last_rebalance_ms > 0:
-            hrs = (int(datetime.now(timezone.utc).timestamp() * 1000) - state.last_rebalance_ms) / 3_600_000
+            hrs = (
+                int(datetime.now(timezone.utc).timestamp() * 1000)
+                - state.last_rebalance_ms
+            ) / 3_600_000
             lines.append(f"- Đã qua {hrs:.1f} giờ kể từ lượt tái cân bằng trước")
-        lines.append(f"- Trạng thái Kill Switch: {'ĐÃ CHẾT/DỪNG' if state.is_dead else 'Bình thường'}")
+        lines.append(
+            f"- Trạng thái Kill Switch: {'ĐÃ CHẾT/DỪNG' if state.is_dead else 'Bình thường'}"
+        )
     except Exception as e:
         lines.append(f"- Lỗi đọc trạng thái state_store: {e}")
 

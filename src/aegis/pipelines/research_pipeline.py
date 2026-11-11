@@ -16,7 +16,7 @@ Thực hiện Full Fit trên toàn bộ dữ liệu lịch sử để xuất art
 import os
 import json
 import time
-from typing import Dict, Any, List, Optional, Union
+from typing import Dict, Any, Optional
 import numpy as np
 import pandas as pd
 import joblib
@@ -42,7 +42,9 @@ from aegis.meta_labeling.feature_selection.mdi_mda_sfi import (
     triple_consensus_ranker,
 )
 from aegis.meta_labeling.feature_selection.clustering import apply_consensus_filter
-from aegis.meta_labeling.weighted_bootstrap_forest import WeightedBootstrapForestClassifier
+from aegis.meta_labeling.weighted_bootstrap_forest import (
+    WeightedBootstrapForestClassifier,
+)
 from aegis.meta_labeling.calibration import build_calibrated_classifier
 from aegis.meta_labeling.purged_kfold import PurgedKFold
 from aegis.pipelines.cpcv_pipeline import CPCVPipeline
@@ -86,7 +88,11 @@ class ResearchPipeline:
         bars = batch_features(signal_bars)
         n_bars = len(bars)
         insufficient_history = bars["insufficient_history"].values
-        valid_start = int(np.where(~insufficient_history)[0][0]) if np.any(~insufficient_history) else 0
+        valid_start = (
+            int(np.where(~insufficient_history)[0][0])
+            if np.any(~insufficient_history)
+            else 0
+        )
 
         closes = bars["close"].astype(np.float64).values
         highs = bars["high"].astype(np.float64).values
@@ -252,9 +258,7 @@ class ResearchPipeline:
             embargo_bars=self.config.get("embargo_bars", 5),
             config=self.config,
         )
-        cpcv_res = cpcv_pipe.run(
-            bars, num_bins=self.config.get("num_bins", 5)
-        )
+        cpcv_res = cpcv_pipe.run(bars, num_bins=self.config.get("num_bins", 5))
 
         # 9. Export Production Artifacts
         os.makedirs(artifacts_dir, exist_ok=True)

@@ -16,7 +16,7 @@ mới là chế độ thị trường mà ta sắp giao dịch thật.
 """
 
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Dict
 
 import numpy as np
 import pandas as pd
@@ -25,6 +25,7 @@ import pandas as pd
 @dataclass
 class TimeSplit:
     """Ranh giới tách train/holdout theo thời gian."""
+
     split_ts: int
     train_frac: float
 
@@ -38,8 +39,10 @@ class TimeSplit:
         tr = (index < self.split_ts).sum()
         ho = (index >= self.split_ts).sum()
         d0 = pd.to_datetime(self.split_ts, unit="ms").date()
-        return (f"train {tr} nến (< {d0}) | holdout {ho} nến (>= {d0}) "
-                f"[{tr/(tr+ho)*100:.0f}% / {ho/(tr+ho)*100:.0f}%]")
+        return (
+            f"train {tr} nến (< {d0}) | holdout {ho} nến (>= {d0}) "
+            f"[{tr/(tr+ho)*100:.0f}% / {ho/(tr+ho)*100:.0f}%]"
+        )
 
 
 def make_split(index: pd.Index, train_frac: float = 0.70) -> TimeSplit:
@@ -47,8 +50,10 @@ def make_split(index: pd.Index, train_frac: float = 0.70) -> TimeSplit:
     if not (0.3 <= train_frac <= 0.9):
         raise ValueError(f"train_frac nên thuộc [0.3, 0.9], nhận {train_frac}")
     values = np.sort(np.asarray(index))
-    return TimeSplit(split_ts=int(values[int(len(values) * train_frac)]),
-                     train_frac=float(train_frac))
+    return TimeSplit(
+        split_ts=int(values[int(len(values) * train_frac)]),
+        train_frac=float(train_frac),
+    )
 
 
 def split_panel(

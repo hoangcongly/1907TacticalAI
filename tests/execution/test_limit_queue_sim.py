@@ -136,7 +136,6 @@ def test_b_2_2_progressive_fallback_tier2_entry_vs_exit():
     assert info_trail["fallback_tier"] == 2
 
 
-
 def test_b_2_2_simulate_limit_fill_with_queue():
     """
     [TDD VERIFICATION - SIMULATE LIMIT FILL]:
@@ -150,11 +149,16 @@ def test_b_2_2_simulate_limit_fill_with_queue():
     # bar 3: cum = 45.0 >= 40.0 => FILLED tại bar 3!
     # Lệnh Mua (side=1) tại limit_price=100.0; lows đều <= 100.0 nên giá đã quét tới
     highs = np.array([102.0, 103.0, 101.0, 105.0], dtype=np.float64)
-    lows  = np.array([99.0,  99.0,  99.0,  99.0],  dtype=np.float64)
+    lows = np.array([99.0, 99.0, 99.0, 99.0], dtype=np.float64)
     res = simulate_limit_fill_with_queue(
-        queue_effective=30.0, order_size=10.0, subsequent_volumes=vols, timeout_bars=5,
-        limit_price=100.0, side=1,
-        subsequent_highs=highs, subsequent_lows=lows
+        queue_effective=30.0,
+        order_size=10.0,
+        subsequent_volumes=vols,
+        timeout_bars=5,
+        limit_price=100.0,
+        side=1,
+        subsequent_highs=highs,
+        subsequent_lows=lows,
     )
     assert res["filled"] is True
     assert res["fill_bar_idx"] == 3
@@ -162,9 +166,14 @@ def test_b_2_2_simulate_limit_fill_with_queue():
 
     # Khi timeout_bars = 2, lệnh chưa kịp khớp
     res_timeout = simulate_limit_fill_with_queue(
-        queue_effective=30.0, order_size=10.0, subsequent_volumes=vols, timeout_bars=2,
-        limit_price=100.0, side=1,
-        subsequent_highs=highs, subsequent_lows=lows
+        queue_effective=30.0,
+        order_size=10.0,
+        subsequent_volumes=vols,
+        timeout_bars=2,
+        limit_price=100.0,
+        side=1,
+        subsequent_highs=highs,
+        subsequent_lows=lows,
     )
     assert res_timeout["filled"] is False
     assert res_timeout["timeout_reached"] is True
@@ -202,4 +211,3 @@ def test_tier1_mild_jitter_exponential_backoff_and_ttl():
     assert info["backoff_multiplier"] == pytest.approx(2.0)
     assert info["max_retry_attempts"] == 3
     assert info["next_retry_ms"] == 2000
-

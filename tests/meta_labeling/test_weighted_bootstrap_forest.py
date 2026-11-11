@@ -1,8 +1,8 @@
-import pytest
 import numpy as np
-import pandas as pd
 from sklearn.metrics import accuracy_score
-from aegis.meta_labeling.weighted_bootstrap_forest import WeightedBootstrapForestClassifier
+from aegis.meta_labeling.weighted_bootstrap_forest import (
+    WeightedBootstrapForestClassifier,
+)
 
 
 def test_weighted_bootstrap_forest_basic():
@@ -11,7 +11,9 @@ def test_weighted_bootstrap_forest_basic():
     X = np.random.normal(0, 1, (100, 2))
     y = (X[:, 0] > 0).astype(int)
 
-    clf = WeightedBootstrapForestClassifier(n_estimators=10, random_state=42, max_depth=3)
+    clf = WeightedBootstrapForestClassifier(
+        n_estimators=10, random_state=42, max_depth=3
+    )
     clf.fit(X, y)
 
     pred = clf.predict(X)
@@ -32,7 +34,9 @@ def test_weighted_bootstrap_with_sample_weights():
     w[:50] = 1000.0
     w[50:] = 1.0
 
-    clf = WeightedBootstrapForestClassifier(n_estimators=10, random_state=42, max_depth=3)
+    clf = WeightedBootstrapForestClassifier(
+        n_estimators=10, random_state=42, max_depth=3
+    )
     clf.fit(X, y, sample_weight=w)
     proba = clf.predict_proba(X)
     assert proba.shape == (100, 2)
@@ -45,16 +49,20 @@ def test_forest_missing_class_in_bootstrap():
     """
     np.random.seed(42)
     # 98 mẫu class 0, 2 mẫu class 1
-    X = np.vstack([
-        np.random.normal(0, 1, (98, 2)),
-        np.random.normal(5, 0.01, (2, 2)),
-    ])
+    X = np.vstack(
+        [
+            np.random.normal(0, 1, (98, 2)),
+            np.random.normal(5, 0.01, (2, 2)),
+        ]
+    )
     y = np.array([0] * 98 + [1] * 2)
 
     # Trọng số ép gần như toàn bộ sang class 0
     w = np.array([100.0] * 98 + [0.001] * 2)
 
-    clf = WeightedBootstrapForestClassifier(n_estimators=20, random_state=42, max_depth=2)
+    clf = WeightedBootstrapForestClassifier(
+        n_estimators=20, random_state=42, max_depth=2
+    )
     clf.fit(X, y, sample_weight=w)
 
     proba = clf.predict_proba(X)

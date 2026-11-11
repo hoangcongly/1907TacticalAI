@@ -50,13 +50,19 @@ class ReconciliationReport:
 
     def summary(self) -> str:
         if self.is_clean:
-            return (f"✅ Khớp sổ sách | {len(self.exchange_positions)} vị thế | "
-                    f"ví ${self.wallet_balance:.2f}")
-        lines = [f"❌ LỆCH SỔ SÁCH ({len(self.discrepancies)} vị thế, "
-                 f"{len(self.orphan_orders)} lệnh mồ côi)"]
+            return (
+                f"✅ Khớp sổ sách | {len(self.exchange_positions)} vị thế | "
+                f"ví ${self.wallet_balance:.2f}"
+            )
+        lines = [
+            f"❌ LỆCH SỔ SÁCH ({len(self.discrepancies)} vị thế, "
+            f"{len(self.orphan_orders)} lệnh mồ côi)"
+        ]
         for d in self.discrepancies:
-            lines.append(f"   {d.symbol:<12} nội bộ {d.internal_qty:+.6f} | "
-                         f"sàn {d.exchange_qty:+.6f} | lệch {d.delta:+.6f} ({d.kind})")
+            lines.append(
+                f"   {d.symbol:<12} nội bộ {d.internal_qty:+.6f} | "
+                f"sàn {d.exchange_qty:+.6f} | lệch {d.delta:+.6f} ({d.kind})"
+            )
         for oid in self.orphan_orders:
             lines.append(f"   lệnh treo trên sàn không có trong sổ nội bộ: {oid}")
         return "\n".join(lines)
@@ -90,7 +96,9 @@ def reconcile(
             report.exchange_positions[pos["symbol"]] = amt
 
     if expected_positions is not None:
-        internal = {s: q for s, q in expected_positions.items() if abs(q) > qty_tolerance}
+        internal = {
+            s: q for s, q in expected_positions.items() if abs(q) > qty_tolerance
+        }
     elif order_book is not None:
         symbols = {o.symbol for o in order_book.all_orders()}
         internal = {}
@@ -116,7 +124,9 @@ def reconcile(
         report.discrepancies.append(Discrepancy(symbol, it, ex, kind))
 
     if order_book is not None:
-        known = {o.exchange_order_id for o in order_book.all_orders() if o.exchange_order_id}
+        known = {
+            o.exchange_order_id for o in order_book.all_orders() if o.exchange_order_id
+        }
         for od in client.open_orders():
             if int(od.get("orderId", 0)) not in known:
                 report.orphan_orders.append(f"{od.get('symbol')}#{od.get('orderId')}")

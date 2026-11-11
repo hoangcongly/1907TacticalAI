@@ -1,6 +1,7 @@
 """
 Unit tests cho module schemas (Đặc biệt kiểm định tính bất biến của ImmutableTradeRecord - Lỗ hổng 9).
 """
+
 import pytest
 from dataclasses import FrozenInstanceError
 from aegis.core.schemas import ImmutableTradeRecord, TradeRecord
@@ -32,7 +33,7 @@ def test_immutable_trade_record_mutation_raises_error():
         funding_accrued=0.1,
         gross_pnl=-1000.0,
         realized_return=-0.02,
-        fold_id="fold_0"
+        fold_id="fold_0",
     )
 
     with pytest.raises(FrozenInstanceError):

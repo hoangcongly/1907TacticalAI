@@ -60,4 +60,3 @@ def test_monitor_brier_score_cusum_drift_and_reset(tmp_path: Path):
     assert res["alarms_details"][0]["bar_idx"] == 1
     assert res["alarms_details"][0]["s_plus_at_trigger"] == pytest.approx(0.21)
     assert res["final_s_plus"] == pytest.approx(0.0)
-

@@ -42,14 +42,27 @@ def estimate_queue_ahead(
     """
     if not isinstance(order_book_snapshot, dict):
         raise ValueError("order_book_snapshot phải là dictionary.")
-    if not isinstance(limit_price, (int, float)) or limit_price <= 0 or math.isnan(limit_price) or math.isinf(limit_price):
+    if (
+        not isinstance(limit_price, (int, float))
+        or limit_price <= 0
+        or math.isnan(limit_price)
+        or math.isinf(limit_price)
+    ):
         raise ValueError(f"limit_price phải là số thực dương, nhận {limit_price}")
     if side not in (-1, 1):
         raise ValueError(f"side phải là +1 (Buy) hoặc -1 (Sell), nhận {side}")
     if not isinstance(current_timestamp_ms, int) or current_timestamp_ms < 0:
-        raise ValueError(f"current_timestamp_ms phải là số nguyên >= 0, nhận {current_timestamp_ms}")
-    if not isinstance(spoofing_discount, (int, float)) or not (0.0 < spoofing_discount <= 1.0) or math.isnan(spoofing_discount):
-        raise ValueError(f"spoofing_discount phải thuộc (0, 1.0], nhận {spoofing_discount}")
+        raise ValueError(
+            f"current_timestamp_ms phải là số nguyên >= 0, nhận {current_timestamp_ms}"
+        )
+    if (
+        not isinstance(spoofing_discount, (int, float))
+        or not (0.0 < spoofing_discount <= 1.0)
+        or math.isnan(spoofing_discount)
+    ):
+        raise ValueError(
+            f"spoofing_discount phải thuộc (0, 1.0], nhận {spoofing_discount}"
+        )
 
     bids_data = order_book_snapshot.get("bids", {})
     asks_data = order_book_snapshot.get("asks", {})
@@ -100,7 +113,11 @@ def estimate_queue_ahead(
     queue_effective = queue_visible * float(spoofing_discount)
 
     # Ước tính số bar tiêu hao hết hàng đợi
-    if bar_avg_volume is not None and isinstance(bar_avg_volume, (int, float)) and bar_avg_volume > 0:
+    if (
+        bar_avg_volume is not None
+        and isinstance(bar_avg_volume, (int, float))
+        and bar_avg_volume > 0
+    ):
         estimated_depletion_bars = queue_effective / float(bar_avg_volume)
     else:
         estimated_depletion_bars = 0.0
@@ -163,8 +180,15 @@ def resolve_execution_mode_with_l2_fallback(
         raise ValueError("intended_mode phải là string.")
     if not isinstance(trade_intent, str):
         raise ValueError("trade_intent phải là string.")
-    if not isinstance(tier1_threshold_ms, int) or not isinstance(tier2_threshold_ms, int) or tier1_threshold_ms < 0 or tier2_threshold_ms <= tier1_threshold_ms:
-        raise ValueError(f"tier1 và tier2 thresholds không hợp lệ: ({tier1_threshold_ms}, {tier2_threshold_ms})")
+    if (
+        not isinstance(tier1_threshold_ms, int)
+        or not isinstance(tier2_threshold_ms, int)
+        or tier1_threshold_ms < 0
+        or tier2_threshold_ms <= tier1_threshold_ms
+    ):
+        raise ValueError(
+            f"tier1 và tier2 thresholds không hợp lệ: ({tier1_threshold_ms}, {tier2_threshold_ms})"
+        )
 
     queue_info = estimate_queue_ahead(
         order_book_snapshot=l2_snapshot,
@@ -195,9 +219,21 @@ def resolve_execution_mode_with_l2_fallback(
         queue_info["max_retry_attempts"] = 0
         queue_info["next_retry_ms"] = 0
 
-        if intent_upper in ("SL", "LIQUIDATION_PREVENTION", "EMERGENCY_EXIT", "STOP_LOSS", "LIQUIDATION"):
+        if intent_upper in (
+            "SL",
+            "LIQUIDATION_PREVENTION",
+            "EMERGENCY_EXIT",
+            "STOP_LOSS",
+            "LIQUIDATION",
+        ):
             return "FORCE_MARKET", queue_info
-        elif intent_upper in ("EXIT", "TRAIL_PROFIT", "REGIME_FLIP", "TAKE_PROFIT", "NORMAL_EXIT"):
+        elif intent_upper in (
+            "EXIT",
+            "TRAIL_PROFIT",
+            "REGIME_FLIP",
+            "TAKE_PROFIT",
+            "NORMAL_EXIT",
+        ):
             return "POSTPONE_NON_EMERGENCY_EXIT", queue_info
         else:
             return "ABORT_ENTRY", queue_info
@@ -210,7 +246,9 @@ def resolve_execution_mode_with_l2_fallback(
         # Tăng buffer an toàn cho effective queue thêm 50%
         queue_info["queue_effective"] *= 1.5
         if bar_avg_volume is not None and bar_avg_volume > 0:
-            queue_info["estimated_depletion_bars"] = queue_info["queue_effective"] / float(bar_avg_volume)
+            queue_info["estimated_depletion_bars"] = queue_info[
+                "queue_effective"
+            ] / float(bar_avg_volume)
         # [KHẮC PHỤC LỖ HỔNG 4 - API RATE LIMIT & OTR BAN]:
         # Thiết lập TTL = 15s (10s-30s) dài và cơ chế Exponential Backoff tránh spam lệnh gây OTR Ban
         queue_info["ttl_seconds"] = 15
@@ -250,9 +288,17 @@ def simulate_limit_fill_with_queue(
     - Lệnh Mua (side=1): quét qua nếu Low <= limit_price.
     - Lệnh Bán (side=-1): quét qua nếu High >= limit_price.
     """
-    if not isinstance(queue_effective, (int, float)) or queue_effective < 0 or math.isnan(queue_effective):
+    if (
+        not isinstance(queue_effective, (int, float))
+        or queue_effective < 0
+        or math.isnan(queue_effective)
+    ):
         raise ValueError(f"queue_effective không hợp lệ: {queue_effective}")
-    if not isinstance(order_size, (int, float)) or order_size <= 0 or math.isnan(order_size):
+    if (
+        not isinstance(order_size, (int, float))
+        or order_size <= 0
+        or math.isnan(order_size)
+    ):
         raise ValueError(f"order_size không hợp lệ: {order_size}")
     if not isinstance(timeout_bars, int) or timeout_bars <= 0:
         raise ValueError(f"timeout_bars phải là số nguyên dương: {timeout_bars}")
@@ -262,9 +308,11 @@ def simulate_limit_fill_with_queue(
     vols_np = np.asarray(subsequent_volumes, dtype=np.float64)
     highs_np = np.asarray(subsequent_highs, dtype=np.float64)
     lows_np = np.asarray(subsequent_lows, dtype=np.float64)
-    
+
     if vols_np.ndim != 1 or np.any(vols_np < 0) or np.any(np.isnan(vols_np)):
-        raise ValueError("subsequent_volumes phải là mảng 1D số thực >= 0 không chứa NaN.")
+        raise ValueError(
+            "subsequent_volumes phải là mảng 1D số thực >= 0 không chứa NaN."
+        )
 
     required_volume = float(queue_effective) + float(order_size)
     cumulative_volume = 0.0
@@ -280,7 +328,7 @@ def simulate_limit_fill_with_queue(
         else:
             if highs_np[idx] >= limit_price:
                 price_touched = True
-                
+
         if price_touched:
             cumulative_volume += float(vols_np[idx])
             if cumulative_volume >= required_volume:

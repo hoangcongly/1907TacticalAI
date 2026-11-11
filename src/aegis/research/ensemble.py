@@ -24,8 +24,8 @@ cân bằng, bộ tín hiệu), không phải khác vụn vặt. Gộp 5 cấu h
 tốn công tính.
 """
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from dataclasses import dataclass
+from typing import List, Optional
 
 import numpy as np
 import pandas as pd
@@ -40,7 +40,7 @@ class EnsembleMember:
     """Một thành phần: tín hiệu trên lưới riêng + cách dựng danh mục riêng."""
 
     name: str
-    signal: pd.DataFrame        # trên lưới tái cân bằng RIÊNG của nó
+    signal: pd.DataFrame  # trên lưới tái cân bằng RIÊNG của nó
     spec: PortfolioSpec
     weight: float = 1.0
 
@@ -93,8 +93,11 @@ def ensemble_weights(
     for m in members:
         marks = m.signal.index
         w = build_weights(m.signal, close.reindex(marks), m.spec)
-        acc = acc.add(align_to_grid(w, grid).reindex(columns=close.columns).fillna(0.0)
-                      * (m.weight / total_w), fill_value=0.0)
+        acc = acc.add(
+            align_to_grid(w, grid).reindex(columns=close.columns).fillna(0.0)
+            * (m.weight / total_w),
+            fill_value=0.0,
+        )
 
     out = pd.DataFrame(0.0, index=grid, columns=close.columns)
     for ts in grid:
@@ -108,12 +111,16 @@ def ensemble_weights(
 
         if risk_parity and vol is not None and ts in vol.index:
             v = vol.loc[ts].reindex(w.index)
-            floor = float(np.nanquantile(v.to_numpy(dtype=float), 0.10)) if v.notna().any() else np.nan
+            floor = (
+                float(np.nanquantile(v.to_numpy(dtype=float), 0.10))
+                if v.notna().any()
+                else np.nan
+            )
             if np.isfinite(floor) and floor > 0:
                 v = v.where(v > floor, floor).fillna(floor)
                 w = w / v
 
-        w = project_neutral(w, None)          # ép net = 0 sau khi cắt bớt
+        w = project_neutral(w, None)  # ép net = 0 sau khi cắt bớt
         s = w.abs().sum()
         if s <= 1e-12:
             continue

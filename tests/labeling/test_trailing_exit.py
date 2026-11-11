@@ -7,6 +7,7 @@ from aegis.labeling.trailing_exit import (
     simulate_trailing_exit_within_fold_bounds,
 )
 
+
 def test_b_1_3_compute_sl_initial():
     """
     Kiểm tra tính đối xứng gương tuyệt đối và kiểm thử bẻ gãy (Fault-Injection).
@@ -70,7 +71,12 @@ def test_b_1_3_compute_sl_initial():
     # 6. [ARMOR-PLATED TESTS] Bắt lỗi rủi ro vượt quá 100% với lệnh Long
     try:
         compute_sl_initial(
-            entry_price=100.0, side=1, m_sl=3.0, sigma=0.40, c_trade_adj=0.05, max_reasonable_cushion=2.0 # override để lọt qua max_reasonable_cushion
+            entry_price=100.0,
+            side=1,
+            m_sl=3.0,
+            sigma=0.40,
+            c_trade_adj=0.05,
+            max_reasonable_cushion=2.0,  # override để lọt qua max_reasonable_cushion
         )  # Total = 1.25 (125%)
         assert False, "Lỗi rò rỉ: Stop-loss âm lọt qua mà không bị chặn!"
     except ValueError as e:
@@ -78,7 +84,9 @@ def test_b_1_3_compute_sl_initial():
 
     # 7. [ARMOR-PLATED TESTS] Bắt lỗi cushion lớn bất thường (đối xứng cho cả 2 chiều)
     try:
-        compute_sl_initial(entry_price=100.0, side=-1, m_sl=2.0, sigma=0.30, c_trade_adj=0.01) # Total = 0.61 > 0.5
+        compute_sl_initial(
+            entry_price=100.0, side=-1, m_sl=2.0, sigma=0.30, c_trade_adj=0.01
+        )  # Total = 0.61 > 0.5
         assert False, "Lỗi rò rỉ: Cushion lớn phi lý lọt qua mà không bị chặn!"
     except ValueError as e:
         assert "vượt ngưỡng hợp lý" in str(e)
@@ -157,8 +165,14 @@ def test_b_1_4_regime_aware_trailing_exit_symmetry():
     ), f"Follow false-positive test FAILED: {res_fl_no_flip}"
 
     # 5. [ARMOR-PLATED FAULT-INJECTION] Kiểm thử mảng rỗng cận biên fold (Empty array -> v11.9 boundary truncated)
-    res_empty = compute_regime_aware_trailing_exit_v3_liquidation_aware(100.0, 1, "follow", [], [], [], [], 95.0)
-    assert res_empty is not None and res_empty.get("boundary_truncated") is True and res_empty.get("reason") == "TIME_STOP", f"Boundary truncated test FAILED: {res_empty}"
+    res_empty = compute_regime_aware_trailing_exit_v3_liquidation_aware(
+        100.0, 1, "follow", [], [], [], [], 95.0
+    )
+    assert (
+        res_empty is not None
+        and res_empty.get("boundary_truncated") is True
+        and res_empty.get("reason") == "TIME_STOP"
+    ), f"Boundary truncated test FAILED: {res_empty}"
 
     # 6. [ARMOR-PLATED FAULT-INJECTION] Kiểm thử bẻ gãy độ dài mảng lệch nhau (Mismatched arrays check)
     try:
@@ -245,7 +259,8 @@ def test_b_1_5_no_leakage_past_fold_boundary():
 
     # Kiểm thử thêm case: Nếu lệnh rơi đúng vào sát vách fold_end_idx (future mảng rỗng)
     result_empty = simulate_trailing_exit_within_fold_bounds(
-        entry_idx=fold_end_idx - 1, # Lệnh mở đúng nến cuối của test_window, mảng future rỗng
+        entry_idx=fold_end_idx
+        - 1,  # Lệnh mở đúng nến cuối của test_window, mảng future rỗng
         entry_price=100.0,
         side=1,
         trade_mode="follow",
@@ -258,14 +273,14 @@ def test_b_1_5_no_leakage_past_fold_boundary():
         liquidation_price=80.0,
         t_max_live=120,
     )
-    assert result_empty is not None and result_empty["boundary_truncated"] is True, (
-        f"Kỳ vọng bản ghi boundary_truncated=True cho lệnh mảng rỗng, nhận {result_empty}"
-    )
+    assert (
+        result_empty is not None and result_empty["boundary_truncated"] is True
+    ), f"Kỳ vọng bản ghi boundary_truncated=True cho lệnh mảng rỗng, nhận {result_empty}"
 
     # [STREAMING_CHUNK: TEST_TRAILING_ONE_BAR_BOUNDARY]
     # Kiểm thử case: Nếu lệnh vào cận biên fold (chỉ còn đúng 1 bar tương lai, len=1)
     result_one_bar = simulate_trailing_exit_within_fold_bounds(
-        entry_idx=fold_end_idx - 2, # Còn đúng 1 bar tương lai trong test_window
+        entry_idx=fold_end_idx - 2,  # Còn đúng 1 bar tương lai trong test_window
         entry_price=100.0,
         side=1,
         trade_mode="follow",
@@ -278,9 +293,9 @@ def test_b_1_5_no_leakage_past_fold_boundary():
         liquidation_price=80.0,
         t_max_live=120,
     )
-    assert result_one_bar is not None and result_one_bar["boundary_truncated"] is True, (
-        f"Kỳ vọng bản ghi boundary_truncated=True khi chỉ còn 1 bar tương lai, nhận {result_one_bar}"
-    )
+    assert (
+        result_one_bar is not None and result_one_bar["boundary_truncated"] is True
+    ), f"Kỳ vọng bản ghi boundary_truncated=True khi chỉ còn 1 bar tương lai, nhận {result_one_bar}"
 
     from aegis.meta_labeling.sizing.liquidation_layer import compute_liquidation_loss
 
@@ -322,70 +337,141 @@ def test_run_trailing_exit_for_oos_event_full_pipeline():
     atr = np.full(n, 1.0)
     p_trend = np.full(n, 0.5)
     # Case 1: SL hit bình thường (Follow)
-    highs2 = highs.copy(); lows2 = lows.copy()
+    highs2 = highs.copy()
+    lows2 = lows.copy()
     lows2[5] = 80.0  # giá giảm mạnh tại bar 5
     result = run_trailing_exit_for_oos_event(
-        entry_idx=0, entry_price=100.0, test_window_end_idx=n,
-        p_i=0.8, p_chop_i=0.3, side_primary=1,
-        m_sl=2.0, sigma=0.01, c_trade_adj=0.001,
-        fade_enabled=True, fade_regime_gate_threshold=0.6,
-        full_highs=highs2, full_lows=lows2, full_atr=atr, full_p_trend=p_trend
+        entry_idx=0,
+        entry_price=100.0,
+        test_window_end_idx=n,
+        p_i=0.8,
+        p_chop_i=0.3,
+        side_primary=1,
+        m_sl=2.0,
+        sigma=0.01,
+        c_trade_adj=0.001,
+        fade_enabled=True,
+        fade_regime_gate_threshold=0.6,
+        full_highs=highs2,
+        full_lows=lows2,
+        full_atr=atr,
+        full_p_trend=p_trend,
     )
     assert result is not None
-    assert result["exit_reason"] in ("SL", "TRAIL", "TIME_STOP", "LIQUIDATION", "REGIME_FLIP")
-    assert result["exit_idx_absolute"] == result["entry_idx"] + 1 + result["exit_idx_relative"]
-    assert set(["entry_idx","entry_price","p_i","p_chop_i","mode","side","sl_initial",
-                "leverage_used","liquidation_price","exit_idx_relative",
-                "exit_idx_absolute","exit_reason","boundary_truncated"]) <= set(result.keys())
+    assert result["exit_reason"] in (
+        "SL",
+        "TRAIL",
+        "TIME_STOP",
+        "LIQUIDATION",
+        "REGIME_FLIP",
+    )
+    assert (
+        result["exit_idx_absolute"]
+        == result["entry_idx"] + 1 + result["exit_idx_relative"]
+    )
+    assert set(
+        [
+            "entry_idx",
+            "entry_price",
+            "p_i",
+            "p_chop_i",
+            "mode",
+            "side",
+            "sl_initial",
+            "leverage_used",
+            "liquidation_price",
+            "exit_idx_relative",
+            "exit_idx_absolute",
+            "exit_reason",
+            "boundary_truncated",
+        ]
+    ) <= set(result.keys())
 
     # Case 2: mode == "none" (deadzone) -> None
     result_none = run_trailing_exit_for_oos_event(
-        entry_idx=0, entry_price=100.0, test_window_end_idx=n,
-        p_i=0.3, p_chop_i=0.5, side_primary=1,
-        m_sl=2.0, sigma=0.01, c_trade_adj=0.001,
-        fade_enabled=True, fade_regime_gate_threshold=0.6,
-        full_highs=highs, full_lows=lows, full_atr=atr, full_p_trend=p_trend
+        entry_idx=0,
+        entry_price=100.0,
+        test_window_end_idx=n,
+        p_i=0.3,
+        p_chop_i=0.5,
+        side_primary=1,
+        m_sl=2.0,
+        sigma=0.01,
+        c_trade_adj=0.001,
+        fade_enabled=True,
+        fade_regime_gate_threshold=0.6,
+        full_highs=highs,
+        full_lows=lows,
+        full_atr=atr,
+        full_p_trend=p_trend,
     )
     assert result_none is None
 
     # Case 3: entry tại nến cuối cùng của fold -> future array rỗng -> trả về bản ghi boundary_truncated=True (thay vì None)
     result_boundary = run_trailing_exit_for_oos_event(
-        entry_idx=n - 1, entry_price=100.0, test_window_end_idx=n,
-        p_i=0.8, p_chop_i=0.3, side_primary=1,
-        m_sl=2.0, sigma=0.01, c_trade_adj=0.001,
-        fade_enabled=True, fade_regime_gate_threshold=0.6,
-        full_highs=highs, full_lows=lows, full_atr=atr, full_p_trend=p_trend
+        entry_idx=n - 1,
+        entry_price=100.0,
+        test_window_end_idx=n,
+        p_i=0.8,
+        p_chop_i=0.3,
+        side_primary=1,
+        m_sl=2.0,
+        sigma=0.01,
+        c_trade_adj=0.001,
+        fade_enabled=True,
+        fade_regime_gate_threshold=0.6,
+        full_highs=highs,
+        full_lows=lows,
+        full_atr=atr,
+        full_p_trend=p_trend,
     )
-    assert result_boundary is not None and result_boundary["boundary_truncated"] is True, (
-        "Zero-length slice PHẢI trả về bản ghi boundary_truncated=True theo đúng Data Contracts v11.9"
-    )
+    assert (
+        result_boundary is not None and result_boundary["boundary_truncated"] is True
+    ), "Zero-length slice PHẢI trả về bản ghi boundary_truncated=True theo đúng Data Contracts v11.9"
 
 
 def test_finalize_trade_record_reads_price_at_absolute_index():
     closes = np.arange(100.0, 130.0)  # closes[i] = 100+i, dễ kiểm tra bằng mắt
     partial = {
-        "entry_idx": 5, "entry_price": 105.0, "p_i": 0.8, "p_chop_i": 0.3,
-        "mode": "follow", "side": 1, "sl_initial": 95.0,
-        "leverage_used": 5.0, "liquidation_price": 90.0,
-        "exit_idx_relative": 3, "exit_idx_absolute": 9,  # entry_idx+1+relative = 5+1+3=9
-        "exit_reason": "TRAIL", "boundary_truncated": False,
+        "entry_idx": 5,
+        "entry_price": 105.0,
+        "p_i": 0.8,
+        "p_chop_i": 0.3,
+        "mode": "follow",
+        "side": 1,
+        "sl_initial": 95.0,
+        "leverage_used": 5.0,
+        "liquidation_price": 90.0,
+        "exit_idx_relative": 3,
+        "exit_idx_absolute": 9,  # entry_idx+1+relative = 5+1+3=9
+        "exit_reason": "TRAIL",
+        "boundary_truncated": False,
     }
     result = finalize_trade_record(partial, closes, size_notional=1000.0)
-    expected_exit_price = closes[9]  # PHẢI đọc tại index 9 (absolute), KHÔNG phải index 3
+    expected_exit_price = closes[
+        9
+    ]  # PHẢI đọc tại index 9 (absolute), KHÔNG phải index 3
     # Xác nhận gián tiếp qua việc realized_return khớp công thức dùng đúng closes[9]
     # finalize_trade_record áp dụng slippage trước khi tính PnL
     from aegis.execution.pnl import compute_realized_pnl
+
     spread_pct = 0.0002
     slippage_penalty_factor = 0.1
     bar_volume = 1e6
     size_notional_val = 1000.0
-    slippage = expected_exit_price * (spread_pct / 2 + slippage_penalty_factor * (size_notional_val / bar_volume))
+    slippage = expected_exit_price * (
+        spread_pct / 2 + slippage_penalty_factor * (size_notional_val / bar_volume)
+    )
     exit_price_with_slippage = expected_exit_price - 1 * slippage  # side=1 (Long)
     expected_pnl = compute_realized_pnl(
         entry_price=105.0,
         exit_price=exit_price_with_slippage,
-        side=1, size_notional=1000.0, leverage=5.0, exit_reason="TRAIL",
-        entry_fill_type="taker", exit_fill_type="taker"
+        side=1,
+        size_notional=1000.0,
+        leverage=5.0,
+        exit_reason="TRAIL",
+        entry_fill_type="taker",
+        exit_fill_type="taker",
     )["net_pnl"]
     assert abs(result["realized_return"] - expected_pnl / 1000.0) < 1e-9
 
@@ -393,11 +479,19 @@ def test_finalize_trade_record_reads_price_at_absolute_index():
 def test_finalize_trade_record_liquidation_branch_uses_margin_formula():
     closes = np.arange(100.0, 130.0)
     partial = {
-        "entry_idx": 5, "entry_price": 105.0, "p_i": 0.1, "p_chop_i": 0.8,
-        "mode": "fade", "side": -1, "sl_initial": 115.0,
-        "leverage_used": 5.0, "liquidation_price": 110.0,
-        "exit_idx_relative": 1, "exit_idx_absolute": 7,
-        "exit_reason": "LIQUIDATION", "boundary_truncated": False,
+        "entry_idx": 5,
+        "entry_price": 105.0,
+        "p_i": 0.1,
+        "p_chop_i": 0.8,
+        "mode": "fade",
+        "side": -1,
+        "sl_initial": 115.0,
+        "leverage_used": 5.0,
+        "liquidation_price": 110.0,
+        "exit_idx_relative": 1,
+        "exit_idx_absolute": 7,
+        "exit_reason": "LIQUIDATION",
+        "boundary_truncated": False,
     }
     result = finalize_trade_record(partial, closes, size_notional=1000.0)
     # [QĐ #7] realized_return cho nhánh LIQUIDATION = price_delta_pct (unleveraged price return)
@@ -410,13 +504,22 @@ def test_finalize_trade_record_liquidation_branch_uses_margin_formula():
 def test_finalize_trade_record_output_passes_schema():
     import pandas as pd
     from aegis.core.schemas import TradeRecordSchema
+
     closes = np.arange(100.0, 130.0)
     partial = {
-        "entry_idx": 5, "entry_price": 105.0, "p_i": 0.8, "p_chop_i": 0.3,
-        "mode": "follow", "side": 1, "sl_initial": 95.0,
-        "leverage_used": 5.0, "liquidation_price": 90.0,
-        "exit_idx_relative": 3, "exit_idx_absolute": 9,
-        "exit_reason": "TRAIL", "boundary_truncated": False,
+        "entry_idx": 5,
+        "entry_price": 105.0,
+        "p_i": 0.8,
+        "p_chop_i": 0.3,
+        "mode": "follow",
+        "side": 1,
+        "sl_initial": 95.0,
+        "leverage_used": 5.0,
+        "liquidation_price": 90.0,
+        "exit_idx_relative": 3,
+        "exit_idx_absolute": 9,
+        "exit_reason": "TRAIL",
+        "boundary_truncated": False,
     }
     result = finalize_trade_record(partial, closes, size_notional=1000.0)
     df = pd.DataFrame([result])
@@ -433,7 +536,7 @@ def test_zero_atr_trailing_collapse_fixed():
     # 1. Kiểm chứng với BTC ($60,000, tick_size = 0.1)
     # Giá nhích xuống 1 tick ($0.1) hoặc $1, ATR = 0
     btc_highs = np.array([60000.0, 60000.0, 60000.0])
-    btc_lows = np.array([60000.0, 59999.0, 60000.0]) # Giảm $1 (10 ticks)
+    btc_lows = np.array([60000.0, 59999.0, 60000.0])  # Giảm $1 (10 ticks)
     btc_atr = np.array([0.0, 0.0, 0.0])
     btc_p_trend = np.array([0.8, 0.8, 0.8])
 
@@ -448,13 +551,15 @@ def test_zero_atr_trailing_collapse_fixed():
         sl_initial=55000.0,
         min_tick_size=0.1,
         min_ticks_cushion=10,
-        min_atr_pct=0.001, # safe_atr_floor = max(1.0, 60.0) = 60.0
+        min_atr_pct=0.001,  # safe_atr_floor = max(1.0, 60.0) = 60.0
     )
-    assert res_btc is None or res_btc["exit_idx"] != 1, "Lỗi: BTC bị stop-out oan uổng do ATR = 0!"
+    assert (
+        res_btc is None or res_btc["exit_idx"] != 1
+    ), "Lỗi: BTC bị stop-out oan uổng do ATR = 0!"
 
     # 2. Kiểm chứng với Altcoin ($0.001, tick_size = 0.0001)
     alt_highs = np.array([0.001, 0.001, 0.001])
-    alt_lows = np.array([0.001, 0.000999, 0.001]) # Giảm 1 micro-tick
+    alt_lows = np.array([0.001, 0.000999, 0.001])  # Giảm 1 micro-tick
     alt_atr = np.array([0.0, 0.0, 0.0])
     alt_p_trend = np.array([0.8, 0.8, 0.8])
 
@@ -469,11 +574,15 @@ def test_zero_atr_trailing_collapse_fixed():
         sl_initial=0.0008,
         min_tick_size=1e-4,
         min_ticks_cushion=10,
-        min_atr_pct=0.001, # safe_atr_floor = max(0.001, 0.000001) = 0.001
+        min_atr_pct=0.001,  # safe_atr_floor = max(0.001, 0.000001) = 0.001
     )
-    assert res_alt is None or res_alt["exit_idx"] != 1, "Lỗi: Altcoin bị stop-out oan uổng do ATR = 0!"
+    assert (
+        res_alt is None or res_alt["exit_idx"] != 1
+    ), "Lỗi: Altcoin bị stop-out oan uổng do ATR = 0!"
 
-    print("✅ [Vá BỌ SỐ 2] Instrument-Adaptive & Percentage Anchored Zero-ATR Trailing Collapse PASSED!")
+    print(
+        "✅ [Vá BỌ SỐ 2] Instrument-Adaptive & Percentage Anchored Zero-ATR Trailing Collapse PASSED!"
+    )
 
 
 def test_finalize_trade_record_timestamp_plumbing():
@@ -483,19 +592,34 @@ def test_finalize_trade_record_timestamp_plumbing():
     """
     import pandas as pd
     from aegis.core.schemas import TradeRecordSchema
+
     closes = np.arange(100.0, 130.0)
     timestamps = np.arange(1600000000000, 1600000000000 + 30 * 60000, 60000, dtype=int)
     partial = {
-        "entry_idx": 5, "entry_price": 105.0, "p_i": 0.8, "p_chop_i": 0.3,
-        "mode": "follow", "side": 1, "sl_initial": 95.0,
-        "leverage_used": 5.0, "liquidation_price": 90.0,
-        "exit_idx_relative": 3, "exit_idx_absolute": 9,
-        "exit_reason": "TRAIL", "boundary_truncated": False,
+        "entry_idx": 5,
+        "entry_price": 105.0,
+        "p_i": 0.8,
+        "p_chop_i": 0.3,
+        "mode": "follow",
+        "side": 1,
+        "sl_initial": 95.0,
+        "leverage_used": 5.0,
+        "liquidation_price": 90.0,
+        "exit_idx_relative": 3,
+        "exit_idx_absolute": 9,
+        "exit_reason": "TRAIL",
+        "boundary_truncated": False,
     }
-    result = finalize_trade_record(partial, closes, size_notional=1000.0, full_timestamps=timestamps)
-    assert result["entry_timestamp_ms"] == timestamps[5], f"Entry ts sai: {result['entry_timestamp_ms']}"
-    assert result["exit_timestamp_ms"] == timestamps[9], f"Exit ts sai: {result['exit_timestamp_ms']}"
-    
+    result = finalize_trade_record(
+        partial, closes, size_notional=1000.0, full_timestamps=timestamps
+    )
+    assert (
+        result["entry_timestamp_ms"] == timestamps[5]
+    ), f"Entry ts sai: {result['entry_timestamp_ms']}"
+    assert (
+        result["exit_timestamp_ms"] == timestamps[9]
+    ), f"Exit ts sai: {result['exit_timestamp_ms']}"
+
     df = pd.DataFrame([result])
     TradeRecordSchema.validate(df)
     print("✅ [Vá BỌ SỐ 3] Temporal Blindness Timestamp Plumbing PASSED!")
@@ -517,5 +641,3 @@ def test_round_sl_safe_asymmetric_behavior():
     # Short/Fade (side = -1): SL thô là 50000.2, bước nhảy 1.0 -> phải ceil lên 50001.0
     sl_short = round_sl_safe(sl_raw=50000.2, tick_size=1.0, side=-1)
     assert sl_short == pytest.approx(50001.0)
-
-

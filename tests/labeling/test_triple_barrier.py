@@ -1,6 +1,6 @@
 """Unit tests for Dynamic HMM Triple-Barrier Labeling (Module C.2)."""
+
 import numpy as np
-import pandas as pd
 import pytest
 from aegis.labeling.triple_barrier import (
     compute_dynamic_barriers,
@@ -128,7 +128,7 @@ def test_generate_meta_labels_triple_barrier_full():
     highs = prices + 0.5
     lows = prices - 0.5
     closes = prices
-    
+
     events_idx = np.array([10, 30, 50, 70])
     sides = np.array([1, -1, 1, -1])
     p_trend = np.full(n, 0.7)

@@ -11,18 +11,34 @@ Hai nhóm tính chất được khoá ở đây, cả hai đều từ lỗi th�
      False, KHÔNG ném ngoại lệ. Báo cáo 12 vị thế dài 4482 ký tự — vượt ngay từ
      lần đầu, và nếu không chia tin thì nó im lặng không bao giờ đến.
 """
+
 import pytest
 
 from aegis.monitoring.position_report import (
-    TELEGRAM_LIMIT, build_position_report, chunk_message, position_rows,
+    TELEGRAM_LIMIT,
+    build_position_report,
+    chunk_message,
+    position_rows,
 )
 
 
-def _pos(symbol="AAAUSDT", amt=100.0, entry=10.0, mark=11.0, lev=20.0,
-         liq=5.0, upnl=100.0, notional=None):
+def _pos(
+    symbol="AAAUSDT",
+    amt=100.0,
+    entry=10.0,
+    mark=11.0,
+    lev=20.0,
+    liq=5.0,
+    upnl=100.0,
+    notional=None,
+):
     return {
-        "symbol": symbol, "positionAmt": str(amt), "entryPrice": str(entry),
-        "markPrice": str(mark), "leverage": str(lev), "liquidationPrice": str(liq),
+        "symbol": symbol,
+        "positionAmt": str(amt),
+        "entryPrice": str(entry),
+        "markPrice": str(mark),
+        "leverage": str(lev),
+        "liquidationPrice": str(liq),
         "unRealizedProfit": str(upnl),
         "notional": str(notional if notional is not None else amt * mark),
     }
@@ -30,7 +46,9 @@ def _pos(symbol="AAAUSDT", amt=100.0, entry=10.0, mark=11.0, lev=20.0,
 
 # ------------------------------------------------------------- chuẩn hoá
 def test_phan_biet_long_short():
-    rows = position_rows([_pos(amt=100.0), _pos(symbol="BBB", amt=-50.0)], equity=1000.0)
+    rows = position_rows(
+        [_pos(amt=100.0), _pos(symbol="BBB", amt=-50.0)], equity=1000.0
+    )
     assert {r["symbol"]: r["side"] for r in rows} == {"AAAUSDT": "LONG", "BBB": "SHORT"}
 
 
@@ -65,7 +83,7 @@ def test_short_gia_tang_thi_am():
 def test_hai_cach_quy_doi_lai_lo_deu_co_mat():
     """Ký quỹ và notional cho hai con số rất khác nhau — phải có cả hai."""
     r = position_rows([_pos(amt=100.0, mark=11.0, lev=20.0, upnl=110.0)], 1000.0)[0]
-    assert r["upnl_pct_margin"] == pytest.approx(200.0)   # 110 / 55
+    assert r["upnl_pct_margin"] == pytest.approx(200.0)  # 110 / 55
     assert r["upnl"] / r["notional"] * 100 == pytest.approx(10.0)
 
 
@@ -80,8 +98,13 @@ def test_bo_qua_vi_the_rong():
 
 
 def test_sap_xep_theo_notional_giam_dan():
-    rows = position_rows([_pos(symbol="NHO", amt=10.0, mark=1.0),
-                          _pos(symbol="TO", amt=100.0, mark=10.0)], 1000.0)
+    rows = position_rows(
+        [
+            _pos(symbol="NHO", amt=10.0, mark=1.0),
+            _pos(symbol="TO", amt=100.0, mark=10.0),
+        ],
+        1000.0,
+    )
     assert [r["symbol"] for r in rows] == ["TO", "NHO"]
 
 
@@ -100,17 +123,21 @@ def test_bao_cao_co_nguong_ngat_mach_lam_chot_lo_that():
     txt = build_position_report([_pos()], 1000.0, 900.0, 1000.0)
     for lvl in ("TIER1", "TIER2", "TIER3"):
         assert lvl in txt
-    assert "900.00" in txt      # TIER1 = 1000 * 0.9
+    assert "900.00" in txt  # TIER1 = 1000 * 0.9
 
 
 def test_bao_cao_phan_biet_hai_loai_don_bay():
-    txt = build_position_report([_pos(amt=100.0, mark=11.0, lev=20.0)], 1000.0, 900.0, 1000.0)
+    txt = build_position_report(
+        [_pos(amt=100.0, mark=11.0, lev=20.0)], 1000.0, 900.0, 1000.0
+    )
     assert "đòn bẩy sàn 20x" in txt
-    assert "Đòn bẩy THỰC" in txt and "1.10x" in txt   # 1100 notional / 1000 equity
+    assert "Đòn bẩy THỰC" in txt and "1.10x" in txt  # 1100 notional / 1000 equity
 
 
 def test_cach_dinh_von_hien_dau_am_khi_dang_lo():
-    txt = build_position_report([_pos()], equity=900.0, wallet=900.0, peak_equity=1000.0)
+    txt = build_position_report(
+        [_pos()], equity=900.0, wallet=900.0, peak_equity=1000.0
+    )
     assert "-10.00%" in txt, "đang dưới đỉnh mà hiện dấu dương là hiểu ngược"
 
 
@@ -129,7 +156,7 @@ def test_tin_dai_bi_chia_va_moi_phan_duoi_gioi_han():
     text = "\n".join(f"dòng số {i} " + "x" * 100 for i in range(200))
     parts = chunk_message(text)
     assert len(parts) > 1
-    assert all(len(p) <= TELEGRAM_LIMIT + 40 for p in parts)   # +40 cho nhãn (i/n)
+    assert all(len(p) <= TELEGRAM_LIMIT + 40 for p in parts)  # +40 cho nhãn (i/n)
 
 
 def test_chia_tin_khong_mat_noi_dung():
@@ -148,8 +175,11 @@ def test_chia_tin_cat_o_ranh_gioi_dong():
 
 def test_bao_cao_that_cua_12_vi_the_luon_duoi_gioi_han_sau_khi_chia():
     """Đây là kích thước thật đã làm Telegram từ chối: 12 vị thế, 4482 ký tự."""
-    pos = [_pos(symbol=f"SYMBOL{i}USDT", amt=1000.0 + i, mark=0.00081) for i in range(12)]
-    txt = build_position_report(pos, 5827.0, 5249.0, 6033.0,
-                                next_rebalance="16/09 03:46 UTC")
+    pos = [
+        _pos(symbol=f"SYMBOL{i}USDT", amt=1000.0 + i, mark=0.00081) for i in range(12)
+    ]
+    txt = build_position_report(
+        pos, 5827.0, 5249.0, 6033.0, next_rebalance="16/09 03:46 UTC"
+    )
     for p in chunk_message(txt):
         assert len(p) <= TELEGRAM_LIMIT + 40

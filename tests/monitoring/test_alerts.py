@@ -1,8 +1,8 @@
 """Unit test cho TelegramNotifier và module alerts."""
-from unittest.mock import MagicMock, patch
-import pytest
 
-from aegis.monitoring.alerts import TelegramNotifier, send_telegram_alert
+from unittest.mock import MagicMock, patch
+
+from aegis.monitoring.alerts import TelegramNotifier
 
 
 def test_telegram_notifier_not_configured_by_default():
@@ -38,8 +38,22 @@ def test_telegram_notifier_send_order_alert(mock_post):
 
     notifier = TelegramNotifier(bot_token="fake_token", chat_id="fake_chat")
     orders = [
-        {"symbol": "BTCUSDT", "side": "BUY", "qty": 0.5, "price": 60000.0, "notional": 30000.0, "reason": "mở"},
-        {"symbol": "ETHUSDT", "side": "SELL", "qty": 5.0, "price": 3000.0, "notional": 15000.0, "reason": "đóng"},
+        {
+            "symbol": "BTCUSDT",
+            "side": "BUY",
+            "qty": 0.5,
+            "price": 60000.0,
+            "notional": 30000.0,
+            "reason": "mở",
+        },
+        {
+            "symbol": "ETHUSDT",
+            "side": "SELL",
+            "qty": 5.0,
+            "price": 3000.0,
+            "notional": 15000.0,
+            "reason": "đóng",
+        },
     ]
     ok = notifier.send_order_alert(
         mode="TESTNET",

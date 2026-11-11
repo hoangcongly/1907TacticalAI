@@ -8,6 +8,7 @@ Bản trước của file này dùng MockEstimator và tự thú ngay trong docs
 
 Test này gọi thẳng CPCVPipeline và kiểm tra hành vi thật.
 """
+
 import warnings
 
 import numpy as np
@@ -39,13 +40,13 @@ def test_cpcv_actually_fits_a_model_per_fold(cpcv_result):
     pipe, result, _ = cpcv_result
     n_fits = result["metrics"]["n_fits"]
 
-    assert n_fits > 0, (
-        "CPCV không fit model nào — mọi chỉ số OOS đều vô nghĩa (đây chính là F5)"
-    )
+    assert (
+        n_fits > 0
+    ), "CPCV không fit model nào — mọi chỉ số OOS đều vô nghĩa (đây chính là F5)"
     assert n_fits == pipe.n_fits
-    assert result["metrics"]["n_folds_starved"] == 0, (
-        "Với 4000 nến mọi fold phải đủ mẫu train; nếu đói dữ liệu thì test này vô nghĩa"
-    )
+    assert (
+        result["metrics"]["n_folds_starved"] == 0
+    ), "Với 4000 nến mọi fold phải đủ mẫu train; nếu đói dữ liệu thì test này vô nghĩa"
 
 
 def test_kelly_table_indexed_by_model_probability_not_p_trend(cpcv_result):
@@ -61,9 +62,9 @@ def test_kelly_table_indexed_by_model_probability_not_p_trend(cpcv_result):
     p_trend = bars["p_trend"].to_numpy()
     p_trend = np.round(p_trend[~np.isnan(p_trend)], 6)
 
-    assert not set(p_i).issubset(set(p_trend)), (
-        "p_i trong bảng Kelly vẫn là p_trend (posterior HMM) — lỗi phạm trù F4 còn nguyên"
-    )
+    assert not set(p_i).issubset(
+        set(p_trend)
+    ), "p_i trong bảng Kelly vẫn là p_trend (posterior HMM) — lỗi phạm trù F4 còn nguyên"
     assert np.all((p_i >= 0.0) & (p_i <= 1.0)), "p_i phải là xác suất hợp lệ"
 
 
@@ -72,12 +73,12 @@ def test_purge_horizon_covers_full_holding_period(cpcv_result):
     _, result, _ = cpcv_result
     metrics = result["metrics"]
 
-    assert metrics["purge_horizon"] >= 120, (
-        f"purge_horizon={metrics['purge_horizon']} nhỏ hơn t_max_live_follow=120 -> rò rỉ"
-    )
-    assert metrics["truncation_rate"] < 0.15, (
-        f"Tỷ lệ cắt biên {metrics['truncation_rate']:.1%} vượt ngưỡng an toàn 15%"
-    )
+    assert (
+        metrics["purge_horizon"] >= 120
+    ), f"purge_horizon={metrics['purge_horizon']} nhỏ hơn t_max_live_follow=120 -> rò rỉ"
+    assert (
+        metrics["truncation_rate"] < 0.15
+    ), f"Tỷ lệ cắt biên {metrics['truncation_rate']:.1%} vượt ngưỡng an toàn 15%"
 
 
 def test_sharpe_annualized_by_real_trade_frequency(cpcv_result):
@@ -112,6 +113,6 @@ def test_starved_folds_raise_a_warning():
         )
 
     messages = " ".join(str(w.message) for w in caught)
-    assert "ĐÓI DỮ LIỆU" in messages, (
-        "Fold bị đói dữ liệu phải phát cảnh báo rõ ràng cho vận hành viên"
-    )
+    assert (
+        "ĐÓI DỮ LIỆU" in messages
+    ), "Fold bị đói dữ liệu phải phát cảnh báo rõ ràng cho vận hành viên"

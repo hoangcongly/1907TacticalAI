@@ -75,17 +75,17 @@ def ledoit_wolf_constant_correlation(returns) -> Tuple[np.ndarray, float]:
     np.fill_diagonal(F, var)
 
     # pi = tổng phương sai tiệm cận của các phần tử hiệp phương sai mẫu.
-    X2 = Xc ** 2
-    pi_mat = (X2.T @ X2) / T - S ** 2
+    X2 = Xc**2
+    pi_mat = (X2.T @ X2) / T - S**2
     pi = float(pi_mat.sum())
 
     # rho = hiệp phương sai giữa sai số ước lượng của S và của mục tiêu F.
     # theta_ii_ij = E[(x_i^2 - S_ii)(x_i x_j - S_ij)] = (1/T) sum x_i^3 x_j - S_ii S_ij
-    m3 = ((Xc ** 3).T @ Xc) / T
-    theta_ii_ij = m3 - var[:, None] * S          # [i, j]
-    theta_jj_ij = m3.T - var[None, :] * S        # [i, j]
+    m3 = ((Xc**3).T @ Xc) / T
+    theta_ii_ij = m3 - var[:, None] * S  # [i, j]
+    theta_jj_ij = m3.T - var[None, :] * S  # [i, j]
 
-    ratio = np.outer(1.0 / sd, sd)               # [i, j] = sd_j / sd_i
+    ratio = np.outer(1.0 / sd, sd)  # [i, j] = sd_j / sd_i
     rho_off = rbar * (ratio * theta_ii_ij + (1.0 / ratio) * theta_jj_ij) / 2.0
     rho = float(np.diag(pi_mat).sum()) + float(rho_off[off].sum())
 
@@ -123,13 +123,15 @@ def single_index_covariance(returns, market: Optional[np.ndarray] = None) -> np.
     Xc = X - X.mean(axis=0)
     beta = (Xc.T @ mc) / (mc @ mc)
     resid = Xc - np.outer(mc, beta)
-    var_eps = (resid ** 2).sum(axis=0) / max(T - 2, 1)
+    var_eps = (resid**2).sum(axis=0) / max(T - 2, 1)
 
     sigma = np.outer(beta, beta) * var_m + np.diag(var_eps)
     return nearest_positive_definite(sigma)
 
 
-def ewma_covariance(returns, halflife: float = 60.0, min_periods: int = 30) -> np.ndarray:
+def ewma_covariance(
+    returns, halflife: float = 60.0, min_periods: int = 30
+) -> np.ndarray:
     """
     Hiệp phương sai có trọng số mũ — phản ứng nhanh với đổi chế độ biến động.
 
@@ -150,7 +152,7 @@ def ewma_covariance(returns, halflife: float = 60.0, min_periods: int = 30) -> n
     Xc = X - mu
     sigma = (Xc * w[:, None]).T @ Xc
     # Hiệu chỉnh chệch cho trọng số (tương đương 1/(1 - sum w^2)).
-    sigma /= max(1.0 - float((w ** 2).sum()), 1e-12)
+    sigma /= max(1.0 - float((w**2).sum()), 1e-12)
     return nearest_positive_definite(sigma)
 
 

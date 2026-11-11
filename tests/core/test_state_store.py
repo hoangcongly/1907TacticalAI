@@ -1,4 +1,5 @@
 """Test trạng thái bền vững — thứ giữ cho ngắt mạch rủi ro không mất trí nhớ."""
+
 import json
 import pathlib
 
@@ -13,8 +14,13 @@ def store(tmp_path):
 
 
 def test_roundtrip_preserves_everything(store):
-    s = LiveState(peak_equity=1234.5, is_dead=True, frozen_until_ms=999,
-                  positions={"XRPUSDT": -12.5}, rebalance_count=7)
+    s = LiveState(
+        peak_equity=1234.5,
+        is_dead=True,
+        frozen_until_ms=999,
+        positions={"XRPUSDT": -12.5},
+        rebalance_count=7,
+    )
     store.save(s)
     loaded = store.load()
     assert loaded.peak_equity == 1234.5
@@ -35,7 +41,7 @@ def test_peak_equity_survives_restart(store):
     và ngắt mạch drawdown mất hiệu lực đúng lúc cần nhất.
     """
     store.save(LiveState(peak_equity=1000.0, last_equity=1000.0))
-    restarted = store.load()          # mô phỏng tiến trình mới
+    restarted = store.load()  # mô phỏng tiến trình mới
     assert restarted.peak_equity == 1000.0
     assert restarted.drawdown(850.0) == pytest.approx(0.15)
 
@@ -68,5 +74,7 @@ def test_update_rejects_unknown_field(store):
 
 def test_unknown_json_keys_ignored(store):
     """Field lạ từ phiên bản tương lai không được làm sập tiến trình."""
-    store.path.write_text(json.dumps({"schema_version": 1, "peak_equity": 5.0, "tu_tuong_lai": "x"}))
+    store.path.write_text(
+        json.dumps({"schema_version": 1, "peak_equity": 5.0, "tu_tuong_lai": "x"})
+    )
     assert store.load().peak_equity == 5.0

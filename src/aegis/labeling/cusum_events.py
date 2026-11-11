@@ -66,12 +66,26 @@ def compute_dynamic_cusum_thresholds(
     if len(prices_np) == 0:
         raise ValueError("Mảng đầu vào không được rỗng.")
 
-    if not isinstance(base_multiplier, (int, float)) or base_multiplier <= 0 or math.isnan(base_multiplier) or math.isinf(base_multiplier):
-        raise ValueError(f"base_multiplier phải là số thực dương, nhận {base_multiplier}")
+    if (
+        not isinstance(base_multiplier, (int, float))
+        or base_multiplier <= 0
+        or math.isnan(base_multiplier)
+        or math.isinf(base_multiplier)
+    ):
+        raise ValueError(
+            f"base_multiplier phải là số thực dương, nhận {base_multiplier}"
+        )
     if not isinstance(anchor_span, int) or anchor_span <= 0:
         raise ValueError(f"anchor_span phải là số nguyên dương, nhận {anchor_span}")
-    if not isinstance(bars_per_atr_period, (int, float)) or bars_per_atr_period <= 0 or math.isnan(bars_per_atr_period) or math.isinf(bars_per_atr_period):
-        raise ValueError(f"bars_per_atr_period phải là số thực dương, nhận {bars_per_atr_period}")
+    if (
+        not isinstance(bars_per_atr_period, (int, float))
+        or bars_per_atr_period <= 0
+        or math.isnan(bars_per_atr_period)
+        or math.isinf(bars_per_atr_period)
+    ):
+        raise ValueError(
+            f"bars_per_atr_period phải là số thực dương, nhận {bars_per_atr_period}"
+        )
     if (
         not isinstance(min_rel_threshold, (int, float))
         or not isinstance(max_rel_threshold, (int, float))
@@ -88,7 +102,11 @@ def compute_dynamic_cusum_thresholds(
         )
 
     # Kiểm tra NaN / Inf / non-positive prices và negative ATR
-    if np.any(np.isnan(prices_np)) or np.any(np.isinf(prices_np)) or np.any(prices_np <= 0):
+    if (
+        np.any(np.isnan(prices_np))
+        or np.any(np.isinf(prices_np))
+        or np.any(prices_np <= 0)
+    ):
         raise ValueError("prices chứa NaN, Inf hoặc giá <= 0 phi lý.")
     if np.any(np.isnan(atr_np)) or np.any(np.isinf(atr_np)) or np.any(atr_np < 0):
         raise ValueError("atr_series chứa NaN, Inf hoặc ATR < 0 phi lý.")
@@ -115,7 +133,9 @@ def compute_dynamic_cusum_thresholds(
             if reset_mask_np[t]:
                 current_val = float(inst_rel_vol[t])
             else:
-                current_val = alpha * float(inst_rel_vol[t]) + (1.0 - alpha) * current_val
+                current_val = (
+                    alpha * float(inst_rel_vol[t]) + (1.0 - alpha) * current_val
+                )
             sigma_rel[t] = current_val
     else:
         sigma_rel = inst_rel_vol
@@ -169,19 +189,32 @@ def filter_cusum_events_dynamic(
 
     n = len(prices_np)
     if not (len(thresholds_np) == len(timestamps_np) == len(atr_np) == n):
-        raise ValueError("Tất cả mảng đầu vào (prices, thresholds, timestamps, atr) phải có cùng độ dài.")
+        raise ValueError(
+            "Tất cả mảng đầu vào (prices, thresholds, timestamps, atr) phải có cùng độ dài."
+        )
     if n == 0:
         return []
 
     if not isinstance(cooldown_bars, int) or cooldown_bars < 0:
         raise ValueError(f"cooldown_bars phải là số nguyên >= 0, nhận {cooldown_bars}")
-    if not isinstance(spatial_delta_atr, (int, float)) or spatial_delta_atr < 0 or math.isnan(spatial_delta_atr) or math.isinf(spatial_delta_atr):
-        raise ValueError(f"spatial_delta_atr phải là số thực >= 0, nhận {spatial_delta_atr}")
+    if (
+        not isinstance(spatial_delta_atr, (int, float))
+        or spatial_delta_atr < 0
+        or math.isnan(spatial_delta_atr)
+        or math.isinf(spatial_delta_atr)
+    ):
+        raise ValueError(
+            f"spatial_delta_atr phải là số thực >= 0, nhận {spatial_delta_atr}"
+        )
 
     # Kiểm tra tính hợp lệ arrays
     if np.any(np.isnan(prices_np)) or np.any(np.isinf(prices_np)):
         raise ValueError("prices chứa NaN hoặc Inf.")
-    if np.any(np.isnan(thresholds_np)) or np.any(np.isinf(thresholds_np)) or np.any(thresholds_np <= 0):
+    if (
+        np.any(np.isnan(thresholds_np))
+        or np.any(np.isinf(thresholds_np))
+        or np.any(thresholds_np <= 0)
+    ):
         raise ValueError("dynamic_thresholds chứa NaN, Inf hoặc <= 0 phi lý.")
 
     if trend_scores is not None:
@@ -229,9 +262,12 @@ def filter_cusum_events_dynamic(
             s_minus = 0.0
 
             # Tầng 2 (Candidate Confirmation Gate): bắt buộc thỏa mãn ĐỒNG THỜI (AND) temporal VÀ spatial
-            temporal_ok = (last_event_idx == -1) or ((i - last_event_idx) >= cooldown_bars)
+            temporal_ok = (last_event_idx == -1) or (
+                (i - last_event_idx) >= cooldown_bars
+            )
             spatial_ok = (last_event_idx == -1) or (
-                abs(prices_np[i] - last_event_price) > float(spatial_delta_atr) * float(atr_np[i])
+                abs(prices_np[i] - last_event_price)
+                > float(spatial_delta_atr) * float(atr_np[i])
             )
 
             # Luật AND đồng thời tuyệt đối

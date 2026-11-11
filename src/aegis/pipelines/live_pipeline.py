@@ -14,28 +14,25 @@ import json
 import math
 import time
 from dataclasses import dataclass
-from typing import Dict, Any, List, Optional, Union
+from typing import Dict, Any, List, Optional
 import numpy as np
-import pandas as pd
 import joblib
 
 from aegis.core.config_loader import load_canonical_config
 from aegis.core.experiment_tracker import ExperimentTracker
-from aegis.core.trial_classes import TrialClass
 from aegis.execution.position_sizer import (
     AccountStateTracker,
     compute_position_size,
-    round_notional_down,
 )
 from aegis.risk.circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerTier,
-    CircuitBreakerState,
 )
 from aegis.labeling.trailing_exit import compute_sl_initial
-from aegis.meta_labeling.sizing.kelly_empirical import compute_bi_directional_kelly_v14_unified
+from aegis.meta_labeling.sizing.kelly_empirical import (
+    compute_bi_directional_kelly_v14_unified,
+)
 from aegis.meta_labeling.sizing.liquidation_layer import (
-    compute_liquidation_price,
     get_maintenance_margin_rate,
     validate_leverage_against_sl,
 )
@@ -50,6 +47,7 @@ from aegis.features.feature_engine import MissingFeatureError, OnlineFeatureEngi
 @dataclass
 class ActivePosition:
     """Đại diện cho vị thế đang mở trong phiên live/paper."""
+
     symbol: str
     entry_idx: int
     entry_timestamp_ms: int
@@ -64,10 +62,10 @@ class ActivePosition:
     high_watermark: float
     bars_held: int = 0
     # --- Trường riêng của PERPETUAL FUTURES ---
-    leverage: float = 1.0          # Đòn bẩy thực tế đã dùng cho vị thế
-    liquidation_price: float = 0.0 # Giá bị sàn cưỡng chế đóng lệnh
+    leverage: float = 1.0  # Đòn bẩy thực tế đã dùng cho vị thế
+    liquidation_price: float = 0.0  # Giá bị sàn cưỡng chế đóng lệnh
     funding_accrued_usd: float = 0.0  # Funding cộng dồn (>0 = ta trả)
-    last_funding_ts_ms: int = 0    # Mốc đã tính funding tới
+    last_funding_ts_ms: int = 0  # Mốc đã tính funding tới
 
 
 class AegisLivePipeline:
@@ -95,16 +93,26 @@ class AegisLivePipeline:
         self.metadata = metadata
 
         # Chuẩn bị ma trận Kelly Follow/Fade
-        self.kelly_follow_table = np.array(kelly_dict["kelly_follow"]["grid"], dtype=np.float64)
-        self.follow_p_edges = np.array(kelly_dict["kelly_follow"]["p_edges"], dtype=np.float64)
+        self.kelly_follow_table = np.array(
+            kelly_dict["kelly_follow"]["grid"], dtype=np.float64
+        )
+        self.follow_p_edges = np.array(
+            kelly_dict["kelly_follow"]["p_edges"], dtype=np.float64
+        )
         self.follow_chop_edges = [
-            np.array(e, dtype=np.float64) for e in kelly_dict["kelly_follow"]["chop_edges"]
+            np.array(e, dtype=np.float64)
+            for e in kelly_dict["kelly_follow"]["chop_edges"]
         ]
 
-        self.kelly_fade_table = np.array(kelly_dict["kelly_fade"]["grid"], dtype=np.float64)
-        self.fade_p_edges = np.array(kelly_dict["kelly_fade"]["p_edges"], dtype=np.float64)
+        self.kelly_fade_table = np.array(
+            kelly_dict["kelly_fade"]["grid"], dtype=np.float64
+        )
+        self.fade_p_edges = np.array(
+            kelly_dict["kelly_fade"]["p_edges"], dtype=np.float64
+        )
         self.fade_chop_edges = [
-            np.array(e, dtype=np.float64) for e in kelly_dict["kelly_fade"]["chop_edges"]
+            np.array(e, dtype=np.float64)
+            for e in kelly_dict["kelly_fade"]["chop_edges"]
         ]
 
         # Khởi tạo Quản lý vốn & Ngắt mạch rủi ro
@@ -200,11 +208,15 @@ class AegisLivePipeline:
 
         if mode == "fade":
             table, p_edges, chop_edges = (
-                self.kelly_fade_table, self.fade_p_edges, self.fade_chop_edges,
+                self.kelly_fade_table,
+                self.fade_p_edges,
+                self.fade_chop_edges,
             )
         else:
             table, p_edges, chop_edges = (
-                self.kelly_follow_table, self.follow_p_edges, self.follow_chop_edges,
+                self.kelly_follow_table,
+                self.follow_p_edges,
+                self.follow_chop_edges,
             )
 
         return compute_bi_directional_kelly_v14_unified(
@@ -254,7 +266,9 @@ class AegisLivePipeline:
 
         if triggered != 0:
             # Kiểm tra Spatial-Temporal Cooldown
-            temporal_ok = (self.last_event_idx == -1) or ((bar_idx - self.last_event_idx) >= cooldown_bars)
+            temporal_ok = (self.last_event_idx == -1) or (
+                (bar_idx - self.last_event_idx) >= cooldown_bars
+            )
             spatial_ok = (self.last_event_idx == -1) or (
                 abs(price - self.last_event_price) >= spatial_delta_atr * atr
             )
@@ -276,10 +290,26 @@ class AegisLivePipeline:
         high_p = float(bar.get("high", open_p))
         low_p = float(bar.get("low", open_p))
         close_p = float(bar.get("close", open_p))
-        atr = float(bar.get("atr_14", 1.0)) if not np.isnan(bar.get("atr_14", 1.0)) else 1.0
-        p_trend = float(bar.get("p_trend", 0.5)) if not np.isnan(bar.get("p_trend", 0.5)) else 0.5
-        p_chop = float(bar.get("p_chop", 0.5)) if not np.isnan(bar.get("p_chop", 0.5)) else 0.5
-        trend_score = float(bar.get("trend_score", 0.0)) if not np.isnan(bar.get("trend_score", 0.0)) else 0.0
+        atr = (
+            float(bar.get("atr_14", 1.0))
+            if not np.isnan(bar.get("atr_14", 1.0))
+            else 1.0
+        )
+        p_trend = (
+            float(bar.get("p_trend", 0.5))
+            if not np.isnan(bar.get("p_trend", 0.5))
+            else 0.5
+        )
+        p_chop = (
+            float(bar.get("p_chop", 0.5))
+            if not np.isnan(bar.get("p_chop", 0.5))
+            else 0.5
+        )
+        trend_score = (
+            float(bar.get("trend_score", 0.0))
+            if not np.isnan(bar.get("trend_score", 0.0))
+            else 0.0
+        )
         is_toxic = bool(bar.get("is_toxic_flag", False))
         insufficient_history = bool(bar.get("insufficient_history", False))
 
@@ -321,7 +351,12 @@ class AegisLivePipeline:
                 side=_pos.side,
                 entry_ts_ms=_pos.last_funding_ts_ms,
                 exit_ts_ms=timestamp_ms,
-                funding_rate=float(bar.get("funding_rate", self.config.get("funding_rate", DEFAULT_FUNDING_RATE))),
+                funding_rate=float(
+                    bar.get(
+                        "funding_rate",
+                        self.config.get("funding_rate", DEFAULT_FUNDING_RATE),
+                    )
+                ),
                 interval_hours=int(self.config.get("funding_interval_hours", 8)),
             )
             _pos.funding_accrued_usd += _new_funding
@@ -343,9 +378,9 @@ class AegisLivePipeline:
         cb_state = self.circuit_breaker.update_equity(
             self.account_tracker.margin_balance, current_time_ms=timestamp_ms
         )
-        force_flatten = (
-            self.current_position is not None
-            and (cb_state.is_frozen or cb_state.tier.value >= CircuitBreakerTier.TIER_2_FLATTEN.value)
+        force_flatten = self.current_position is not None and (
+            cb_state.is_frozen
+            or cb_state.tier.value >= CircuitBreakerTier.TIER_2_FLATTEN.value
         )
 
         # ====================================================================
@@ -378,7 +413,9 @@ class AegisLivePipeline:
                     exit_triggered = True
                     # [FIX F12] Lệnh dừng khớp bằng MARKET ngay trên nhịp giá bất lợi:
                     # phải trừ spread + slippage, không được khớp đúng bằng sl_current.
-                    fill_price_exit = min(pos.sl_current, open_p) * (1.0 - self._exit_slippage_pct())
+                    fill_price_exit = min(pos.sl_current, open_p) * (
+                        1.0 - self._exit_slippage_pct()
+                    )
                     fill_price_exit = max(fill_price_exit, low_p)
                     exit_reason = "SL" if pos.sl_current == pos.sl_initial else "TRAIL"
                 else:
@@ -395,7 +432,9 @@ class AegisLivePipeline:
                 if high_p >= pos.sl_current:
                     exit_triggered = True
                     # [FIX F12] Đối xứng cho Short: trượt giá đẩy giá khớp lên cao hơn.
-                    fill_price_exit = max(pos.sl_current, open_p) * (1.0 + self._exit_slippage_pct())
+                    fill_price_exit = max(pos.sl_current, open_p) * (
+                        1.0 + self._exit_slippage_pct()
+                    )
                     fill_price_exit = min(fill_price_exit, high_p)
                     exit_reason = "SL" if pos.sl_current == pos.sl_initial else "TRAIL"
                 else:
@@ -416,7 +455,9 @@ class AegisLivePipeline:
                 exit_triggered = True
                 exit_reason = "CIRCUIT_BREAKER_FLATTEN"
                 slip = self._exit_slippage_pct()
-                fill_price_exit = close_p * (1.0 - slip) if pos.side == 1 else close_p * (1.0 + slip)
+                fill_price_exit = (
+                    close_p * (1.0 - slip) if pos.side == 1 else close_p * (1.0 + slip)
+                )
 
             if exit_triggered:
                 # [FIX F10] Quyết toán qua ĐÚNG MỘT engine PnL dùng chung với backtest
@@ -429,10 +470,19 @@ class AegisLivePipeline:
                     side=pos.side,
                     size_notional=pos.size_notional,
                     leverage=pos.leverage,
-                    exit_reason=exit_reason if exit_reason in (
-                        "SL", "TRAIL", "REGIME_FLIP", "TIME_STOP",
-                        "LIQUIDATION", "BOUNDARY_TRUNCATED",
-                    ) else "TIME_STOP",
+                    exit_reason=(
+                        exit_reason
+                        if exit_reason
+                        in (
+                            "SL",
+                            "TRAIL",
+                            "REGIME_FLIP",
+                            "TIME_STOP",
+                            "LIQUIDATION",
+                            "BOUNDARY_TRUNCATED",
+                        )
+                        else "TIME_STOP"
+                    ),
                     entry_fill_type="taker",
                     exit_fill_type="taker",
                     maker_fee_rate=float(self.config.get("maker_fee_rate", 0.0001)),
@@ -605,7 +655,9 @@ class AegisLivePipeline:
                 maintenance_margin_rate=mmr,
                 safety_buffer_pct=float(self.config.get("safety_buffer_pct", 0.15)),
                 fee_rate=c_trade,
-                liquidation_fee_rate=float(self.config.get("liquidation_fee_rate", 0.005)),
+                liquidation_fee_rate=float(
+                    self.config.get("liquidation_fee_rate", 0.005)
+                ),
                 funding_accrued_pct=expected_funding_pct,
             )
         except ValueError as exc:

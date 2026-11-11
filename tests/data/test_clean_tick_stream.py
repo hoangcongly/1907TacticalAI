@@ -10,7 +10,6 @@ import numpy as np
 
 from aegis.data.cleaning.outlier_filter import (
     clean_tick_stream,
-    filter_outliers_4_conditions,
     CleanedTickStreamResult,
 )
 from aegis.core.experiment_tracker import ExperimentTracker, TrialClass
@@ -86,7 +85,9 @@ def test_integration_1_day_simulated_ticks_bad_vs_tail():
         new_level = prices[idx - 1] * jump_ratio
         prices[idx] = new_level
         prices[idx + 1] = new_level * 1.001  # Gia o vung den mai, KHONG giat ve
-        volumes[idx] = 150.0  # Vol khong lo (>> 20) -> vi pham Dieu Kien 2, xac nhan Real Tail Event!
+        volumes[idx] = (
+            150.0  # Vol khong lo (>> 20) -> vi pham Dieu Kien 2, xac nhan Real Tail Event!
+        )
 
         # San phu CUNG dong bo thien tiep, xac nhan Tail Event la chan thuc
         ref_prices[idx] = new_level
@@ -116,29 +117,43 @@ def test_integration_1_day_simulated_ticks_bad_vs_tail():
     # 2. Kiem dinh xu ly chuan xac BAD TICKS (Predict-Only replacement)
     for idx in bad_tick_indices:
         assert result.is_bad_tick[idx] == True, f"Bad tick tai idx={idx} KHONG bi bat!"
-        assert result.is_tail_event[idx] == False, f"Bad tick tai idx={idx} bi nham thanh Tail Event!"
+        assert (
+            result.is_tail_event[idx] == False
+        ), f"Bad tick tai idx={idx} bi nham thanh Tail Event!"
         # Gia rac phai duoc the cho bang du bao Kalman y_hat (khac xa so ban dau)
-        assert np.isfinite(result.clean_prices[idx]), f"Gia clean tai bad tick idx={idx} bi NaN/Inf!"
-        assert abs(result.clean_prices[idx] - prices[idx]) / prices[idx] > 0.10, (
-            f"Gia clean {result.clean_prices[idx]:.2f} qua giu nguyen gai rac {prices[idx]:.2f}"
-        )
+        assert np.isfinite(
+            result.clean_prices[idx]
+        ), f"Gia clean tai bad tick idx={idx} bi NaN/Inf!"
+        assert (
+            abs(result.clean_prices[idx] - prices[idx]) / prices[idx] > 0.10
+        ), f"Gia clean {result.clean_prices[idx]:.2f} qua giu nguyen gai rac {prices[idx]:.2f}"
 
     # 3. Kiem dinh xu ly chuan xac NaN Gaps
     for idx in nan_indices:
-        assert result.is_bad_tick[idx] == True, f"NaN gap tai idx={idx} khong duoc coi la bad tick!"
-        assert np.isfinite(result.clean_prices[idx]), f"Gia clean tai NaN gap idx={idx} khong duoc Kalman ngoai suy!"
+        assert (
+            result.is_bad_tick[idx] == True
+        ), f"NaN gap tai idx={idx} khong duoc coi la bad tick!"
+        assert np.isfinite(
+            result.clean_prices[idx]
+        ), f"Gia clean tai NaN gap idx={idx} khong duoc Kalman ngoai suy!"
 
     # 4. Kiem dinh xu ly chuan xac TAIL EVENTS (Bao toan gia thuc ban dau)
     for idx in tail_event_indices:
-        assert result.is_tail_event[idx] == True, f"Tail event tai idx={idx} KHONG duoc cam co Tail!"
-        assert result.is_bad_tick[idx] == False, f"Tail event tai idx={idx} bi nhan nham thanh Bad Tick!"
+        assert (
+            result.is_tail_event[idx] == True
+        ), f"Tail event tai idx={idx} KHONG duoc cam co Tail!"
+        assert (
+            result.is_bad_tick[idx] == False
+        ), f"Tail event tai idx={idx} bi nhan nham thanh Bad Tick!"
         # Gia Tail Event PHAI DUOC GIU NGUYEN (price observed) de cap nhat Kalman dong luong
-        assert np.isclose(result.clean_prices[idx], prices[idx], rtol=1e-9), (
-            f"Gia Tail Event bi thay doi! Expected {prices[idx]}, got {result.clean_prices[idx]}"
-        )
+        assert np.isclose(
+            result.clean_prices[idx], prices[idx], rtol=1e-9
+        ), f"Gia Tail Event bi thay doi! Expected {prices[idx]}, got {result.clean_prices[idx]}"
 
     # 5. Kiem dinh hieu nang Numba C-engine (86,400 ticks trong ngan sach thoi gian an toan < 30000 ms)
-    assert elapsed_ms < 30000.0, f"Hieu nang xu ly bo loc qua 30 giay! Elapsed: {elapsed_ms:.2f}ms"
+    assert (
+        elapsed_ms < 30000.0
+    ), f"Hieu nang xu ly bo loc qua 30 giay! Elapsed: {elapsed_ms:.2f}ms"
     print(
         f"\n[OK] [TASK A-1-5] 1-Day Simulated Tick Stream ({n_ticks} ticks) processed successfully in {elapsed_ms:.2f}ms. "
         f"Bad Ticks ({len(bad_tick_indices)} + {len(nan_indices)} NaNs) & Tail Events ({len(tail_event_indices)}) verified 100% accurate!"
@@ -187,8 +202,12 @@ def test_clean_tick_stream_single_venue_and_fallback():
     res_single = clean_tick_stream(
         timestamps=timestamps, prices=prices, volumes=volumes, window=50
     )
-    assert res_single.is_bad_tick[150] == True, "Single venue mode phai phat hien va the cho bad tick"
-    assert np.isclose(res_single.clean_prices[150], 50.0, atol=0.5), "Gia clean the cho tai bad tick phai xap xi ~50.0"
+    assert (
+        res_single.is_bad_tick[150] == True
+    ), "Single venue mode phai phat hien va the cho bad tick"
+    assert np.isclose(
+        res_single.clean_prices[150], 50.0, atol=0.5
+    ), "Gia clean the cho tai bad tick phai xap xi ~50.0"
 
     print("[OK] [TASK A-1-5] Single-venue filtering & Kalman substitution passed.")
 

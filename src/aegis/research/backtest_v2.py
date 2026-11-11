@@ -68,7 +68,10 @@ class CostModel:
 
     def base_bps(self) -> float:
         """Chi phí phẳng khi không có thông tin từng cặp."""
-        fee = self.maker_ratio * self.maker_fee_bps + (1 - self.maker_ratio) * self.taker_fee_bps
+        fee = (
+            self.maker_ratio * self.maker_fee_bps
+            + (1 - self.maker_ratio) * self.taker_fee_bps
+        )
         slip = (1 - self.maker_ratio) * self.half_spread_bps
         return max(self.min_bps, fee + slip)
 
@@ -104,8 +107,9 @@ def load_live_spreads(path: str = SPREAD_CACHE) -> Optional[pd.Series]:
     return pd.Series(data, dtype=np.float64)
 
 
-def corwin_schultz_spread(high: pd.DataFrame, low: pd.DataFrame,
-                          bars_per_day: int = 6) -> pd.Series:
+def corwin_schultz_spread(
+    high: pd.DataFrame, low: pd.DataFrame, bars_per_day: int = 6
+) -> pd.Series:
     """
     Ước lượng spread Corwin-Schultz (2012) — CHỈ dùng khi không có spread thật.
 
@@ -129,7 +133,9 @@ def corwin_schultz_spread(high: pd.DataFrame, low: pd.DataFrame,
         gamma = np.log(hi2 / lo2) ** 2
 
     k = 3.0 - 2.0 * np.sqrt(2.0)
-    alpha = ((np.sqrt(2.0 * beta) - np.sqrt(beta)) / k - np.sqrt(gamma / k)).clip(lower=0.0)
+    alpha = ((np.sqrt(2.0 * beta) - np.sqrt(beta)) / k - np.sqrt(gamma / k)).clip(
+        lower=0.0
+    )
     spread = 2.0 * (np.exp(alpha) - 1.0) / (1.0 + np.exp(alpha))
     return (spread.median() * 1e4).clip(lower=0.2, upper=60.0)
 
@@ -162,22 +168,30 @@ def estimate_cost_bps(
 
     live = load_live_spreads(spread_path)
     if live is not None:
-        half_spread = (live.reindex(close.columns) * 0.5)
+        half_spread = live.reindex(close.columns) * 0.5
         missing = half_spread.isna()
         if missing.any():
-            fallback = corwin_schultz_spread(panel["high"], panel["low"], bars_per_day) * 0.5
+            fallback = (
+                corwin_schultz_spread(panel["high"], panel["low"], bars_per_day) * 0.5
+            )
             half_spread[missing] = fallback.reindex(half_spread.index)[missing]
     else:
-        half_spread = corwin_schultz_spread(panel["high"], panel["low"], bars_per_day) * 0.5
+        half_spread = (
+            corwin_schultz_spread(panel["high"], panel["low"], bars_per_day) * 0.5
+        )
 
     # Tác động giá: sigma_ngày * sqrt(notional / ADV).
     dollar_vol = (panel["volume"] * close).iloc[tail]
     adv = (dollar_vol.median() * bars_per_day).replace(0.0, np.nan)
-    sigma_day = (np.log(close / close.shift(1)).iloc[tail].std() * np.sqrt(bars_per_day))
-    impact = (impact_coef * sigma_day * np.sqrt(notional_usd / adv) * 1e4).clip(lower=0.0, upper=20.0)
+    sigma_day = np.log(close / close.shift(1)).iloc[tail].std() * np.sqrt(bars_per_day)
+    impact = (impact_coef * sigma_day * np.sqrt(notional_usd / adv) * 1e4).clip(
+        lower=0.0, upper=20.0
+    )
 
-    total = (half_spread.fillna(half_spread.median()) + impact.fillna(0.0))
-    return total.replace([np.inf, -np.inf], np.nan).fillna(total.median()).clip(lower=0.1)
+    total = half_spread.fillna(half_spread.median()) + impact.fillna(0.0)
+    return (
+        total.replace([np.inf, -np.inf], np.nan).fillna(total.median()).clip(lower=0.1)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -229,8 +243,11 @@ class BacktestV2Result:
         max_dd = float(dd.max())
 
         downside = r[r < 0]
-        sortino = (mean / downside.std(ddof=1) * np.sqrt(periods_per_year)
-                   if len(downside) > 2 and downside.std(ddof=1) > 1e-15 else 0.0)
+        sortino = (
+            mean / downside.std(ddof=1) * np.sqrt(periods_per_year)
+            if len(downside) > 2 and downside.std(ddof=1) > 1e-15
+            else 0.0
+        )
         ann_ret = float(mean * periods_per_year)
 
         return {
@@ -244,7 +261,11 @@ class BacktestV2Result:
             "calmar": float(ann_ret / max_dd) if max_dd > 1e-9 else 0.0,
             "hit_rate": float((r > 0).mean()),
             "total_return": float(equity[-1] - 1.0),
-            "cagr": float(equity[-1] ** (periods_per_year / len(r)) - 1.0) if equity[-1] > 0 else -1.0,
+            "cagr": (
+                float(equity[-1] ** (periods_per_year / len(r)) - 1.0)
+                if equity[-1] > 0
+                else -1.0
+            ),
             "avg_turnover": float(self.turnover.dropna().mean()),
             "cost_drag_ann": float(self.cost_drag.dropna().mean() * periods_per_year),
             "funding_ann": float(self.funding_pnl.dropna().mean() * periods_per_year),
@@ -336,8 +357,12 @@ def simulate(
         net_exposure=pd.Series(net_exp, index=marks),
         gross_exposure=pd.Series(gross_exp, index=marks),
         weights=W,
-        meta={"bar_hours": bar_hours, "rebalance_every": rebalance_every,
-              "period_hours": period_hours, "cost_bps_mean": float(cost_bps.mean() * 1e4)},
+        meta={
+            "bar_hours": bar_hours,
+            "rebalance_every": rebalance_every,
+            "period_hours": period_hours,
+            "cost_bps_mean": float(cost_bps.mean() * 1e4),
+        },
     )
 
 
@@ -388,7 +413,7 @@ def simulate_marked_to_market(
     W = weights.reindex(columns=cols).fillna(0.0)
     rebal_at = set(W.index)
 
-    ret = close / close.shift(1) - 1.0          # lợi suất từng nến của từng tài sản
+    ret = close / close.shift(1) - 1.0  # lợi suất từng nến của từng tài sản
     cost_vec = (cost.bps_for(cols) / 1e4).reindex(cols).to_numpy()
 
     fr = None
@@ -397,9 +422,14 @@ def simulate_marked_to_market(
     funding_per_bar = bar_hours / 8.0
 
     n = len(idx)
-    out_r = np.zeros(n); out_g = np.zeros(n); out_c = np.zeros(n)
-    out_f = np.zeros(n); out_t = np.zeros(n); out_n = np.zeros(n)
-    out_net = np.zeros(n); out_gross = np.zeros(n)
+    out_r = np.zeros(n)
+    out_g = np.zeros(n)
+    out_c = np.zeros(n)
+    out_f = np.zeros(n)
+    out_t = np.zeros(n)
+    out_n = np.zeros(n)
+    out_net = np.zeros(n)
+    out_gross = np.zeros(n)
 
     # THỨ TỰ LÀ TẤT CẢ. Trọng số mục tiêu tại mốc `ts` được tính từ giá ĐÓNG của `ts`,
     # nên nó chỉ được ăn lợi suất từ `ts` TRỞ ĐI. Làm ngược lại — đặt trọng số rồi áp
@@ -435,9 +465,19 @@ def simulate_marked_to_market(
 
     s = lambda a: pd.Series(a, index=idx)
     return BacktestV2Result(
-        returns=s(out_r), gross_returns=s(out_g), cost_drag=s(out_c),
-        funding_pnl=s(out_f), turnover=s(out_t), n_positions=s(out_n),
-        net_exposure=s(out_net), gross_exposure=s(out_gross), weights=W,
-        meta={"bar_hours": bar_hours, "marked_to_market": True,
-              "n_rebalances": int(len(W)), "cost_bps_mean": float(cost_vec.mean() * 1e4)},
+        returns=s(out_r),
+        gross_returns=s(out_g),
+        cost_drag=s(out_c),
+        funding_pnl=s(out_f),
+        turnover=s(out_t),
+        n_positions=s(out_n),
+        net_exposure=s(out_net),
+        gross_exposure=s(out_gross),
+        weights=W,
+        meta={
+            "bar_hours": bar_hours,
+            "marked_to_market": True,
+            "n_rebalances": int(len(W)),
+            "cost_bps_mean": float(cost_vec.mean() * 1e4),
+        },
     )

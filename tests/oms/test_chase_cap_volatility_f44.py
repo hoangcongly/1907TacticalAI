@@ -14,6 +14,7 @@ gần như vô ích (48,8% -> 54,3%): nút thắt chưa bao giờ là THỜI GIA
 Một trần cố định không thể đúng cho cả BTC lẫn một altcoin σ=5%/giờ. Trần theo σ làm
 cho "đuổi trong phạm vi nhiễu bình thường" mang cùng một ý nghĩa ở mọi cặp.
 """
+
 import math
 
 import pytest
@@ -25,12 +26,15 @@ def _cap(sigma_1h: float, wait_s: float, floor_bps: float, mult: float) -> float
     return max(floor_bps, mult * sigma_1h * scale * 1e4)
 
 
-@pytest.mark.parametrize("sym,sigma_1h,drift_bps", [
-    ("BTRUSDT",   0.0522, 261.0),
-    ("BULLAUSDT", 0.0443, 221.5),
-    ("SOLUSDT",   0.0100,  50.0),
-    ("BTC-như",   0.0020,  10.0),
-])
+@pytest.mark.parametrize(
+    "sym,sigma_1h,drift_bps",
+    [
+        ("BTRUSDT", 0.0522, 261.0),
+        ("BULLAUSDT", 0.0443, 221.5),
+        ("SOLUSDT", 0.0100, 50.0),
+        ("BTC-như", 0.0020, 10.0),
+    ],
+)
 def test_tran_phu_duoc_dich_gia_dien_hinh(sym, sigma_1h, drift_bps):
     """Trần phải phủ được mức dịch 1σ của chính cặp đó, nếu không lệnh chết ngoài thị trường."""
     cap = _cap(sigma_1h, 900.0, floor_bps=15.0, mult=1.5)

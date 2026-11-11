@@ -5,6 +5,7 @@ Thay thế HMM có tham số hardcode chưa bao giờ được fit. Điểm mấ
 phân loại phải TỰ CHUẨN HOÁ (không cần hiệu chỉnh theo tài sản/khung thời gian) —
 đó chính là thứ tham số bịa `means=[0.001,0]`, `stds=[0.02,0.005]` không làm được.
 """
+
 import numpy as np
 import pytest
 

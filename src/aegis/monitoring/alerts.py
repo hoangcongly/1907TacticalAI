@@ -7,6 +7,7 @@ Hệ thống cảnh báo và gửi thông báo qua Telegram / Discord / Webhook.
     TELEGRAM_BOT_TOKEN=...
     TELEGRAM_CHAT_ID=...
 """
+
 from datetime import datetime, timezone
 import logging
 import os
@@ -51,7 +52,9 @@ class TelegramNotifier:
         Trả về True nếu thành công, False nếu thất bại hoặc chưa cấu hình.
         """
         if not self.is_configured:
-            logger.debug("TelegramNotifier chưa được cấu hình (thiếu TELEGRAM_BOT_TOKEN hoặc TELEGRAM_CHAT_ID)")
+            logger.debug(
+                "TelegramNotifier chưa được cấu hình (thiếu TELEGRAM_BOT_TOKEN hoặc TELEGRAM_CHAT_ID)"
+            )
             return False
 
         url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
@@ -93,7 +96,9 @@ class TelegramNotifier:
             return False
 
         now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-        status_mode = f"🟢 [{mode.upper()}]" if mode.lower() != "dry_run" else "🟡 [DRY RUN]"
+        status_mode = (
+            f"🟢 [{mode.upper()}]" if mode.lower() != "dry_run" else "🟡 [DRY RUN]"
+        )
 
         lines = [
             f"🚀 <b>AEGIS TRADING SYSTEM — {status_mode}</b>",
@@ -110,7 +115,9 @@ class TelegramNotifier:
         if turnover > 0:
             lines.append(f"🔄 <b>Turnover:</b> <code>${turnover:,.2f}</code>")
         if capacity:
-            lines.append(f"📊 <b>Vị thế mục tiêu:</b> {len(orders)} (Sức chứa: {capacity})")
+            lines.append(
+                f"📊 <b>Vị thế mục tiêu:</b> {len(orders)} (Sức chứa: {capacity})"
+            )
         if data_age_hours is not None:
             lines.append(f"⏳ <b>Tuổi dữ liệu:</b> {data_age_hours:.1f}h")
 
@@ -179,7 +186,9 @@ class TelegramNotifier:
             return False
 
         icon = "🟢" if side.upper() == "BUY" else "🔴"
-        status_icon = "✅" if status in ("FILLED", "ACKNOWLEDGED", "SUBMITTED", "NEW") else "⚠️"
+        status_icon = (
+            "✅" if status in ("FILLED", "ACKNOWLEDGED", "SUBMITTED", "NEW") else "⚠️"
+        )
         now_str = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
 
         lines = [

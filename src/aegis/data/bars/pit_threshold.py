@@ -52,7 +52,9 @@ def compute_pit_safe_daily_threshold(
             .cast(pl.Float64)
             .fill_nan(None)  # Chuyển đổi floating NaN về Null của Polars
             .forward_fill()  # Trám causal ngoại suy theo thời gian tiến
-            .shift(1)  # Bắt buộc dịch 1 nhịp để KHÔNG DÙNG volume của chính ngày T hoặc ngày mai T+1
+            .shift(
+                1
+            )  # Bắt buộc dịch 1 nhịp để KHÔNG DÙNG volume của chính ngày T hoặc ngày mai T+1
             .rolling_mean(window_size=window)
             .fill_nan(None)
             .forward_fill()  # Causal fallback an toàn chống gap ngày nghỉ

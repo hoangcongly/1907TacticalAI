@@ -7,7 +7,6 @@ Fixes applied:
 """
 
 import numpy as np
-import pandas as pd
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
@@ -31,12 +30,14 @@ class WeightedBootstrapForestClassifier(BaseEstimator, ClassifierMixin):
         tags.estimator_type = "classifier"
         return tags
 
-    def __init__(self,
-                 n_estimators: int = 100,
-                 max_depth: Optional[int] = None,
-                 min_samples_leaf: int = 1,
-                 max_features: str = 'sqrt',
-                 random_state: Optional[int] = None):
+    def __init__(
+        self,
+        n_estimators: int = 100,
+        max_depth: Optional[int] = None,
+        min_samples_leaf: int = 1,
+        max_features: str = "sqrt",
+        random_state: Optional[int] = None,
+    ):
         self.n_estimators = n_estimators
         self.max_depth = max_depth
         self.min_samples_leaf = min_samples_leaf
@@ -78,7 +79,7 @@ class WeightedBootstrapForestClassifier(BaseEstimator, ClassifierMixin):
                 max_depth=self.max_depth,
                 min_samples_leaf=self.min_samples_leaf,
                 max_features=self.max_features,
-                random_state=rng.randint(0, 2 ** 31)
+                random_state=rng.randint(0, 2**31),
             )
             tree.fit(X_boot, y_boot)
             self.estimators_.append(tree)
@@ -88,9 +89,9 @@ class WeightedBootstrapForestClassifier(BaseEstimator, ClassifierMixin):
     def predict_proba(self, X):
         """
         Dự đoán xác suất, xử lý đúng trường hợp cây con thiếu class.
-        
+
         FIX #5: Khi bootstrap chỉ bốc được mẫu 1 class, tree.predict_proba
-        trả về shape (n, 1) thay vì (n, n_classes). Phải align thủ công 
+        trả về shape (n, 1) thay vì (n, n_classes). Phải align thủ công
         theo self.classes_.
         """
         check_is_fitted(self, "estimators_")

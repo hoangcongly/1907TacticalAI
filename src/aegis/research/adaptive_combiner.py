@@ -32,7 +32,7 @@ lớp phòng vệ:
 """
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional
 
 import logging
 
@@ -53,14 +53,14 @@ __all__ = [
 class CombinerSpec:
     """Tham số của tầng gộp thích ứng."""
 
-    lookback: int = 250           # số kỳ dùng để ước lượng hiệu quả từng họ
-    min_periods: int = 90         # chưa đủ bằng chứng thì dùng trọng số đều
-    t_threshold: float = 1.0      # dưới ngưỡng này coi như không có bằng chứng
+    lookback: int = 250  # số kỳ dùng để ước lượng hiệu quả từng họ
+    min_periods: int = 90  # chưa đủ bằng chứng thì dùng trọng số đều
+    t_threshold: float = 1.0  # dưới ngưỡng này coi như không có bằng chứng
     max_abs_weight: float = 0.45  # trần tỷ trọng một họ (chống dồn hết vào một cược)
-    max_step: float = 0.10        # thay đổi trọng số tối đa mỗi kỳ
+    max_step: float = 0.10  # thay đổi trọng số tối đa mỗi kỳ
     allow_sign_flip: bool = True  # cho phép học dấu ngược với giả thuyết ban đầu
-    shrink: float = 1.0           # cường độ co; 0 = không co, 1 = co chuẩn
-    warm_equal: bool = True       # CHƯA ĐỦ LỊCH SỬ -> trọng số đều thay vì bỏ trống
+    shrink: float = 1.0  # cường độ co; 0 = không co, 1 = co chuẩn
+    warm_equal: bool = True  # CHƯA ĐỦ LỊCH SỬ -> trọng số đều thay vì bỏ trống
     #: KHI KHÔNG HỌ NÀO CÓ BẰNG CHỨNG (đủ lịch sử nhưng mọi |t| < ngưỡng) thì làm gì.
     #:
     #: Bản đầu dùng chung `warm_equal` cho cả hai tình huống. Chúng KHÁC NHAU về bản
@@ -111,8 +111,9 @@ def factor_returns(
     return pd.Series(out, dtype=np.float64).sort_index()
 
 
-def _score(window: np.ndarray, t_threshold: float, shrink: float,
-           allow_flip: bool) -> float:
+def _score(
+    window: np.ndarray, t_threshold: float, shrink: float, allow_flip: bool
+) -> float:
     """
     Điểm số của một họ từ cửa sổ lợi suất quá khứ.
 
@@ -182,8 +183,17 @@ def adaptive_weights(
             target = equal.copy() if spec.warm_equal else np.zeros(len(names))
             branch[i] = "warmup"
         else:
-            raw = np.array([_score(window[:, j], spec.t_threshold, spec.shrink,
-                                   spec.allow_sign_flip) for j in range(len(names))])
+            raw = np.array(
+                [
+                    _score(
+                        window[:, j],
+                        spec.t_threshold,
+                        spec.shrink,
+                        spec.allow_sign_flip,
+                    )
+                    for j in range(len(names))
+                ]
+            )
             total = np.abs(raw).sum()
             evidence[i] = float(total)
             n_active[i] = float((np.abs(raw) > 1e-12).sum())
@@ -235,14 +245,18 @@ def adaptive_weights(
         logger.warning(
             "[BẰNG CHỨNG SỤP ĐỔ] %d/%d kỳ không có họ tín hiệu nào vượt ngưỡng t=%.1f; "
             "đang dùng %s. Xem `CombinerSpec.collapse_equal`.",
-            n_collapse, len(idx), spec.t_threshold,
-            "trọng số ĐỀU ở gross đầy đủ" if spec.collapse_equal else "danh mục RỖNG")
+            n_collapse,
+            len(idx),
+            spec.t_threshold,
+            "trọng số ĐỀU ở gross đầy đủ" if spec.collapse_equal else "danh mục RỖNG",
+        )
 
     W = pd.DataFrame(weights, index=idx, columns=names)
     if not return_diagnostics:
         return W
-    diag = pd.DataFrame({"branch": branch, "evidence": evidence,
-                         "n_active": n_active}, index=idx)
+    diag = pd.DataFrame(
+        {"branch": branch, "evidence": evidence, "n_active": n_active}, index=idx
+    )
     return W, diag
 
 
@@ -281,7 +295,9 @@ def combine_adaptive(
         w = W[n]
         contrib = sig.mul(w, axis=0)
         total = total.add(contrib.fillna(0.0), fill_value=0.0)
-        count = count.add(sig.notna().astype(float).mul(w.abs(), axis=0), fill_value=0.0)
+        count = count.add(
+            sig.notna().astype(float).mul(w.abs(), axis=0), fill_value=0.0
+        )
 
     combined = total.where(count > 1e-9)
     # Chuẩn hoá lại theo hàng để độ lớn điểm số không phụ thuộc số họ đang hoạt động.

@@ -9,11 +9,11 @@ luận rằng không tín hiệu nào chứng minh được điều gì.
 Đo được trên dữ liệu thật: nhánh sụp đổ chạy 0/799 kỳ với 26 tín hiệu. Nên đây là rủi
 ro TIỀM ẨN. Test dưới đây giữ nó ở trạng thái tiềm ẩn — và ồn ào nếu nó thành hiện thực.
 """
+
 import logging
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from aegis.research.adaptive_combiner import CombinerSpec, adaptive_weights
 
@@ -56,30 +56,43 @@ def test_sup_do_phai_ghi_canh_bao(caplog):
 def test_collapse_equal_tat_thi_danh_muc_rong():
     """`collapse_equal=False` = "không có bằng chứng thì không đặt cược"."""
     fac = _noise()
-    spec = CombinerSpec(lookback=200, min_periods=100, t_threshold=6.0,
-                        collapse_equal=False)
+    spec = CombinerSpec(
+        lookback=200, min_periods=100, t_threshold=6.0, collapse_equal=False
+    )
     W, diag = adaptive_weights(fac, spec, return_diagnostics=True)
     late = diag.index[diag["branch"] == "collapse"]
     assert len(late) > 0
     # [FIX F36] max_step làm trọng số đi về 0 DẦN chứ không nhảy, nhưng nó PHẢI về 0.
     # Bản trước bị dòng chuẩn hoá vô điều kiện kéo lại gross 1.0 — cờ này khi đó là
     # cờ giả. Kiểm ở cuối chuỗi, sau khi đã có đủ kỳ để đi hết quãng đường.
-    assert W.loc[late[-1]].abs().sum() < 0.05, \
-        "collapse_equal=False phải cho danh mục THỰC SỰ rỗng, không chỉ đổi tỷ lệ"
+    assert (
+        W.loc[late[-1]].abs().sum() < 0.05
+    ), "collapse_equal=False phải cho danh mục THỰC SỰ rỗng, không chỉ đổi tỷ lệ"
 
 
 def test_warm_equal_va_collapse_equal_doc_lap():
     """Hai cờ phải điều khiển hai nhánh KHÁC NHAU — nếu không thì việc tách là vô nghĩa."""
     fac = _noise()
-    a = CombinerSpec(lookback=200, min_periods=100, t_threshold=6.0,
-                     warm_equal=True, collapse_equal=False)
-    b = CombinerSpec(lookback=200, min_periods=100, t_threshold=6.0,
-                     warm_equal=False, collapse_equal=True)
+    a = CombinerSpec(
+        lookback=200,
+        min_periods=100,
+        t_threshold=6.0,
+        warm_equal=True,
+        collapse_equal=False,
+    )
+    b = CombinerSpec(
+        lookback=200,
+        min_periods=100,
+        t_threshold=6.0,
+        warm_equal=False,
+        collapse_equal=True,
+    )
     Wa, da = adaptive_weights(fac, a, return_diagnostics=True)
     Wb, _ = adaptive_weights(fac, b, return_diagnostics=True)
     warm = da.index[da["branch"] == "warmup"]
-    assert Wa.loc[warm[-1]].abs().sum() > Wb.loc[warm[-1]].abs().sum(), \
-        "warm_equal=True phải giữ gross trong warm-up, warm_equal=False thì không"
+    assert (
+        Wa.loc[warm[-1]].abs().sum() > Wb.loc[warm[-1]].abs().sum()
+    ), "warm_equal=True phải giữ gross trong warm-up, warm_equal=False thì không"
 
 
 def test_do_manh_bang_chung_duoc_ghi_lai():

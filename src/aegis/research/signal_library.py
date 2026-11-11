@@ -74,19 +74,24 @@ class SignalDef:
 
     name: str
     family: str
-    hypothesis: str          # giả thuyết kinh tế, nêu TRƯỚC khi chạy
+    hypothesis: str  # giả thuyết kinh tế, nêu TRƯỚC khi chạy
     fn: Callable[..., pd.DataFrame]
     warmup: int
-    use_rank: bool = False   # chuẩn hoá bằng thứ hạng thay vì z-score
+    use_rank: bool = False  # chuẩn hoá bằng thứ hạng thay vì z-score
 
 
 SIGNAL_REGISTRY: Dict[str, SignalDef] = {}
 
 
-def _register(name: str, family: str, hypothesis: str, warmup: int, use_rank: bool = False):
+def _register(
+    name: str, family: str, hypothesis: str, warmup: int, use_rank: bool = False
+):
     def deco(fn):
-        SIGNAL_REGISTRY[name] = SignalDef(name, family, hypothesis, fn, warmup, use_rank)
+        SIGNAL_REGISTRY[name] = SignalDef(
+            name, family, hypothesis, fn, warmup, use_rank
+        )
         return fn
+
     return deco
 
 
@@ -104,42 +109,58 @@ def _log_ret(close: pd.DataFrame) -> pd.DataFrame:
 # nào đông người chen chúc thì bên đó trả tiền. Đây là họ bền nhất vì nó không
 # đòi hỏi dự đoán đúng hướng giá.
 # ===========================================================================
-@_register("carry_level", "carry",
-           "Funding dương cao = long chen chúc = phải trả phí. Short thu funding đó.",
-           warmup=48)
+@_register(
+    "carry_level",
+    "carry",
+    "Funding dương cao = long chen chúc = phải trả phí. Short thu funding đó.",
+    warmup=48,
+)
 def _carry_level(panel, funding, smooth: int = 24):
     return -funding.rolling(smooth, min_periods=smooth // 3).mean()
 
 
-@_register("carry_level_slow", "carry",
-           "Cùng giả thuyết carry_level nhưng chân trời dài hơn — bắt trạng thái chen chúc dai dẳng.",
-           warmup=180)
+@_register(
+    "carry_level_slow",
+    "carry",
+    "Cùng giả thuyết carry_level nhưng chân trời dài hơn — bắt trạng thái chen chúc dai dẳng.",
+    warmup=180,
+)
 def _carry_level_slow(panel, funding, smooth: int = 120):
     return -funding.rolling(smooth, min_periods=smooth // 3).mean()
 
 
-@_register("carry_zscore", "carry",
-           "Funding lệch so với CHUẨN RIÊNG của từng cặp. Một số cặp luôn có funding cao "
-           "về cấu trúc; cái đáng giao dịch là độ lệch, không phải mức tuyệt đối.",
-           warmup=360)
+@_register(
+    "carry_zscore",
+    "carry",
+    "Funding lệch so với CHUẨN RIÊNG của từng cặp. Một số cặp luôn có funding cao "
+    "về cấu trúc; cái đáng giao dịch là độ lệch, không phải mức tuyệt đối.",
+    warmup=360,
+)
 def _carry_zscore(panel, funding, window: int = 240):
     m = funding.rolling(window, min_periods=window // 4).mean()
     s = funding.rolling(window, min_periods=window // 4).std()
     return -(funding - m) / s.replace(0.0, np.nan)
 
 
-@_register("carry_momentum", "carry",
-           "Funding đang TĂNG = đòn bẩy đang tích tụ, thường đi trước đợt thanh lý. "
-           "Khác carry_level ở chỗ dùng thay đổi thay vì mức.",
-           warmup=200)
+@_register(
+    "carry_momentum",
+    "carry",
+    "Funding đang TĂNG = đòn bẩy đang tích tụ, thường đi trước đợt thanh lý. "
+    "Khác carry_level ở chỗ dùng thay đổi thay vì mức.",
+    warmup=200,
+)
 def _carry_momentum(panel, funding, lookback: int = 168):
     sm = funding.rolling(24, min_periods=8).mean()
     return -(sm - sm.shift(lookback))
 
 
-@_register("carry_vol", "carry",
-           "Funding biến động mạnh = định vị bất ổn = phần bù rủi ro cao hơn cho bên cấp thanh khoản.",
-           warmup=360, use_rank=True)
+@_register(
+    "carry_vol",
+    "carry",
+    "Funding biến động mạnh = định vị bất ổn = phần bù rủi ro cao hơn cho bên cấp thanh khoản.",
+    warmup=360,
+    use_rank=True,
+)
 def _carry_vol(panel, funding, window: int = 240):
     return -funding.rolling(window, min_periods=window // 4).std()
 
@@ -153,42 +174,47 @@ def _carry_vol(panel, funding, window: int = 240):
 # chiều — bằng chứng: `reversal_6` trong nghiên cứu cũ có Sharpe -1.73, tức là
 # chiều ngược lại (động lượng 6 nến) mạnh dương.
 # ===========================================================================
-@_register("mom_fast", "momentum",
-           "Động lượng chân trời 1 ngày: dòng tiền vào có quán tính ngắn hạn.",
-           warmup=12)
+@_register(
+    "mom_fast",
+    "momentum",
+    "Động lượng chân trời 1 ngày: dòng tiền vào có quán tính ngắn hạn.",
+    warmup=12,
+)
 def _mom_fast(panel, funding, lookback: int = 6, skip: int = 0):
     c = panel["close"]
     return c.shift(skip) / c.shift(skip + lookback) - 1.0
 
 
-@_register("mom_mid", "momentum",
-           "Động lượng chân trời 1 tuần.",
-           warmup=48)
+@_register("mom_mid", "momentum", "Động lượng chân trời 1 tuần.", warmup=48)
 def _mom_mid(panel, funding, lookback: int = 42, skip: int = 1):
     c = panel["close"]
     return c.shift(skip) / c.shift(skip + lookback) - 1.0
 
 
-@_register("mom_slow", "momentum",
-           "Động lượng chân trời 2 tuần tới 1 tháng — chân trời kinh điển của nhân tố động lượng.",
-           warmup=100)
+@_register(
+    "mom_slow",
+    "momentum",
+    "Động lượng chân trời 2 tuần tới 1 tháng — chân trời kinh điển của nhân tố động lượng.",
+    warmup=100,
+)
 def _mom_slow(panel, funding, lookback: int = 90, skip: int = 1):
     c = panel["close"]
     return c.shift(skip) / c.shift(skip + lookback) - 1.0
 
 
-@_register("mom_vlong", "momentum",
-           "Động lượng chân trời quý.",
-           warmup=200)
+@_register("mom_vlong", "momentum", "Động lượng chân trời quý.", warmup=200)
 def _mom_vlong(panel, funding, lookback: int = 180, skip: int = 1):
     c = panel["close"]
     return c.shift(skip) / c.shift(skip + lookback) - 1.0
 
 
-@_register("mom_risk_adj", "momentum",
-           "Động lượng chia cho biến động: tách xu hướng thật khỏi phần chỉ là biến động lớn. "
-           "Động lượng thô luôn thiên vị tài sản rủi ro nhất.",
-           warmup=120)
+@_register(
+    "mom_risk_adj",
+    "momentum",
+    "Động lượng chia cho biến động: tách xu hướng thật khỏi phần chỉ là biến động lớn. "
+    "Động lượng thô luôn thiên vị tài sản rủi ro nhất.",
+    warmup=120,
+)
 def _mom_risk_adj(panel, funding, lookback: int = 90, vol_window: int = 60):
     c = panel["close"]
     mom = c.shift(1) / c.shift(1 + lookback) - 1.0
@@ -196,19 +222,25 @@ def _mom_risk_adj(panel, funding, lookback: int = 90, vol_window: int = 60):
     return mom / vol.replace(0.0, np.nan)
 
 
-@_register("mom_consistency", "momentum",
-           "TỶ LỆ nến tăng, không phải tổng lợi suất. Xu hướng do nhiều bước nhỏ đều đặn "
-           "bền hơn xu hướng do một cú nhảy — cú nhảy thường là tin một lần, đã phản ánh hết.",
-           warmup=120)
+@_register(
+    "mom_consistency",
+    "momentum",
+    "TỶ LỆ nến tăng, không phải tổng lợi suất. Xu hướng do nhiều bước nhỏ đều đặn "
+    "bền hơn xu hướng do một cú nhảy — cú nhảy thường là tin một lần, đã phản ánh hết.",
+    warmup=120,
+)
 def _mom_consistency(panel, funding, lookback: int = 90):
     r = _log_ret(panel["close"])
     return (r > 0).rolling(lookback, min_periods=lookback // 3).mean() - 0.5
 
 
-@_register("mom_52w_high", "momentum",
-           "Khoảng cách tới đỉnh cao nhất trong khung nhìn. Neo tâm lý: tài sản sát đỉnh "
-           "gặp lực bán chốt lời chậm hơn, nên phản ứng chậm với tin tốt.",
-           warmup=760)
+@_register(
+    "mom_52w_high",
+    "momentum",
+    "Khoảng cách tới đỉnh cao nhất trong khung nhìn. Neo tâm lý: tài sản sát đỉnh "
+    "gặp lực bán chốt lời chậm hơn, nên phản ứng chậm với tin tốt.",
+    warmup=760,
+)
 def _mom_52w_high(panel, funding, window: int = 720):
     c = panel["close"]
     hi = panel["high"].rolling(window, min_periods=window // 4).max()
@@ -221,43 +253,54 @@ def _mom_52w_high(panel, funding, window: int = 720):
 # có nhu cầu gấp; nhu cầu gấp thường đến từ thông tin hoặc buộc phải thanh lý — cả
 # hai đều dự báo được bước giá kế tiếp trong ngắn hạn.
 # ===========================================================================
-@_register("ofi_fast", "flow",
-           "Mất cân bằng dòng lệnh chủ động, chân trời nửa ngày.",
-           warmup=12)
+@_register(
+    "ofi_fast",
+    "flow",
+    "Mất cân bằng dòng lệnh chủ động, chân trời nửa ngày.",
+    warmup=12,
+)
 def _ofi_fast(panel, funding, window: int = 6):
     return panel["ofi"].rolling(window, min_periods=2).mean()
 
 
-@_register("ofi_mid", "flow",
-           "Mất cân bằng dòng lệnh, chân trời 1-2 ngày.",
-           warmup=48)
+@_register("ofi_mid", "flow", "Mất cân bằng dòng lệnh, chân trời 1-2 ngày.", warmup=48)
 def _ofi_mid(panel, funding, window: int = 30):
     return panel["ofi"].rolling(window, min_periods=window // 3).mean()
 
 
-@_register("ofi_slow", "flow",
-           "Mất cân bằng dòng lệnh tích luỹ dài hạn — đại diện cho tích luỹ/phân phối.",
-           warmup=180)
+@_register(
+    "ofi_slow",
+    "flow",
+    "Mất cân bằng dòng lệnh tích luỹ dài hạn — đại diện cho tích luỹ/phân phối.",
+    warmup=180,
+)
 def _ofi_slow(panel, funding, window: int = 120):
     return panel["ofi"].rolling(window, min_periods=window // 3).mean()
 
 
-@_register("ofi_persistence", "flow",
-           "Tự tương quan dấu dòng lệnh. Dòng lệnh DAI DẲNG là dấu vết của lệnh lớn bị "
-           "chia nhỏ (order splitting); dòng lệnh ngẫu nhiên chỉ là nhiễu.",
-           warmup=120, use_rank=True)
+@_register(
+    "ofi_persistence",
+    "flow",
+    "Tự tương quan dấu dòng lệnh. Dòng lệnh DAI DẲNG là dấu vết của lệnh lớn bị "
+    "chia nhỏ (order splitting); dòng lệnh ngẫu nhiên chỉ là nhiễu.",
+    warmup=120,
+    use_rank=True,
+)
 def _ofi_persistence(panel, funding, window: int = 90):
     o = panel["ofi"]
     sign = np.sign(o)
     return (sign * sign.shift(1)).rolling(window, min_periods=window // 3).mean()
 
 
-@_register("volume_shock", "flow",
-           "Khối lượng vọt so với chuẩn riêng. Đột biến khối lượng đi kèm giá tăng "
-           "xác nhận dòng tiền thật, không phải nhiễu thanh khoản mỏng.",
-           warmup=240)
+@_register(
+    "volume_shock",
+    "flow",
+    "Khối lượng vọt so với chuẩn riêng. Đột biến khối lượng đi kèm giá tăng "
+    "xác nhận dòng tiền thật, không phải nhiễu thanh khoản mỏng.",
+    warmup=240,
+)
 def _volume_shock(panel, funding, short: int = 24, long: int = 168):
-    v = panel["volume"] * panel["close"]   # khối lượng quy USD
+    v = panel["volume"] * panel["close"]  # khối lượng quy USD
     s = v.rolling(short, min_periods=short // 3).mean()
     l = v.rolling(long, min_periods=long // 3).mean()
     ratio = np.log(s / l.replace(0.0, np.nan))
@@ -265,11 +308,15 @@ def _volume_shock(panel, funding, short: int = 24, long: int = 168):
     return ratio * direction
 
 
-@_register("amihud_illiq", "flow",
-           "Kém thanh khoản (Amihud): giá dịch nhiều trên mỗi đô-la giao dịch. Phần bù "
-           "thanh khoản dương — tài sản kém thanh khoản kiếm nhiều hơn để bù rủi ro đó. "
-           "Ở vốn nhỏ ta CÓ THỂ thu phần bù này vì lệnh của ta không đủ lớn để trả nó.",
-           warmup=240, use_rank=True)
+@_register(
+    "amihud_illiq",
+    "flow",
+    "Kém thanh khoản (Amihud): giá dịch nhiều trên mỗi đô-la giao dịch. Phần bù "
+    "thanh khoản dương — tài sản kém thanh khoản kiếm nhiều hơn để bù rủi ro đó. "
+    "Ở vốn nhỏ ta CÓ THỂ thu phần bù này vì lệnh của ta không đủ lớn để trả nó.",
+    warmup=240,
+    use_rank=True,
+)
 def _amihud_illiq(panel, funding, window: int = 168):
     dv = (panel["volume"] * panel["close"]).replace(0.0, np.nan)
     illiq = _ret(panel["close"]).abs() / dv
@@ -283,45 +330,65 @@ def _amihud_illiq(panel, funding, window: int = 168):
 # Đây là bất thường được ghi nhận rộng nhất ở mọi lớp tài sản, và crypto là nơi
 # thành phần bán lẻ đậm đặc nhất nên hiệu ứng mạnh nhất.
 # ===========================================================================
-@_register("low_idio_vol", "volatility",
-           "Bất thường biến động riêng: mua tài sản có biến động ĐÃ KHỬ THỊ TRƯỜNG thấp.",
-           warmup=120, use_rank=True)
+@_register(
+    "low_idio_vol",
+    "volatility",
+    "Bất thường biến động riêng: mua tài sản có biến động ĐÃ KHỬ THỊ TRƯỜNG thấp.",
+    warmup=120,
+    use_rank=True,
+)
 def _low_idio_vol(panel, funding, window: int = 90):
     r = _log_ret(panel["close"])
     idio = r.sub(r.mean(axis=1), axis=0)
     return -idio.rolling(window, min_periods=window // 3).std()
 
 
-@_register("neg_skew", "volatility",
-           "Cầu xổ số: bán tài sản có độ lệch DƯƠNG (đuôi phải béo), mua tài sản lệch âm.",
-           warmup=240, use_rank=True)
+@_register(
+    "neg_skew",
+    "volatility",
+    "Cầu xổ số: bán tài sản có độ lệch DƯƠNG (đuôi phải béo), mua tài sản lệch âm.",
+    warmup=240,
+    use_rank=True,
+)
 def _neg_skew(panel, funding, window: int = 168):
     return -_log_ret(panel["close"]).rolling(window, min_periods=window // 3).skew()
 
 
-@_register("low_max_ret", "volatility",
-           "MAX-effect (Bali-Cakici-Whitelaw): bán tài sản có nến tăng mạnh nhất gần đây. "
-           "Đại diện trực tiếp nhất cho 'vé số' và thường mạnh hơn cả độ lệch.",
-           warmup=240, use_rank=True)
+@_register(
+    "low_max_ret",
+    "volatility",
+    "MAX-effect (Bali-Cakici-Whitelaw): bán tài sản có nến tăng mạnh nhất gần đây. "
+    "Đại diện trực tiếp nhất cho 'vé số' và thường mạnh hơn cả độ lệch.",
+    warmup=240,
+    use_rank=True,
+)
 def _low_max_ret(panel, funding, window: int = 168, top_k: int = 5):
     r = _log_ret(panel["close"])
     return -r.rolling(window, min_periods=window // 3).max()
 
 
-@_register("vol_of_vol", "volatility",
-           "Bán tài sản có BIẾN ĐỘNG CỦA BIẾN ĐỘNG cao — rủi ro không định giá được, "
-           "nhà đầu tư đòi phần bù nhưng thường trả quá cao cho khả năng bùng nổ.",
-           warmup=360, use_rank=True)
+@_register(
+    "vol_of_vol",
+    "volatility",
+    "Bán tài sản có BIẾN ĐỘNG CỦA BIẾN ĐỘNG cao — rủi ro không định giá được, "
+    "nhà đầu tư đòi phần bù nhưng thường trả quá cao cho khả năng bùng nổ.",
+    warmup=360,
+    use_rank=True,
+)
 def _vol_of_vol(panel, funding, short: int = 24, window: int = 240):
     v = _log_ret(panel["close"]).rolling(short, min_periods=short // 2).std()
     return -v.rolling(window, min_periods=window // 3).std() / v.rolling(
-        window, min_periods=window // 3).mean().replace(0.0, np.nan)
+        window, min_periods=window // 3
+    ).mean().replace(0.0, np.nan)
 
 
-@_register("downside_beta", "volatility",
-           "Bán tài sản có beta CHIỀU XUỐNG cao. Beta hai chiều che mất thứ thật sự "
-           "gây đau: tài sản rơi nhanh hơn thị trường nhưng không tăng nhanh hơn.",
-           warmup=360)
+@_register(
+    "downside_beta",
+    "volatility",
+    "Bán tài sản có beta CHIỀU XUỐNG cao. Beta hai chiều che mất thứ thật sự "
+    "gây đau: tài sản rơi nhanh hơn thị trường nhưng không tăng nhanh hơn.",
+    warmup=360,
+)
 def _downside_beta(panel, funding, window: int = 240):
     r = _log_ret(panel["close"])
     mkt = r.mean(axis=1)
@@ -339,9 +406,12 @@ def _downside_beta(panel, funding, window: int = 240):
 # cuối phiên. Đóng cửa sát đỉnh sau khi quét đáy = lực mua hấp thụ nguồn cung.
 # Đây là thông tin không có trong chuỗi close-to-close.
 # ===========================================================================
-@_register("close_location", "microstructure",
-           "Vị trí đóng cửa trong biên độ high-low. Đóng sát đỉnh = phe mua kiểm soát.",
-           warmup=48)
+@_register(
+    "close_location",
+    "microstructure",
+    "Vị trí đóng cửa trong biên độ high-low. Đóng sát đỉnh = phe mua kiểm soát.",
+    warmup=48,
+)
 def _close_location(panel, funding, window: int = 24):
     hi, lo, c = panel["high"], panel["low"], panel["close"]
     rng = (hi - lo).replace(0.0, np.nan)
@@ -349,10 +419,13 @@ def _close_location(panel, funding, window: int = 24):
     return clv.rolling(window, min_periods=window // 3).mean()
 
 
-@_register("range_compression", "microstructure",
-           "Biên độ thu hẹp so với chuẩn riêng. Nén biên độ đi trước bùng nổ; kết hợp "
-           "với chiều động lượng cho điểm vào tốt hơn động lượng đơn thuần.",
-           warmup=240)
+@_register(
+    "range_compression",
+    "microstructure",
+    "Biên độ thu hẹp so với chuẩn riêng. Nén biên độ đi trước bùng nổ; kết hợp "
+    "với chiều động lượng cho điểm vào tốt hơn động lượng đơn thuần.",
+    warmup=240,
+)
 def _range_compression(panel, funding, short: int = 24, long: int = 168):
     tr = (panel["high"] - panel["low"]) / panel["close"].replace(0.0, np.nan)
     s = tr.rolling(short, min_periods=short // 3).mean()
@@ -361,13 +434,19 @@ def _range_compression(panel, funding, short: int = 24, long: int = 168):
     return compression * np.sign(_ret(panel["close"], long))
 
 
-@_register("trade_intensity", "microstructure",
-           "Số lệnh trên mỗi đơn vị khối lượng: kích thước lệnh trung bình NHỎ = nhiều "
-           "nhà đầu tư nhỏ lẻ. Dòng tiền bán lẻ dồn dập thường đi trước đảo chiều.",
-           warmup=240, use_rank=True)
+@_register(
+    "trade_intensity",
+    "microstructure",
+    "Số lệnh trên mỗi đơn vị khối lượng: kích thước lệnh trung bình NHỎ = nhiều "
+    "nhà đầu tư nhỏ lẻ. Dòng tiền bán lẻ dồn dập thường đi trước đảo chiều.",
+    warmup=240,
+    use_rank=True,
+)
 def _trade_intensity(panel, funding, window: int = 168):
     if "tick_count" not in panel:
-        return pd.DataFrame(np.nan, index=panel["close"].index, columns=panel["close"].columns)
+        return pd.DataFrame(
+            np.nan, index=panel["close"].index, columns=panel["close"].columns
+        )
     dv = (panel["volume"] * panel["close"]).replace(0.0, np.nan)
     avg_size = dv / panel["tick_count"].replace(0, np.nan)
     z = np.log(avg_size.replace(0.0, np.nan))
@@ -379,24 +458,37 @@ def _trade_intensity(panel, funding, window: int = 168):
 # ---------------------------------------------------------------------------
 # Dựng tín hiệu
 # ---------------------------------------------------------------------------
-FAMILIES: List[str] = ["carry", "momentum", "flow", "volatility", "microstructure",
-                       "positioning"]
+FAMILIES: List[str] = [
+    "carry",
+    "momentum",
+    "flow",
+    "volatility",
+    "microstructure",
+    "positioning",
+]
 
 
-def build_signal(name: str, panel: Dict[str, pd.DataFrame], funding: pd.DataFrame,
-                 **kwargs) -> pd.DataFrame:
+def build_signal(
+    name: str, panel: Dict[str, pd.DataFrame], funding: pd.DataFrame, **kwargs
+) -> pd.DataFrame:
     """Tính MỘT tín hiệu và chuẩn hoá theo mặt cắt ngang."""
     if name not in SIGNAL_REGISTRY:
-        raise KeyError(f"Tín hiệu không có trong registry: {name}. Có: {sorted(SIGNAL_REGISTRY)}")
+        raise KeyError(
+            f"Tín hiệu không có trong registry: {name}. Có: {sorted(SIGNAL_REGISTRY)}"
+        )
     spec = SIGNAL_REGISTRY[name]
     raw = spec.fn(panel, funding, **kwargs)
     raw = raw.replace([np.inf, -np.inf], np.nan)
     return xs_rank(raw) if spec.use_rank else xs_zscore(raw)
 
 
-def build_family(family: str, panel: Dict[str, pd.DataFrame], funding: pd.DataFrame,
-                 members: Optional[List[str]] = None,
-                 min_members: int = 1) -> pd.DataFrame:
+def build_family(
+    family: str,
+    panel: Dict[str, pd.DataFrame],
+    funding: pd.DataFrame,
+    members: Optional[List[str]] = None,
+    min_members: int = 1,
+) -> pd.DataFrame:
     """
     Gộp mọi biến thể trong một họ thành MỘT tín hiệu cấp họ.
 
@@ -418,12 +510,17 @@ def build_family(family: str, panel: Dict[str, pd.DataFrame], funding: pd.DataFr
     return xs_zscore(avg)
 
 
-def build_all_families(panel: Dict[str, pd.DataFrame], funding: pd.DataFrame,
-                       families: Optional[List[str]] = None,
-                       min_members: int = 1) -> Dict[str, pd.DataFrame]:
+def build_all_families(
+    panel: Dict[str, pd.DataFrame],
+    funding: pd.DataFrame,
+    families: Optional[List[str]] = None,
+    min_members: int = 1,
+) -> Dict[str, pd.DataFrame]:
     """Dựng tín hiệu cấp họ cho mọi họ — đây là đầu vào của tầng gộp."""
-    return {f: build_family(f, panel, funding, min_members=min_members)
-            for f in (families or FAMILIES)}
+    return {
+        f: build_family(f, panel, funding, min_members=min_members)
+        for f in (families or FAMILIES)
+    }
 
 
 # ===========================================================================
@@ -462,20 +559,26 @@ def _safe_log(df: pd.DataFrame) -> pd.DataFrame:
     return np.log(df.where(df > 0))
 
 
-@_register("oi_growth", "positioning",
-           "Open interest tăng = đòn bẩy đang được tích tụ. Vị thế mới vào bằng tiền vay "
-           "là vị thế yếu nhất khi giá đi ngược.",
-           warmup=60)
+@_register(
+    "oi_growth",
+    "positioning",
+    "Open interest tăng = đòn bẩy đang được tích tụ. Vị thế mới vào bằng tiền vay "
+    "là vị thế yếu nhất khi giá đi ngược.",
+    warmup=60,
+)
 def _oi_growth(panel, funding, lookback: int = 42):
     oi = _pos(panel, "sum_open_interest_value")
     return oi / oi.shift(lookback) - 1.0
 
 
-@_register("oi_price_confirm", "positioning",
-           "OI tăng CÙNG giá tăng = tiền mới vào chiều long (chen chúc). OI tăng khi giá "
-           "giảm = short mới. Tích của hai thay đổi tách được bốn trạng thái vị thế mà "
-           "riêng giá hay riêng OI đều không thấy.",
-           warmup=60)
+@_register(
+    "oi_price_confirm",
+    "positioning",
+    "OI tăng CÙNG giá tăng = tiền mới vào chiều long (chen chúc). OI tăng khi giá "
+    "giảm = short mới. Tích của hai thay đổi tách được bốn trạng thái vị thế mà "
+    "riêng giá hay riêng OI đều không thấy.",
+    warmup=60,
+)
 def _oi_price_confirm(panel, funding, lookback: int = 42):
     oi = _pos(panel, "sum_open_interest_value")
     d_oi = oi / oi.shift(lookback) - 1.0
@@ -483,10 +586,13 @@ def _oi_price_confirm(panel, funding, lookback: int = 42):
     return d_oi * np.sign(d_px)
 
 
-@_register("oi_zscore", "positioning",
-           "OI lệch so với CHUẨN RIÊNG của từng cặp. Mức tuyệt đối phản ánh quy mô cặp; "
-           "cái đáng giao dịch là trạng thái chen chúc BẤT THƯỜNG so với chính nó.",
-           warmup=400)
+@_register(
+    "oi_zscore",
+    "positioning",
+    "OI lệch so với CHUẨN RIÊNG của từng cặp. Mức tuyệt đối phản ánh quy mô cặp; "
+    "cái đáng giao dịch là trạng thái chen chúc BẤT THƯỜNG so với chính nó.",
+    warmup=400,
+)
 def _oi_zscore(panel, funding, window: int = 240):
     oi = _pos(panel, "sum_open_interest_value")
     m = oi.rolling(window, min_periods=window // 4).mean()
@@ -494,69 +600,94 @@ def _oi_zscore(panel, funding, window: int = 240):
     return (oi - m) / s.replace(0.0, np.nan)
 
 
-@_register("oi_turnover", "positioning",
-           "OI chia cho khối lượng giao dịch. Cao = vị thế NGỒI LÂU không đổi chủ, tức "
-           "đòn bẩy cũ tích tụ. Thấp = tiền vào ra liên tục, vị thế không đọng.",
-           warmup=280)
+@_register(
+    "oi_turnover",
+    "positioning",
+    "OI chia cho khối lượng giao dịch. Cao = vị thế NGỒI LÂU không đổi chủ, tức "
+    "đòn bẩy cũ tích tụ. Thấp = tiền vào ra liên tục, vị thế không đọng.",
+    warmup=280,
+)
 def _oi_turnover(panel, funding, window: int = 120):
     oi = _pos(panel, "sum_open_interest_value")
-    dv = (panel["close"] * panel["volume"]).rolling(window, min_periods=window // 4).mean()
+    dv = (
+        (panel["close"] * panel["volume"])
+        .rolling(window, min_periods=window // 4)
+        .mean()
+    )
     return oi / dv.replace(0.0, np.nan)
 
 
-@_register("crowd_ls", "positioning",
-           "Tỷ lệ long/short theo SỐ TÀI KHOẢN của toàn sàn — đại diện cho đám đông nhỏ lẻ. "
-           "Đếm theo đầu người nên mỗi tài khoản một phiếu bất kể vốn.",
-           warmup=48)
+@_register(
+    "crowd_ls",
+    "positioning",
+    "Tỷ lệ long/short theo SỐ TÀI KHOẢN của toàn sàn — đại diện cho đám đông nhỏ lẻ. "
+    "Đếm theo đầu người nên mỗi tài khoản một phiếu bất kể vốn.",
+    warmup=48,
+)
 def _crowd_ls(panel, funding, smooth: int = 12):
     r = _safe_log(_pos(panel, "count_long_short_ratio"))
     return r.rolling(smooth, min_periods=max(2, smooth // 3)).mean()
 
 
-@_register("smart_ls", "positioning",
-           "Tỷ lệ long/short theo VỊ THẾ của nhóm top trader — đại diện cho tiền lớn. "
-           "Đếm theo quy mô vị thế nên nó nói ai đang cầm bao nhiêu, không phải bao nhiêu người.",
-           warmup=48)
+@_register(
+    "smart_ls",
+    "positioning",
+    "Tỷ lệ long/short theo VỊ THẾ của nhóm top trader — đại diện cho tiền lớn. "
+    "Đếm theo quy mô vị thế nên nó nói ai đang cầm bao nhiêu, không phải bao nhiêu người.",
+    warmup=48,
+)
 def _smart_ls(panel, funding, smooth: int = 12):
     r = _safe_log(_pos(panel, "sum_toptrader_long_short_ratio"))
     return r.rolling(smooth, min_periods=max(2, smooth // 3)).mean()
 
 
-@_register("smart_minus_crowd", "positioning",
-           "Tiền lớn TRỪ đám đông. Đây là tín hiệu riêng có của họ này: hai nhóm thường "
-           "đứng cùng chiều, nên phần CHÊNH LỆCH mới là thông tin. Khi top trader nghiêng "
-           "long mà đám đông nghiêng short (hoặc ngược lại), một bên sắp phải nhường.",
-           warmup=48)
+@_register(
+    "smart_minus_crowd",
+    "positioning",
+    "Tiền lớn TRỪ đám đông. Đây là tín hiệu riêng có của họ này: hai nhóm thường "
+    "đứng cùng chiều, nên phần CHÊNH LỆCH mới là thông tin. Khi top trader nghiêng "
+    "long mà đám đông nghiêng short (hoặc ngược lại), một bên sắp phải nhường.",
+    warmup=48,
+)
 def _smart_minus_crowd(panel, funding, smooth: int = 12):
     smart = _safe_log(_pos(panel, "sum_toptrader_long_short_ratio"))
     crowd = _safe_log(_pos(panel, "count_long_short_ratio"))
     return (smart - crowd).rolling(smooth, min_periods=max(2, smooth // 3)).mean()
 
 
-@_register("smart_count_vs_size", "positioning",
-           "Trong CHÍNH nhóm top trader: tỷ lệ theo số tài khoản so với tỷ lệ theo quy mô "
-           "vị thế. Lệch nhau nghĩa là số ít đang cầm vị thế rất lớn ngược chiều số đông "
-           "trong cùng nhóm — dấu vết của niềm tin tập trung.",
-           warmup=48)
+@_register(
+    "smart_count_vs_size",
+    "positioning",
+    "Trong CHÍNH nhóm top trader: tỷ lệ theo số tài khoản so với tỷ lệ theo quy mô "
+    "vị thế. Lệch nhau nghĩa là số ít đang cầm vị thế rất lớn ngược chiều số đông "
+    "trong cùng nhóm — dấu vết của niềm tin tập trung.",
+    warmup=48,
+)
 def _smart_count_vs_size(panel, funding, smooth: int = 12):
     by_size = _safe_log(_pos(panel, "sum_toptrader_long_short_ratio"))
     by_count = _safe_log(_pos(panel, "count_toptrader_long_short_ratio"))
     return (by_size - by_count).rolling(smooth, min_periods=max(2, smooth // 3)).mean()
 
 
-@_register("taker_aggression", "positioning",
-           "Khối lượng taker mua chia taker bán. Lệnh cắn giá là lệnh VỘI — nó đo mức độ "
-           "sốt ruột của một bên, khác hẳn khối lượng tổng vốn trung tính về hướng.",
-           warmup=48)
+@_register(
+    "taker_aggression",
+    "positioning",
+    "Khối lượng taker mua chia taker bán. Lệnh cắn giá là lệnh VỘI — nó đo mức độ "
+    "sốt ruột của một bên, khác hẳn khối lượng tổng vốn trung tính về hướng.",
+    warmup=48,
+)
 def _taker_aggression(panel, funding, smooth: int = 12):
     r = _safe_log(_pos(panel, "sum_taker_long_short_vol_ratio"))
     return r.rolling(smooth, min_periods=max(2, smooth // 3)).mean()
 
 
-@_register("crowd_ls_momentum", "positioning",
-           "THAY ĐỔI vị thế của đám đông, không phải mức. Bắt lúc dòng người đang đổi bên — "
-           "mức nói ai đang ở đâu, thay đổi nói ai đang di chuyển.",
-           warmup=160)
+@_register(
+    "crowd_ls_momentum",
+    "positioning",
+    "THAY ĐỔI vị thế của đám đông, không phải mức. Bắt lúc dòng người đang đổi bên — "
+    "mức nói ai đang ở đâu, thay đổi nói ai đang di chuyển.",
+    warmup=160,
+)
 def _crowd_ls_momentum(panel, funding, lookback: int = 42):
     r = _safe_log(_pos(panel, "count_long_short_ratio"))
     sm = r.rolling(12, min_periods=4).mean()

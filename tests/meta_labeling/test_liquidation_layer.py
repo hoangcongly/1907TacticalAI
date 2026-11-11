@@ -1,6 +1,3 @@
-import math
-from typing import Any, Dict, List, Optional
-
 from aegis.meta_labeling.sizing.liquidation_layer import (
     compute_liquidation_price,
     validate_leverage_against_sl,
@@ -8,6 +5,7 @@ from aegis.meta_labeling.sizing.liquidation_layer import (
     resolve_max_safe_leverage,
     compute_liquidation_loss,
 )
+
 
 def test_liquidation_layer_armor_plated():
     """
@@ -27,7 +25,7 @@ def test_liquidation_layer_armor_plated():
         entry, 1, sl_long, lev, maint, safety_buffer_pct=0.15, fee_rate=0.0004
     )
     assert check_long["is_safe"] is True, f"Long safe check failed: {check_long}"
-    expected_liq_long = 100.0 * (1.0 - (1.0/5.0 - 0.005 - 0.0004 - 0.005))  # = 81.04
+    expected_liq_long = 100.0 * (1.0 - (1.0 / 5.0 - 0.005 - 0.0004 - 0.005))  # = 81.04
     assert (
         abs(check_long["liq_price"] - expected_liq_long) < 1e-4
     ), f"Sai giá thanh lý Long: {check_long['liq_price']}, kỳ vọng {expected_liq_long}"
@@ -37,18 +35,28 @@ def test_liquidation_layer_armor_plated():
         entry, -1, sl_short, lev, maint, safety_buffer_pct=0.15, fee_rate=0.0004
     )
     assert check_short["is_safe"] is True, f"Short safe check failed: {check_short}"
-    expected_liq_short = 100.0 * (1.0 + (1.0/5.0 - 0.005 - 0.0004 - 0.005))  # = 118.96
+    expected_liq_short = 100.0 * (
+        1.0 + (1.0 / 5.0 - 0.005 - 0.0004 - 0.005)
+    )  # = 118.96
     assert (
         abs(check_short["liq_price"] - expected_liq_short) < 1e-4
     ), f"Sai giá thanh lý Short: {check_short['liq_price']}, kỳ vọng {expected_liq_short}"
 
     # 3. Test giải closed-form đòn bẩy tối đa cho Long
     max_lev_long = resolve_max_safe_leverage(
-        entry, 1, sl_long, maint, safety_buffer_pct=0.15, leverage_cap=20.0, fee_rate=0.0004
+        entry,
+        1,
+        sl_long,
+        maint,
+        safety_buffer_pct=0.15,
+        leverage_cap=20.0,
+        fee_rate=0.0004,
     )
     # denom = (0.10 / 0.85) + 0.005 + 0.0004 + 0.005 = 0.117647 + 0.0104 = 0.128047...
     expected_l_max = 1.0 / ((0.10 / 0.85) + 0.005 + 0.0004 + 0.005)
-    assert abs(max_lev_long - expected_l_max) < 1e-3, f"Sai max safe leverage: {max_lev_long}, kỳ vọng {expected_l_max}"
+    assert (
+        abs(max_lev_long - expected_l_max) < 1e-3
+    ), f"Sai max safe leverage: {max_lev_long}, kỳ vọng {expected_l_max}"
 
     # 4. [ARMOR-PLATED GUARDS] Khóa lỗi chia cho số 0 (leverage < 1.0 hoặc 0)
     try:
@@ -93,15 +101,27 @@ def test_liquidation_fee_impact():
     chứng minh rằng phí thanh lý siết chặt đòn bẩy.
     """
     l_max_no_liq_fee = resolve_max_safe_leverage(
-        100, 1, 95, 0.005, fee_rate=0.0005, liquidation_fee_rate=0.0, safety_buffer_pct=0.15
+        100,
+        1,
+        95,
+        0.005,
+        fee_rate=0.0005,
+        liquidation_fee_rate=0.0,
+        safety_buffer_pct=0.15,
     )
     l_max_with_liq_fee = resolve_max_safe_leverage(
-        100, 1, 95, 0.005, fee_rate=0.0005, liquidation_fee_rate=0.01, safety_buffer_pct=0.15
+        100,
+        1,
+        95,
+        0.005,
+        fee_rate=0.0005,
+        liquidation_fee_rate=0.01,
+        safety_buffer_pct=0.15,
     )
 
-    assert l_max_with_liq_fee < l_max_no_liq_fee, (
-        "L_max phải bị siết chặt hơn khi có phí thanh lý!"
-    )
+    assert (
+        l_max_with_liq_fee < l_max_no_liq_fee
+    ), "L_max phải bị siết chặt hơn khi có phí thanh lý!"
     print(
         f"✅ [LIQ FEE IMPACT] L_max No Clearance Fee: {l_max_no_liq_fee:.2f}x | "
         f"L_max WITH Clearance Fee: {l_max_with_liq_fee:.2f}x"
@@ -114,13 +134,16 @@ def test_get_maintenance_margin_rate_guards():
         assert False, "Lỗi: Không chặn size_notional âm"
     except ValueError:
         pass
-        
+
     try:
-        get_maintenance_margin_rate(float('nan'))
+        get_maintenance_margin_rate(float("nan"))
         assert False, "Lỗi: Không chặn size_notional rác NaN"
     except ValueError:
         pass
-    print("✅ [LỖ HỔNG 3 VÁ THÀNH CÔNG] Guard chặn rác cho tra cứu MMR hoạt động hoàn hảo!")
+    print(
+        "✅ [LỖ HỔNG 3 VÁ THÀNH CÔNG] Guard chặn rác cho tra cứu MMR hoạt động hoàn hảo!"
+    )
+
 
 def test_compute_liquidation_loss_margin_only():
     """
@@ -132,7 +155,9 @@ def test_compute_liquidation_loss_margin_only():
     # Tiền cọc = 100 USD. Trả về -100.0 (KHÔNG trừ fee ở đây nữa)
     loss = compute_liquidation_loss(notional, lev)
     assert abs(loss - (-100.0)) < 1e-6, f"Lỗi tính toán: nhận {loss}, kỳ vọng -100.0"
-    print("✅ [QĐ #7] compute_liquidation_loss trả về -(margin) thuần, phí xử lý tại pnl.py!")
+    print(
+        "✅ [QĐ #7] compute_liquidation_loss trả về -(margin) thuần, phí xử lý tại pnl.py!"
+    )
 
 
 def test_compute_liquidation_price_bidirectional_funding():
@@ -151,32 +176,90 @@ def test_compute_liquidation_price_bidirectional_funding():
     liq_fee = 0.005
 
     # Base liquidation price khi funding = 0.0
-    p_liq_base_long = compute_liquidation_price(entry, side=1, leverage=lev, maintenance_margin_rate=maint, fee_rate=fee, liquidation_fee_rate=liq_fee, funding_accrued_pct=0.0)
-    p_liq_base_short = compute_liquidation_price(entry, side=-1, leverage=lev, maintenance_margin_rate=maint, fee_rate=fee, liquidation_fee_rate=liq_fee, funding_accrued_pct=0.0)
+    p_liq_base_long = compute_liquidation_price(
+        entry,
+        side=1,
+        leverage=lev,
+        maintenance_margin_rate=maint,
+        fee_rate=fee,
+        liquidation_fee_rate=liq_fee,
+        funding_accrued_pct=0.0,
+    )
+    p_liq_base_short = compute_liquidation_price(
+        entry,
+        side=-1,
+        leverage=lev,
+        maintenance_margin_rate=maint,
+        fee_rate=fee,
+        liquidation_fee_rate=liq_fee,
+        funding_accrued_pct=0.0,
+    )
 
     # 1. TRƯỜNG HỢP TRẢ PHÍ (paying fee, funding_accrued_pct = 0.02 = +2%)
-    p_liq_pay_long = compute_liquidation_price(entry, side=1, leverage=lev, maintenance_margin_rate=maint, fee_rate=fee, liquidation_fee_rate=liq_fee, funding_accrued_pct=0.02)
-    p_liq_pay_short = compute_liquidation_price(entry, side=-1, leverage=lev, maintenance_margin_rate=maint, fee_rate=fee, liquidation_fee_rate=liq_fee, funding_accrued_pct=0.02)
-    
+    p_liq_pay_long = compute_liquidation_price(
+        entry,
+        side=1,
+        leverage=lev,
+        maintenance_margin_rate=maint,
+        fee_rate=fee,
+        liquidation_fee_rate=liq_fee,
+        funding_accrued_pct=0.02,
+    )
+    p_liq_pay_short = compute_liquidation_price(
+        entry,
+        side=-1,
+        leverage=lev,
+        maintenance_margin_rate=maint,
+        fee_rate=fee,
+        liquidation_fee_rate=liq_fee,
+        funding_accrued_pct=0.02,
+    )
+
     # Cho Long: P_liq phải tăng (sát 100 hơn)
-    assert p_liq_pay_long > p_liq_base_long, f"Long trả funding phải sát Entry hơn: {p_liq_pay_long} vs {p_liq_base_long}"
+    assert (
+        p_liq_pay_long > p_liq_base_long
+    ), f"Long trả funding phải sát Entry hơn: {p_liq_pay_long} vs {p_liq_base_long}"
     assert abs((entry - p_liq_pay_long) - ((entry - p_liq_base_long) - 2.0)) < 1e-4
     # Cho Short: P_liq phải giảm (sát 100 hơn)
-    assert p_liq_pay_short < p_liq_base_short, f"Short trả funding phải sát Entry hơn: {p_liq_pay_short} vs {p_liq_base_short}"
+    assert (
+        p_liq_pay_short < p_liq_base_short
+    ), f"Short trả funding phải sát Entry hơn: {p_liq_pay_short} vs {p_liq_base_short}"
     assert abs((p_liq_pay_short - entry) - ((p_liq_base_short - entry) - 2.0)) < 1e-4
 
     # 2. TRƯỜNG HỢP NHẬN PHÍ (receiving rebate, funding_accrued_pct = -0.01 = -1%)
-    p_liq_rebate_long = compute_liquidation_price(entry, side=1, leverage=lev, maintenance_margin_rate=maint, fee_rate=fee, liquidation_fee_rate=liq_fee, funding_accrued_pct=-0.01)
-    p_liq_rebate_short = compute_liquidation_price(entry, side=-1, leverage=lev, maintenance_margin_rate=maint, fee_rate=fee, liquidation_fee_rate=liq_fee, funding_accrued_pct=-0.01)
-    
+    p_liq_rebate_long = compute_liquidation_price(
+        entry,
+        side=1,
+        leverage=lev,
+        maintenance_margin_rate=maint,
+        fee_rate=fee,
+        liquidation_fee_rate=liq_fee,
+        funding_accrued_pct=-0.01,
+    )
+    p_liq_rebate_short = compute_liquidation_price(
+        entry,
+        side=-1,
+        leverage=lev,
+        maintenance_margin_rate=maint,
+        fee_rate=fee,
+        liquidation_fee_rate=liq_fee,
+        funding_accrued_pct=-0.01,
+    )
+
     # Cho Long: P_liq phải giảm (xa 100 hơn)
-    assert p_liq_rebate_long < p_liq_base_long, f"Long nhận rebate phải xa Entry hơn: {p_liq_rebate_long} vs {p_liq_base_long}"
+    assert (
+        p_liq_rebate_long < p_liq_base_long
+    ), f"Long nhận rebate phải xa Entry hơn: {p_liq_rebate_long} vs {p_liq_base_long}"
     assert abs((entry - p_liq_rebate_long) - ((entry - p_liq_base_long) + 1.0)) < 1e-4
     # Cho Short: P_liq phải tăng (xa 100 hơn)
-    assert p_liq_rebate_short > p_liq_base_short, f"Short nhận rebate phải xa Entry hơn: {p_liq_rebate_short} vs {p_liq_base_short}"
+    assert (
+        p_liq_rebate_short > p_liq_base_short
+    ), f"Short nhận rebate phải xa Entry hơn: {p_liq_rebate_short} vs {p_liq_base_short}"
     assert abs((p_liq_rebate_short - entry) - ((p_liq_base_short - entry) + 1.0)) < 1e-4
 
-    print("✅ [BI-DIRECTIONAL FUNDING Directives] Khẳng định hoàn hảo 2 chiều Funding Fee lên Giá Thanh Lý PASSED!")
+    print(
+        "✅ [BI-DIRECTIONAL FUNDING Directives] Khẳng định hoàn hảo 2 chiều Funding Fee lên Giá Thanh Lý PASSED!"
+    )
 
 
 def test_resolve_max_safe_leverage_funding_erosion():
@@ -186,19 +269,29 @@ def test_resolve_max_safe_leverage_funding_erosion():
     Đồng thời kiểm chứng các hải quan bọc thép chặn đứng input rác.
     """
     l_max_base = resolve_max_safe_leverage(
-        entry_price=100.0, side=1, sl_initial=95.0, maintenance_margin_rate=0.005, max_expected_funding_loss=0.0
+        entry_price=100.0,
+        side=1,
+        sl_initial=95.0,
+        maintenance_margin_rate=0.005,
+        max_expected_funding_loss=0.0,
     )
     l_max_with_erosion = resolve_max_safe_leverage(
-        entry_price=100.0, side=1, sl_initial=95.0, maintenance_margin_rate=0.005, max_expected_funding_loss=0.01
+        entry_price=100.0,
+        side=1,
+        sl_initial=95.0,
+        maintenance_margin_rate=0.005,
+        max_expected_funding_loss=0.01,
     )
 
-    assert l_max_with_erosion < l_max_base, (
-        f"L_max khi có khấu hao funding ({l_max_with_erosion:.2f}) phải nhỏ hơn L_max gốc ({l_max_base:.2f})!"
-    )
+    assert (
+        l_max_with_erosion < l_max_base
+    ), f"L_max khi có khấu hao funding ({l_max_with_erosion:.2f}) phải nhỏ hơn L_max gốc ({l_max_base:.2f})!"
 
     # Kiểm tra guard [0.0, 0.5)
     try:
-        resolve_max_safe_leverage(100.0, 1, 95.0, 0.005, max_expected_funding_loss=-0.01)
+        resolve_max_safe_leverage(
+            100.0, 1, 95.0, 0.005, max_expected_funding_loss=-0.01
+        )
         assert False, "Không chặn funding loss âm"
     except ValueError:
         pass
@@ -213,5 +306,3 @@ def test_resolve_max_safe_leverage_funding_erosion():
         f"✅ [VÁ LỖ HỔNG 6] L_max Base: {l_max_base:.2f}x | "
         f"L_max With Funding Erosion (1%): {l_max_with_erosion:.2f}x PASSED!"
     )
-
-

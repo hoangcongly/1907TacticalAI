@@ -10,13 +10,16 @@ và khi đó không ai phải viết lại từ đầu.
 Tính chất bắt buộc và được khoá ở đây là NHÂN QUẢ. Một tầng gộp rò rỉ tương lai sẽ
 cho Sharpe rất đẹp và hoàn toàn vô giá trị.
 """
+
 import numpy as np
 import pandas as pd
 import pytest
 
 from aegis.research.rank_model import RankModelSpec, build_dataset, combine_lambdarank
 from aegis.research.xs_regression import (
-    XSRegressionSpec, combine_xs_regression, cross_sectional_betas,
+    XSRegressionSpec,
+    combine_xs_regression,
+    cross_sectional_betas,
 )
 
 BAR = 14_400_000
@@ -34,7 +37,9 @@ def market():
     noise = pd.DataFrame(rng.normal(0, 1, (n, k)), index=idx, columns=syms)
     # lợi suất kỳ sau phụ thuộc `good` tại kỳ này -> quan hệ nhân quả cài sẵn
     rets = 0.01 * good.shift(1).fillna(0.0) + rng.normal(0, 0.02, (n, k))
-    close = pd.DataFrame(100 * np.cumprod(1 + rets.to_numpy(), axis=0), index=idx, columns=syms)
+    close = pd.DataFrame(
+        100 * np.cumprod(1 + rets.to_numpy(), axis=0), index=idx, columns=syms
+    )
     return {"good": good, "noise": noise}, close
 
 
@@ -74,11 +79,14 @@ def test_he_so_duoc_dich_mot_nhip(market):
     assert first_scored >= betas.index[spec.min_periods]
 
 
-@pytest.mark.parametrize("method,alpha", [("ols", 0.0), ("ridge", 1e-3), ("elastic_net", 1e-4)])
+@pytest.mark.parametrize(
+    "method,alpha", [("ols", 0.0), ("ridge", 1e-3), ("elastic_net", 1e-4)]
+)
 def test_moi_phuong_phap_hoi_quy_chay_duoc(market, method, alpha):
     sigs, close = market
-    out = combine_xs_regression(sigs, close, XSRegressionSpec(
-        method=method, alpha=alpha, min_names=10))
+    out = combine_xs_regression(
+        sigs, close, XSRegressionSpec(method=method, alpha=alpha, min_names=10)
+    )
     assert out.shape == close.shape
     assert out.notna().any().any()
 
@@ -86,6 +94,7 @@ def test_moi_phuong_phap_hoi_quy_chay_duoc(market, method, alpha):
 def test_winsorize_chan_mot_coin_quyet_dinh_ca_he_so():
     """Một coin tăng 300% không được một mình định đoạt hệ số của cả kỳ."""
     from aegis.research.xs_regression import _winsorize
+
     x = np.array([0.01] * 50 + [3.0])
     assert _winsorize(x, 0.02).max() < 3.0
 
@@ -116,23 +125,34 @@ def test_nhan_la_phan_vi_TRONG_KY(market):
 def test_lambdarank_khong_nhin_truoc(market):
     """Đổi dữ liệu tương lai không được làm đổi điểm số quá khứ."""
     sigs, close = market
-    spec = RankModelSpec(train_periods=150, retrain_every=50, min_train_periods=100,
-                         min_names=10, n_estimators=30, num_leaves=7)
+    spec = RankModelSpec(
+        train_periods=150,
+        retrain_every=50,
+        min_train_periods=100,
+        min_names=10,
+        n_estimators=30,
+        num_leaves=7,
+    )
     base = combine_lambdarank(sigs, close, spec)
     cut = len(close) // 2
     tampered = close.copy()
     tampered.iloc[cut:] *= 1.5
     after = combine_lambdarank(sigs, tampered, spec)
 
-    a = base.iloc[:cut - spec.purge - 1].dropna(how="all")
+    a = base.iloc[: cut - spec.purge - 1].dropna(how="all")
     b = after.reindex(a.index)
     pd.testing.assert_frame_equal(a, b, check_exact=False, atol=1e-9)
 
 
 def test_lambdarank_khong_cham_diem_khi_chua_du_train(market):
     sigs, close = market
-    spec = RankModelSpec(min_train_periods=200, train_periods=300, min_names=10,
-                         n_estimators=20, num_leaves=7)
+    spec = RankModelSpec(
+        min_train_periods=200,
+        train_periods=300,
+        min_names=10,
+        n_estimators=20,
+        num_leaves=7,
+    )
     out = combine_lambdarank(sigs, close, spec)
     scored = out.dropna(how="all")
     assert len(scored) > 0
@@ -161,9 +181,15 @@ def test_lambdarank_chon_universe_khong_dua_vao_tuong_lai(market):
     """
     sigs, close = market
     tampered = close.copy()
-    tampered.iloc[-1, :5] = np.nan          # 5 cặp "ngừng giao dịch" ở kỳ cuối
-    spec = RankModelSpec(train_periods=150, retrain_every=50, min_train_periods=100,
-                         min_names=10, n_estimators=30, num_leaves=7)
+    tampered.iloc[-1, :5] = np.nan  # 5 cặp "ngừng giao dịch" ở kỳ cuối
+    spec = RankModelSpec(
+        train_periods=150,
+        retrain_every=50,
+        min_train_periods=100,
+        min_names=10,
+        n_estimators=30,
+        num_leaves=7,
+    )
     out = combine_lambdarank(sigs, tampered, spec)
     scored = out.dropna(how="all")
     # kỳ áp chót vẫn phải chấm đủ, không bị ảnh hưởng bởi việc kỳ cuối thiếu dữ liệu

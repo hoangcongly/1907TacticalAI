@@ -2,13 +2,13 @@
 Điều phối 15 folds CPCV theo đúng thứ tự 5 bước v11.8 (Mục 4.0).
 Bảo chứng Zero-Leakage & Tra cứu chỉ số tuyệt đối resolve_absolute_exit_idx.
 """
+
 from typing import Dict, Any, List, Tuple, Optional
 import warnings
 import numpy as np
 import pandas as pd
 
 from aegis.core.schemas import (
-    TradeRecordSchema,
     compute_dataset_manifest_hash,
 )
 from aegis.validation.cpcv import CombinatorialPurgedKFold
@@ -22,7 +22,6 @@ from aegis.labeling.trailing_exit import (
     resolve_regime_exit_threshold,
 )
 from aegis.meta_labeling.sizing.kelly_empirical import (
-    trade_records_to_kelly_table_inputs,
     build_empirical_kelly_table_v2,
 )
 from aegis.validation.dsr import compute_deflated_sharpe_ratio
@@ -33,7 +32,9 @@ from aegis.labeling.sample_weights import (
     compute_num_concurrent_events,
     compute_sample_weights,
 )
-from aegis.meta_labeling.weighted_bootstrap_forest import WeightedBootstrapForestClassifier
+from aegis.meta_labeling.weighted_bootstrap_forest import (
+    WeightedBootstrapForestClassifier,
+)
 from aegis.governance.funding_accrual import (
     DEFAULT_FUNDING_RATE,
     compute_funding_accrued_usd,
@@ -69,7 +70,7 @@ def filter_boundary_truncated_for_kelly_table(
     Phân loại danh sách trade_records thành 2 tập:
     1. clean_records: boundary_truncated == False (dùng để giải bảng Kelly).
     2. diagnostic_records: boundary_truncated == True (bị cắt biên fold CPCV).
-    
+
     Cảnh báo nếu tỷ lệ cắt biên vượt quá 15%.
     """
     clean_records = []
@@ -123,17 +124,23 @@ class CPCVPipeline:
         """
         n_bars = len(signal_bars)
         if n_bars < self.n_groups * 5:
-            raise ValueError(f"Số lượng bars ({n_bars}) quá nhỏ để chia {self.n_groups} nhóm CPCV!")
+            raise ValueError(
+                f"Số lượng bars ({n_bars}) quá nhỏ để chia {self.n_groups} nhóm CPCV!"
+            )
 
         # Tem niêm phong SHA-256 của dataset nến
         manifest_hash = compute_dataset_manifest_hash(signal_bars, self.config)
-        symbol = str(signal_bars["symbol"].iloc[0]) if "symbol" in signal_bars.columns else "BTCUSDT"
+        symbol = (
+            str(signal_bars["symbol"].iloc[0])
+            if "symbol" in signal_bars.columns
+            else "BTCUSDT"
+        )
 
         closes = signal_bars["close"].astype(np.float64).values
         highs = signal_bars["high"].astype(np.float64).values
         lows = signal_bars["low"].astype(np.float64).values
         timestamps_ms = signal_bars["timestamp_ms"].astype(np.int64).values
-        
+
         p_trend = signal_bars["p_trend"].values
         p_chop = signal_bars["p_chop"].values
         atr_14 = signal_bars["atr_14"].values
@@ -142,7 +149,11 @@ class CPCVPipeline:
         insufficient_history = signal_bars["insufficient_history"].values
 
         # 1. Phát hiện sự kiện CUSUM (Bỏ qua nến insufficient_history)
-        valid_start = int(np.where(~insufficient_history)[0][0]) if np.any(~insufficient_history) else 0
+        valid_start = (
+            int(np.where(~insufficient_history)[0][0])
+            if np.any(~insufficient_history)
+            else 0
+        )
         safe_atr = np.nan_to_num(atr_14, nan=1.0)
         safe_atr = np.maximum(safe_atr, 1e-6)
 
@@ -171,11 +182,16 @@ class CPCVPipeline:
             p_chop=safe_p_chop,
         )
 
-        event_indices = np.array([e["bar_idx"] for e in cusum_records if e["bar_idx"] >= valid_start], dtype=np.int64)
+        event_indices = np.array(
+            [e["bar_idx"] for e in cusum_records if e["bar_idx"] >= valid_start],
+            dtype=np.int64,
+        )
         if len(event_indices) < self.n_groups * 2:
             # Fallback đều đặn nếu CUSUM kích hoạt quá ít sự kiện
             step_size = max(1, (n_bars - valid_start) // max(self.n_groups * 3, 10))
-            event_indices = np.arange(valid_start, n_bars - 5, step=step_size, dtype=np.int64)
+            event_indices = np.arange(
+                valid_start, n_bars - 5, step=step_size, dtype=np.int64
+            )
 
         n_events = len(event_indices)
         t0 = event_indices
@@ -200,7 +216,9 @@ class CPCVPipeline:
         # BTC 1h chỉ có xu hướng ~6% thời gian, nên giả thuyết đánh ngược đáng thử.
         primary_direction = int(self.config.get("primary_direction", 1))
         if primary_direction not in (1, -1):
-            raise ValueError(f"primary_direction phải là +1 hoặc -1, nhận {primary_direction}")
+            raise ValueError(
+                f"primary_direction phải là +1 hoặc -1, nhận {primary_direction}"
+            )
         self.primary_direction = primary_direction
 
         sides_primary = (
@@ -226,7 +244,12 @@ class CPCVPipeline:
 
         labelled_t0 = meta_labels_df["t0"].to_numpy().astype(np.int64)
         y_all = meta_labels_df["label"].to_numpy().astype(np.int64)
-        X_all = feature_bars[feature_cols].iloc[labelled_t0].fillna(0.0).to_numpy(dtype=np.float64)
+        X_all = (
+            feature_bars[feature_cols]
+            .iloc[labelled_t0]
+            .fillna(0.0)
+            .to_numpy(dtype=np.float64)
+        )
 
         # Trọng số mẫu theo độ trùng lặp thời gian (AFML) — dùng khi fit từng fold.
         try:
@@ -237,7 +260,9 @@ class CPCVPipeline:
             weights_all = compute_sample_weights(
                 t1=t1_series,
                 c_t=c_t,
-                returns=pd.Series(meta_labels_df["realized_return"].values, index=labelled_t0),
+                returns=pd.Series(
+                    meta_labels_df["realized_return"].values, index=labelled_t0
+                ),
             ).to_numpy(dtype=np.float64)
         except Exception:
             weights_all = np.ones(len(y_all), dtype=np.float64)
@@ -264,7 +289,9 @@ class CPCVPipeline:
         # không có thì rơi về hằng số danh nghĩa 0.01%/8h.
         funding_schedule = self.config.get("funding_rates")
         if not isinstance(funding_schedule, dict) or not funding_schedule:
-            funding_schedule = float(self.config.get("funding_rate", DEFAULT_FUNDING_RATE))
+            funding_schedule = float(
+                self.config.get("funding_rate", DEFAULT_FUNDING_RATE)
+            )
 
         self.n_fits = 0  # đếm số lần fit thật — test refit-per-fold kiểm tra biến này
         self.n_folds_starved = 0  # fold không đủ dữ liệu train sau purge/embargo
@@ -282,7 +309,9 @@ class CPCVPipeline:
             # ================================================================
             # `train_idx` giờ mới thực sự được dùng. Xác suất thu được là OOS thật:
             # model chưa từng nhìn thấy các sự kiện trong test fold.
-            train_pos = [pos_of_event[int(b)] for b in t0[train_idx] if int(b) in pos_of_event]
+            train_pos = [
+                pos_of_event[int(b)] for b in t0[train_idx] if int(b) in pos_of_event
+            ]
             fold_model = None
             if len(train_pos) >= 10 and len(np.unique(y_all[train_pos])) >= 2:
                 try:
@@ -321,7 +350,11 @@ class CPCVPipeline:
                 entry_p = float(closes[ev_idx])
                 pt = float(p_trend[ev_idx]) if not np.isnan(p_trend[ev_idx]) else 0.5
                 pc = float(p_chop[ev_idx]) if not np.isnan(p_chop[ev_idx]) else 0.5
-                ts = float(trend_score[ev_idx]) if not np.isnan(trend_score[ev_idx]) else 0.0
+                ts = (
+                    float(trend_score[ev_idx])
+                    if not np.isnan(trend_score[ev_idx])
+                    else 0.0
+                )
                 at = float(atr_14[ev_idx]) if not np.isnan(atr_14[ev_idx]) else 1.0
 
                 side_primary = (1 if ts >= 0.0 else -1) * self.primary_direction
@@ -384,9 +417,13 @@ class CPCVPipeline:
                 # backtest bỏ qua chi phí ĐẶC TRƯNG nhất của perp. Với BTC, funding
                 # trung bình +0.0101%/8h; lệnh giữ 5 ngày = 15 chu kỳ = 0.152%
                 # notional — đủ để xoá sạch một "edge" +0.209%/lệnh.
-                size_notional = float(self.config.get("backtest_size_notional", 10000.0))
+                size_notional = float(
+                    self.config.get("backtest_size_notional", 10000.0)
+                )
                 entry_ts = int(timestamps_ms[int(ev_idx)])
-                exit_ts = int(timestamps_ms[min(int(partial["exit_idx_absolute"]), n_bars - 1)])
+                exit_ts = int(
+                    timestamps_ms[min(int(partial["exit_idx_absolute"]), n_bars - 1)]
+                )
                 funding_usd = compute_funding_accrued_usd(
                     size_notional=size_notional,
                     side=int(partial["side"]),
@@ -431,7 +468,9 @@ class CPCVPipeline:
             )
 
         # 3. Bước 2.5: Tách boundary truncated
-        clean_records, diagnostic_records = filter_boundary_truncated_for_kelly_table(all_trade_records)
+        clean_records, diagnostic_records = filter_boundary_truncated_for_kelly_table(
+            all_trade_records
+        )
 
         # 4. Bước 3: Dựng bảng Kelly 2D cho Follow và Fade
         records_follow = [r for r in clean_records if r.get("mode") == "follow"]
@@ -441,7 +480,9 @@ class CPCVPipeline:
         kelly_fade = build_empirical_kelly_table_v2(records_fade, num_bins=num_bins)
 
         # 5. Bước 4 & 5: Đánh giá OOS Sharpe, DSR, PBO trên TOÀN BỘ trade records
-        all_returns = np.array([r["realized_return"] for r in all_trade_records], dtype=np.float64)
+        all_returns = np.array(
+            [r["realized_return"] for r in all_trade_records], dtype=np.float64
+        )
         n_trades = len(all_returns)
 
         # [FIX F15] Sharpe phải quy năm bằng TẦN SUẤT GIAO DỊCH THẬT.
@@ -464,14 +505,20 @@ class CPCVPipeline:
             fold_sharpes = []
             for fold_id in {r.get("fold_id") for r in all_trade_records}:
                 fold_rets = np.array(
-                    [r["realized_return"] for r in all_trade_records if r.get("fold_id") == fold_id],
+                    [
+                        r["realized_return"]
+                        for r in all_trade_records
+                        if r.get("fold_id") == fold_id
+                    ],
                     dtype=np.float64,
                 )
                 if len(fold_rets) > 1:
                     fold_std = float(np.std(fold_rets, ddof=1))
                     if fold_std > 1e-12:
                         fold_sharpes.append(
-                            float(np.mean(fold_rets)) / fold_std * float(np.sqrt(trades_per_year))
+                            float(np.mean(fold_rets))
+                            / fold_std
+                            * float(np.sqrt(trades_per_year))
                         )
 
             variance_of_srs = (
@@ -502,7 +549,9 @@ class CPCVPipeline:
             "truncation_rate": float(len(diagnostic_records) / max(n_trades, 1)),
             "sharpe_oos": float(sharpe_oos),
             "trades_per_year": float(trades_per_year),
-            "n_fits": int(self.n_fits),  # [FIX F5] số model đã fit thật (0 = chưa fit gì)
+            "n_fits": int(
+                self.n_fits
+            ),  # [FIX F5] số model đã fit thật (0 = chưa fit gì)
             "n_folds_starved": int(self.n_folds_starved),
             "purge_horizon": int(purge_horizon),
             "dsr": float(dsr_val),

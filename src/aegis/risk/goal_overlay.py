@@ -29,7 +29,7 @@ from __future__ import annotations
 import json
 import logging
 import pathlib
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Dict, Optional
 
 import numpy as np
@@ -57,13 +57,27 @@ def save_policy(policy: GoalPolicy, path: str = DEFAULT_POLICY_PATH) -> str:
     """
     p = pathlib.Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(p, policy=policy.policy, value=policy.value,
-                        wealth_grid=policy.wealth_grid, leverage_grid=policy.leverage_grid)
-    meta = {"spec": {k: (v if not isinstance(v, np.ndarray) else v.tolist())
-                     for k, v in policy.spec.__dict__.items()},
-            "meta": policy.meta,
-            "shape": {"policy": list(policy.policy.shape), "value": list(policy.value.shape)}}
-    p.with_suffix(".meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False))
+    np.savez_compressed(
+        p,
+        policy=policy.policy,
+        value=policy.value,
+        wealth_grid=policy.wealth_grid,
+        leverage_grid=policy.leverage_grid,
+    )
+    meta = {
+        "spec": {
+            k: (v if not isinstance(v, np.ndarray) else v.tolist())
+            for k, v in policy.spec.__dict__.items()
+        },
+        "meta": policy.meta,
+        "shape": {
+            "policy": list(policy.policy.shape),
+            "value": list(policy.value.shape),
+        },
+    }
+    p.with_suffix(".meta.json").write_text(
+        json.dumps(meta, indent=2, ensure_ascii=False)
+    )
     return str(p)
 
 
@@ -73,14 +87,21 @@ def load_policy(path: str = DEFAULT_POLICY_PATH) -> GoalPolicy:
     mp = p.with_suffix(".meta.json")
     if not p.is_file() or not mp.is_file():
         raise FileNotFoundError(
-            f"Thiếu {p} hoặc {mp}. Chạy `python scripts/build_goal_policy.py` trước.")
+            f"Thiếu {p} hoặc {mp}. Chạy `python scripts/build_goal_policy.py` trước."
+        )
     z = np.load(p)
     spec_d = json.loads(mp.read_text())["spec"]
-    spec = GoalSpec(**{k: v for k, v in spec_d.items()
-                       if k in GoalSpec.__dataclass_fields__})
-    return GoalPolicy(spec=spec, policy=z["policy"], value=z["value"],
-                      wealth_grid=z["wealth_grid"], leverage_grid=z["leverage_grid"],
-                      meta=json.loads(mp.read_text()).get("meta", {}))
+    spec = GoalSpec(
+        **{k: v for k, v in spec_d.items() if k in GoalSpec.__dataclass_fields__}
+    )
+    return GoalPolicy(
+        spec=spec,
+        policy=z["policy"],
+        value=z["value"],
+        wealth_grid=z["wealth_grid"],
+        leverage_grid=z["leverage_grid"],
+        meta=json.loads(mp.read_text()).get("meta", {}),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -126,7 +147,9 @@ class GoalOverlay:
         ms_left = max(0, self.config.deadline_ms - now_ms)
         return int(ms_left // int(period_hours * 3_600_000))
 
-    def state(self, equity: float, now_ms: int, period_hours: float) -> Dict[str, float]:
+    def state(
+        self, equity: float, now_ms: int, period_hours: float
+    ) -> Dict[str, float]:
         """Trạng thái hiện tại dưới dạng DP hiểu được — hữu ích để ghi nhật ký."""
         w0 = self.config.start_equity
         return {
@@ -134,8 +157,14 @@ class GoalOverlay:
             "periods_left": float(self.periods_left(now_ms, period_hours)),
         }
 
-    def multiplier(self, equity: float, now_ms: int, base_leverage: float,
-                   current_leverage: float, period_hours: float) -> Dict[str, object]:
+    def multiplier(
+        self,
+        equity: float,
+        now_ms: int,
+        base_leverage: float,
+        current_leverage: float,
+        period_hours: float,
+    ) -> Dict[str, object]:
         """
         Hệ số nhân nên áp lên `base_leverage`, kèm lý do — luôn trả về lý do.
 
@@ -144,9 +173,14 @@ class GoalOverlay:
         cố của hệ thống này tới nay đều được mổ xẻ từ nhật ký.
         """
         cfg = self.config
-        out: Dict[str, object] = {"multiplier": 1.0, "reason": "overlay tắt",
-                                  "wealth_ratio": None, "periods_left": None,
-                                  "dp_leverage": None, "p_success": None}
+        out: Dict[str, object] = {
+            "multiplier": 1.0,
+            "reason": "overlay tắt",
+            "wealth_ratio": None,
+            "periods_left": None,
+            "dp_leverage": None,
+            "p_success": None,
+        }
         if not cfg.enabled or self.policy is None:
             return out
         if cfg.start_equity <= 0 or cfg.deadline_ms <= 0:
@@ -161,9 +195,11 @@ class GoalOverlay:
 
         # --- 1. Đã đạt đích -> đóng sạch. Luật này đứng TRƯỚC DP và độc lập với nó.
         if cfg.lock_in_at_target and wr >= target + cfg.lock_in_buffer:
-            out.update(multiplier=0.0,
-                       reason=f"ĐẠT ĐÍCH: vốn {wr:.4f} >= {target:.4f} — đóng sạch, "
-                              f"giữ lãi. Rủi ro thêm chỉ có thể làm hỏng.")
+            out.update(
+                multiplier=0.0,
+                reason=f"ĐẠT ĐÍCH: vốn {wr:.4f} >= {target:.4f} — đóng sạch, "
+                f"giữ lãi. Rủi ro thêm chỉ có thể làm hỏng.",
+            )
             return out
 
         # --- 2. Hết giờ -> không còn quyết định nào để ra.
@@ -178,13 +214,17 @@ class GoalOverlay:
 
         mult = dp_lev / base_leverage if base_leverage > 1e-9 else 0.0
         if cfg.derisk_only and mult > 1.0:
-            out.update(multiplier=1.0,
-                       reason=f"DP muốn {dp_lev:.2f}x (nhân {mult:.2f}) nhưng derisk_only "
-                              f"đang bật — giữ nguyên {base_leverage:.2f}x")
+            out.update(
+                multiplier=1.0,
+                reason=f"DP muốn {dp_lev:.2f}x (nhân {mult:.2f}) nhưng derisk_only "
+                f"đang bật — giữ nguyên {base_leverage:.2f}x",
+            )
             return out
 
         mult = float(np.clip(mult, 0.0, cfg.max_multiplier))
-        out.update(multiplier=mult,
-                   reason=f"DP: vốn {wr:.4f}, còn {left} kỳ -> {dp_lev:.2f}x "
-                          f"(nhân {mult:.2f}), P(đạt đích)={p:.1%}")
+        out.update(
+            multiplier=mult,
+            reason=f"DP: vốn {wr:.4f}, còn {left} kỳ -> {dp_lev:.2f}x "
+            f"(nhân {mult:.2f}), P(đạt đích)={p:.1%}",
+        )
         return out

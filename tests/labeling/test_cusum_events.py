@@ -22,18 +22,30 @@ def test_b_2_1_compute_dynamic_cusum_thresholds_log_return_and_sqrt_t():
 
     # 1. Khi bars_per_atr_period=1.0 (ATR cùng khung thời gian intraday):
     thresholds = compute_dynamic_cusum_thresholds(
-        prices, atr, base_multiplier=2.5, min_rel_threshold=1e-4, max_rel_threshold=0.05, bars_per_atr_period=1.0
+        prices,
+        atr,
+        base_multiplier=2.5,
+        min_rel_threshold=1e-4,
+        max_rel_threshold=0.05,
+        bars_per_atr_period=1.0,
     )
     # sigma_rel = 2.0 / 100.0 = 0.02 => clamped = min(2.5 * 0.02, 0.05) = 0.05
     # Tại idx=3 (Flash Crash về 50): sigma_rel = 2.0 / 50.0 = 0.04 => clamped = min(2.5 * 0.04, 0.05) = 0.05
     assert len(thresholds) == 5
     assert thresholds[0] == 0.05
-    assert thresholds[3] == 0.05  # Log-return threshold ổn định, không bị biến dạng bởi độ trễ mẫu số EWMA
+    assert (
+        thresholds[3] == 0.05
+    )  # Log-return threshold ổn định, không bị biến dạng bởi độ trễ mẫu số EWMA
 
     # 2. Kiểm chứng chuẩn hóa Sqrt(T) khi ATR đo trên nến Ngày (1440 nến phút/ngày):
     # bars_per_atr_period = 1440.0 => sigma_r = (ATR/P) / sqrt(1440)
     thresholds_sqrt = compute_dynamic_cusum_thresholds(
-        prices, atr, base_multiplier=2.5, min_rel_threshold=1e-4, max_rel_threshold=0.05, bars_per_atr_period=1440.0
+        prices,
+        atr,
+        base_multiplier=2.5,
+        min_rel_threshold=1e-4,
+        max_rel_threshold=0.05,
+        bars_per_atr_period=1440.0,
     )
     expected_sigma_rel = (2.0 / 100.0) * (1.0 / math.sqrt(1440.0))
     expected_threshold = np.clip(2.5 * expected_sigma_rel, 1e-4, 0.05)
@@ -49,19 +61,27 @@ def test_b_2_1_compute_dynamic_cusum_thresholds_clipping_and_guards():
     # ATR cực lớn để kiểm tra kẹp biên max_rel_threshold
     atr_large = np.array([10.0, 10.0, 10.0], dtype=np.float64)
     thresholds = compute_dynamic_cusum_thresholds(
-        prices, atr_large, base_multiplier=2.5, min_rel_threshold=0.001, max_rel_threshold=0.05
+        prices,
+        atr_large,
+        base_multiplier=2.5,
+        min_rel_threshold=0.001,
+        max_rel_threshold=0.05,
     )
     np.testing.assert_allclose(thresholds, np.array([0.05, 0.05, 0.05]), rtol=1e-5)
 
     # Kiểm tra rác NaN / Inf / Negative & bars_per_atr_period <= 0
     with pytest.raises(ValueError, match="prices chứa NaN"):
-        compute_dynamic_cusum_thresholds(np.array([100.0, np.nan]), np.array([2.0, 2.0]))
+        compute_dynamic_cusum_thresholds(
+            np.array([100.0, np.nan]), np.array([2.0, 2.0])
+        )
 
     with pytest.raises(ValueError, match="giá <= 0 phi lý"):
         compute_dynamic_cusum_thresholds(np.array([100.0, -10.0]), np.array([2.0, 2.0]))
 
     with pytest.raises(ValueError, match="ATR < 0 phi lý"):
-        compute_dynamic_cusum_thresholds(np.array([100.0, 100.0]), np.array([2.0, -1.0]))
+        compute_dynamic_cusum_thresholds(
+            np.array([100.0, 100.0]), np.array([2.0, -1.0])
+        )
 
     with pytest.raises(ValueError, match="bars_per_atr_period phải là số thực dương"):
         compute_dynamic_cusum_thresholds(prices, atr_large, bars_per_atr_period=0.0)
@@ -73,7 +93,9 @@ def test_b_2_1_filter_cusum_events_spatial_temporal_gating():
     Kiểm chứng bộ lọc CUSUM trong không gian Log-Return, tuân thủ cooldown và spatial delta,
     đồng thời gán metadata trade_mode / side.
     """
-    prices = np.array([100.0, 103.0, 104.0, 105.0, 110.0, 109.0, 115.0], dtype=np.float64)
+    prices = np.array(
+        [100.0, 103.0, 104.0, 105.0, 110.0, 109.0, 115.0], dtype=np.float64
+    )
     # Ngưỡng log-return tĩnh = 0.02
     thresholds = np.array([0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02], dtype=np.float64)
     timestamps = np.array([1000, 2000, 3000, 4000, 5000, 6000, 7000], dtype=np.int64)
@@ -128,20 +150,34 @@ def test_compute_dynamic_cusum_thresholds_ewma_anchor_and_gap_reset():
     bộ nhớ EWMA lập tức reset về giá hiện tại P_t (predict-only reset), ngăn chặn ô nhiễm ranh giới.
     """
     # 5 bar đầu giá 100, bar 5 nhảy gap lên 200 (ví dụ sang fold mới hoặc qua đêm)
-    prices = np.array([100.0, 100.0, 100.0, 100.0, 100.0, 200.0, 200.0], dtype=np.float64)
+    prices = np.array(
+        [100.0, 100.0, 100.0, 100.0, 100.0, 200.0, 200.0], dtype=np.float64
+    )
     atr = np.array([2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0], dtype=np.float64)
 
     # Nếu KHÔNG reset tại bar 5 (idx=5), EWMA sẽ bị kéo lag phía dưới (chưa tới 200 ngay)
     thresholds_no_reset = compute_dynamic_cusum_thresholds(
-        prices, atr, base_multiplier=2.5, anchor_span=9, min_rel_threshold=1e-4, max_rel_threshold=0.05,
-        use_ewma_anchor=True, reset_mask=None
+        prices,
+        atr,
+        base_multiplier=2.5,
+        anchor_span=9,
+        min_rel_threshold=1e-4,
+        max_rel_threshold=0.05,
+        use_ewma_anchor=True,
+        reset_mask=None,
     )
 
     # Nếu CÓ reset tại bar 5 (reset_mask[5] = True) -> EWMA tại idx=5 lập tức re-seed bằng 200.0
     reset_mask = np.array([False, False, False, False, False, True, False], dtype=bool)
     thresholds_with_reset = compute_dynamic_cusum_thresholds(
-        prices, atr, base_multiplier=2.5, anchor_span=9, min_rel_threshold=1e-4, max_rel_threshold=0.05,
-        use_ewma_anchor=True, reset_mask=reset_mask
+        prices,
+        atr,
+        base_multiplier=2.5,
+        anchor_span=9,
+        min_rel_threshold=1e-4,
+        max_rel_threshold=0.05,
+        use_ewma_anchor=True,
+        reset_mask=reset_mask,
     )
 
     # Kiểm chứng: Tại idx=5, khi reset về P=200, sigma_rel = (2 / 200) * 2.5 = 0.025
@@ -161,14 +197,20 @@ def test_cusum_flash_crash_no_lag_trap():
     atr = np.array([2.0, 2.0, 2.0, 2.0, 2.0, 2.0], dtype=np.float64)
 
     thresholds = compute_dynamic_cusum_thresholds(
-        prices, atr, base_multiplier=1.0, anchor_span=9, min_rel_threshold=1e-4, max_rel_threshold=0.10,
-        use_ewma_anchor=True, reset_mask=None
+        prices,
+        atr,
+        base_multiplier=1.0,
+        anchor_span=9,
+        min_rel_threshold=1e-4,
+        max_rel_threshold=0.10,
+        use_ewma_anchor=True,
+        reset_mask=None,
     )
 
     # Nếu dùng EWMA(P_t) mẫu số (cũ), EWMA tại bar 5 ~ 90 -> threshold ~ 2/90 = 0.022
     # Với chuẩn hóa mới inst_rel_vol (mới), inst_rel_vol tại bar 5 là 2/50 = 0.04.
     # EWMA của inst_rel_vol tại bar 5 sẽ tăng lên từ 0.02 hướng tới 0.04 (tức > 0.023).
     assert thresholds[5] > 0.023
-    assert thresholds[5] > thresholds[4]  # Biến động tương đối phải tăng lên khi giá giảm sâu!
-
-
+    assert (
+        thresholds[5] > thresholds[4]
+    )  # Biến động tương đối phải tăng lên khi giá giảm sâu!

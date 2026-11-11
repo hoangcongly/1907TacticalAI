@@ -58,24 +58,17 @@ def mask_signals(
     }
 
 
-def run_point_in_time(
-    data,
-    cfg,
-    eligible: pd.DataFrame,
-    portfolio=None,
-    maker_ratio: Optional[float] = None,
+def simulate_scores(
+    data, cfg, scores: pd.DataFrame, portfolio=None, maker_ratio: Optional[float] = None
 ):
-    """Như `run_v3`, nhưng tín hiệu bị che theo `eligible` và kỳ cuối của mỗi cặp được tính."""
+    """Danh mục và lợi suất từ một bảng điểm số trên lưới tái cân bằng, có tính kỳ cuối của mỗi cặp."""
     from aegis.research.backtest_v2 import CostModel, simulate
-    from aegis.research.strategy_v3 import combined_signal
     from aegis.risk.portfolio import build_weights
 
     maker_ratio = cfg.maker_ratio if maker_ratio is None else maker_ratio
-    masked = replace(data, signals=mask_signals(data.signals, eligible))
     marks = data.close.index[:: cfg.rebalance_every]
-    signal = combined_signal(masked, cfg)
     weights = build_weights(
-        signal, data.close.reindex(marks), portfolio or cfg.portfolio
+        scores.reindex(marks), data.close.reindex(marks), portfolio or cfg.portfolio
     )
     cost = CostModel(
         maker_ratio=maker_ratio,
@@ -91,6 +84,22 @@ def run_point_in_time(
         cost,
         bar_hours=cfg.bar_hours * cfg.rebalance_every,
         rebalance_every=1,
+    )
+
+
+def run_point_in_time(
+    data,
+    cfg,
+    eligible: pd.DataFrame,
+    portfolio=None,
+    maker_ratio: Optional[float] = None,
+):
+    """Như `run_v3`, nhưng tín hiệu bị che theo `eligible` và kỳ cuối của mỗi cặp được tính."""
+    from aegis.research.strategy_v3 import combined_signal
+
+    masked = replace(data, signals=mask_signals(data.signals, eligible))
+    return simulate_scores(
+        data, cfg, combined_signal(masked, cfg), portfolio, maker_ratio
     )
 
 

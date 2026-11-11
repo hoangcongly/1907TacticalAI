@@ -12,9 +12,19 @@ def round_sl_safe(sl_raw: float, tick_size: float, side: int) -> float:
     - Long (side > 0): Stop-Loss nằm DƯỚI entry -> làm tròn XUỐNG (floor) để đẩy SL ra xa, tránh cắn sớm.
     - Short/Fade (side < 0): Stop-Loss nằm TRÊN entry -> làm tròn LÊN (ceil) để đẩy SL ra xa, tránh cắn sớm.
     """
-    if not isinstance(tick_size, (int, float)) or tick_size <= 0 or math.isnan(tick_size) or math.isinf(tick_size):
+    if (
+        not isinstance(tick_size, (int, float))
+        or tick_size <= 0
+        or math.isnan(tick_size)
+        or math.isinf(tick_size)
+    ):
         raise ValueError(f"tick_size phải > 0 hợp lệ, nhận {tick_size}")
-    if not isinstance(sl_raw, (int, float)) or sl_raw <= 0 or math.isnan(sl_raw) or math.isinf(sl_raw):
+    if (
+        not isinstance(sl_raw, (int, float))
+        or sl_raw <= 0
+        or math.isnan(sl_raw)
+        or math.isinf(sl_raw)
+    ):
         raise ValueError(f"sl_raw phải > 0 hợp lệ, nhận {sl_raw}")
     if side not in (1, -1):
         raise ValueError(f"side phải là 1 hoặc -1, nhận {side}")
@@ -54,65 +64,65 @@ def compute_sl_initial(
         raise ValueError(
             f"Lỗi hải quan B-1-3: side bắt buộc phải là +1 (Long) hoặc -1 (Short/Fade), nhận {side}"
         )
-    #kiểm tra price nhập có hợp lệ không
+    # kiểm tra price nhập có hợp lệ không
     if (
-        not isinstance(entry_price, (int, float))   #kiểm tra kiểu dữ liệu
-        or math.isnan(entry_price) #kiểm tra có phải NaN không
-        or math.isinf(entry_price)  #kiểm tra có phải Inf không
-        or entry_price <= 0         #kiểm tra có phải số âm không
+        not isinstance(entry_price, (int, float))  # kiểm tra kiểu dữ liệu
+        or math.isnan(entry_price)  # kiểm tra có phải NaN không
+        or math.isinf(entry_price)  # kiểm tra có phải Inf không
+        or entry_price <= 0  # kiểm tra có phải số âm không
     ):
         raise ValueError(
             f"Lỗi hải quan B-1-3: entry_price phải là số dương hợp lệ, nhận {entry_price}"
         )
-    #kiểm tra sigma có hợp lệ không     
+    # kiểm tra sigma có hợp lệ không
     if (
-        not isinstance(sigma, (int, float))  #kiểm tra kiểu dữ liệu 
-        or math.isnan(sigma) #kiểm tra có phải NaN không
-        or math.isinf(sigma)  #kiểm tra có phải Inf không
-        or sigma < 0 #kiểm tra có phải số âm không
+        not isinstance(sigma, (int, float))  # kiểm tra kiểu dữ liệu
+        or math.isnan(sigma)  # kiểm tra có phải NaN không
+        or math.isinf(sigma)  # kiểm tra có phải Inf không
+        or sigma < 0  # kiểm tra có phải số âm không
     ):
         raise ValueError(
             f"Lỗi hải quan B-1-3: sigma (biến động) phải >= 0 và không được là NaN/Inf, nhận {sigma}"
         )
-    #kiểm tra m_sl có hợp lệ không
+    # kiểm tra m_sl có hợp lệ không
     if (
-        not isinstance(m_sl, (int, float))  #kiểm tra kiểu dữ liệu
-        or math.isnan(m_sl)                 #kiểm tra có phải NaN không
-        or math.isinf(m_sl)                 #kiểm tra có phải Inf không
-        or m_sl < 0                         #kiểm tra có phải số âm không
+        not isinstance(m_sl, (int, float))  # kiểm tra kiểu dữ liệu
+        or math.isnan(m_sl)  # kiểm tra có phải NaN không
+        or math.isinf(m_sl)  # kiểm tra có phải Inf không
+        or m_sl < 0  # kiểm tra có phải số âm không
     ):
         raise ValueError(
             f"Lỗi hải quan B-1-3: m_sl (hệ số cắt lỗ) phải >= 0 và hợp lệ, nhận {m_sl}"
         )
-    #kiểm tra c_trade_adj có hợp lệ không
+    # kiểm tra c_trade_adj có hợp lệ không
     if (
-        not isinstance(c_trade_adj, (int, float))  #kiểm tra kiểu dữ liệu
-        or math.isnan(c_trade_adj)                 #kiểm tra có phải NaN không
-        or math.isinf(c_trade_adj)                 #kiểm tra có phải Inf không
-        or c_trade_adj < 0                         #kiểm tra có phải số âm không
+        not isinstance(c_trade_adj, (int, float))  # kiểm tra kiểu dữ liệu
+        or math.isnan(c_trade_adj)  # kiểm tra có phải NaN không
+        or math.isinf(c_trade_adj)  # kiểm tra có phải Inf không
+        or c_trade_adj < 0  # kiểm tra có phải số âm không
     ):
         raise ValueError(
             f"Lỗi hải quan B-1-3: c_trade_adj (phí & slippage) phải >= 0 và hợp lệ, nhận {c_trade_adj}"
         )
-    #kiểm tra max_reasonable_cushion có hợp lệ không
+    # kiểm tra max_reasonable_cushion có hợp lệ không
     if (
-        not isinstance(max_reasonable_cushion, (int, float))  #kiểm tra kiểu dữ liệu
-        or math.isnan(max_reasonable_cushion)                 #kiểm tra có phải NaN không
-        or math.isinf(max_reasonable_cushion)                 #kiểm tra có phải Inf không
-        or max_reasonable_cushion <= 0                         #kiểm tra có phải số âm không
+        not isinstance(max_reasonable_cushion, (int, float))  # kiểm tra kiểu dữ liệu
+        or math.isnan(max_reasonable_cushion)  # kiểm tra có phải NaN không
+        or math.isinf(max_reasonable_cushion)  # kiểm tra có phải Inf không
+        or max_reasonable_cushion <= 0  # kiểm tra có phải số âm không
     ):
         raise ValueError(
             f"Lỗi hải quan B-1-3: max_reasonable_cushion phải > 0 và hợp lệ, nhận {max_reasonable_cushion}"
         )
-    #tính tổng rủi ro trừ hao
+    # tính tổng rủi ro trừ hao
     total_cushion = m_sl * sigma + c_trade_adj
-    #kiểm tra tổng rủi ro trừ hao có vượt quá ngưỡng hợp lý không
+    # kiểm tra tổng rủi ro trừ hao có vượt quá ngưỡng hợp lý không
     if total_cushion > max_reasonable_cushion:
         raise ValueError(
             f"Cushion {total_cushion:.2%} vượt ngưỡng hợp lý {max_reasonable_cushion:.2%} "
             f"-- khả năng sigma bị lỗi đơn vị hoặc NaN thoát dạng số lớn bất thường."
         )
-    #kiểm tra rủi ro cực đại với lệnh Long
+    # kiểm tra rủi ro cực đại với lệnh Long
     if side > 0:
         if total_cushion >= 1.0:
             raise ValueError(
@@ -120,7 +130,7 @@ def compute_sl_initial(
             )
         sl_raw = entry_price * math.exp(-total_cushion)
         sl = max(sl_raw, 1e-4)
-    else:  #kiểm tra rủi ro cực đại với lệnh Short/Fade
+    else:  # kiểm tra rủi ro cực đại với lệnh Short/Fade
         sl = entry_price * math.exp(total_cushion)
 
     if tick_size is not None and tick_size > 0:
@@ -199,7 +209,6 @@ def _update_regime_flip(
         )
 
     return prev_count + 1 if triggered else 0
-
 
 
 # ============================================================================
@@ -318,7 +327,9 @@ def compute_regime_aware_trailing_exit_v3_liquidation_aware(
             if lows[k] <= sl_initial:
                 return {"exit_idx": k, "reason": "SL", "boundary_truncated": False}
             # 2. Tính Trailing Stop TỪ extreme_price của nến trước (Geometric Symmetry)
-            trail_cushion = m_trail_base * (1 + gamma * p_trend[k]) * safe_atr[k] / extreme_price
+            trail_cushion = (
+                m_trail_base * (1 + gamma * p_trend[k]) * safe_atr[k] / extreme_price
+            )
             trail_stop = extreme_price * math.exp(-trail_cushion)
             # Kẹp (clamp): trail_stop KHÔNG được phép lỏng hơn sl_initial (Long: không thấp hơn SL)
             trail_stop = max(trail_stop, sl_initial)
@@ -355,7 +366,9 @@ def compute_regime_aware_trailing_exit_v3_liquidation_aware(
             if highs[k] >= sl_initial:
                 return {"exit_idx": k, "reason": "SL", "boundary_truncated": False}
             # 2. Tính Trailing Stop TỪ extreme_price của nến trước (Geometric Symmetry)
-            trail_cushion = m_trail_base * (1 + gamma * p_trend[k]) * safe_atr[k] / extreme_price
+            trail_cushion = (
+                m_trail_base * (1 + gamma * p_trend[k]) * safe_atr[k] / extreme_price
+            )
             trail_stop = extreme_price * math.exp(trail_cushion)
             # Kẹp (clamp): trail_stop KHÔNG được phép lỏng hơn sl_initial (Short: không cao hơn SL)
             trail_stop = min(trail_stop, sl_initial)
@@ -591,8 +604,16 @@ def run_trailing_exit_for_oos_event(
     exit_idx_absolute = resolve_absolute_exit_idx(entry_idx, rel_idx)
     reason = exit_result.get("reason", exit_result["exit_reason"])
 
-    entry_ts = int(full_timestamps[entry_idx]) if full_timestamps is not None and 0 <= entry_idx < len(full_timestamps) else 0
-    exit_ts = int(full_timestamps[exit_idx_absolute]) if full_timestamps is not None and 0 <= exit_idx_absolute < len(full_timestamps) else 0
+    entry_ts = (
+        int(full_timestamps[entry_idx])
+        if full_timestamps is not None and 0 <= entry_idx < len(full_timestamps)
+        else 0
+    )
+    exit_ts = (
+        int(full_timestamps[exit_idx_absolute])
+        if full_timestamps is not None and 0 <= exit_idx_absolute < len(full_timestamps)
+        else 0
+    )
 
     # 6. Trả về dict tuân thủ TRADE_RECORD_SCHEMA (bản ghi TẠM, chưa có realized_return)
     return {
@@ -642,11 +663,22 @@ def finalize_trade_record(
     # 2. Xử lý exit_price_stub và gọi compute_realized_pnl
     # PHẢI dùng đúng "exit_idx_absolute", TUYỆT ĐỐI KHÔNG dùng "exit_idx_relative"
     exit_idx_abs = int(partial_record["exit_idx_absolute"])
-    
+
     side = int(partial_record["side"])
     leverage = float(partial_record["leverage_used"])
     from typing import cast, Literal
-    exit_reason = cast(Literal['SL', 'TRAIL', 'REGIME_FLIP', 'TIME_STOP', 'LIQUIDATION', 'BOUNDARY_TRUNCATED'], str(partial_record["exit_reason"]))
+
+    exit_reason = cast(
+        Literal[
+            "SL",
+            "TRAIL",
+            "REGIME_FLIP",
+            "TIME_STOP",
+            "LIQUIDATION",
+            "BOUNDARY_TRUNCATED",
+        ],
+        str(partial_record["exit_reason"]),
+    )
 
     if exit_reason == "LIQUIDATION":
         # [KHẮC PHỤC LỖ HỔNG #1]: Đối với thanh lý, giá thoát lệnh chính là giá thanh lý
@@ -658,12 +690,19 @@ def finalize_trade_record(
         slippage_penalty_factor = 0.1
         # Giả định volume hiện tại (có thể mock nếu chưa truyền vào)
         bar_volume = 1e6
-        slippage = close_price * (spread_pct / 2 + slippage_penalty_factor * (float(size_notional) / bar_volume))
+        slippage = close_price * (
+            spread_pct / 2
+            + slippage_penalty_factor * (float(size_notional) / bar_volume)
+        )
         exit_price_stub = close_price - side * slippage
 
     # Default to taker if not explicitly provided
-    entry_fill_type = cast(Literal["maker", "taker"], str(partial_record.get("entry_fill_type", "taker")))
-    exit_fill_type = cast(Literal["maker", "taker"], str(partial_record.get("exit_fill_type", "taker")))
+    entry_fill_type = cast(
+        Literal["maker", "taker"], str(partial_record.get("entry_fill_type", "taker"))
+    )
+    exit_fill_type = cast(
+        Literal["maker", "taker"], str(partial_record.get("exit_fill_type", "taker"))
+    )
 
     # 3. Tính PnL CHUNG MỘT LUỒNG bằng Module G
     pnl_res = compute_realized_pnl(
@@ -680,19 +719,39 @@ def finalize_trade_record(
         funding_accrued_usd=funding_accrued,
         is_notional_in_usd=True,
     )
-    
+
     pnl = float(pnl_res["net_pnl"])
     fee_entry = float(size_notional) * float(fee_entry_rate)
     fee_exit = float(pnl_res["fee_paid"]) - fee_entry
     if fee_exit < 0:
         fee_exit = 0.0
     gross_pnl = float(pnl_res["gross_pnl"])
-    
+
     # [KHẮC PHỤC LỖ HỔNG #1]: Lấy realized_return trực tiếp từ compute_realized_pnl (đã tính r_u chuẩn)
     realized_return = float(pnl_res["realized_return"])
 
-    entry_ts = int(partial_record.get("entry_timestamp_ms", full_timestamps[int(partial_record["entry_idx"])] if full_timestamps is not None and 0 <= int(partial_record["entry_idx"]) < len(full_timestamps) else 0))
-    exit_ts = int(partial_record.get("exit_timestamp_ms", full_timestamps[exit_idx_abs] if full_timestamps is not None and 0 <= exit_idx_abs < len(full_timestamps) else 0))
+    entry_ts = int(
+        partial_record.get(
+            "entry_timestamp_ms",
+            (
+                full_timestamps[int(partial_record["entry_idx"])]
+                if full_timestamps is not None
+                and 0 <= int(partial_record["entry_idx"]) < len(full_timestamps)
+                else 0
+            ),
+        )
+    )
+    exit_ts = int(
+        partial_record.get(
+            "exit_timestamp_ms",
+            (
+                full_timestamps[exit_idx_abs]
+                if full_timestamps is not None
+                and 0 <= exit_idx_abs < len(full_timestamps)
+                else 0
+            ),
+        )
+    )
 
     # 5. Trả về dict đầy đủ tuân thủ TradeRecordSchema (Pandera)
     return {
@@ -709,7 +768,9 @@ def finalize_trade_record(
         "side": side,
         "sl_initial": float(partial_record["sl_initial"]),
         "size_notional": float(size_notional),
-        "exit_idx_relative": int(partial_record.get("exit_idx_relative", partial_record.get("exit_idx", 0))),
+        "exit_idx_relative": int(
+            partial_record.get("exit_idx_relative", partial_record.get("exit_idx", 0))
+        ),
         "exit_idx_absolute": exit_idx_abs,
         "exit_timestamp_ms": exit_ts,
         "exit_reason": exit_reason,
@@ -721,8 +782,3 @@ def finalize_trade_record(
         "gross_pnl": float(gross_pnl),
         "realized_return": float(realized_return),
     }
-
-
-
-
-

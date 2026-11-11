@@ -39,10 +39,11 @@ Window = Dict[str, np.ndarray]
 @dataclass(frozen=True)
 class FeatureSpec:
     """Định nghĩa một đặc trưng phái sinh."""
+
     name: str
     fn: Callable[[Window], float]
-    lookback: int          # số nến cần giữ trong cửa sổ (kể cả nến hiện tại)
-    warmup: int            # số nến đầu chuỗi mà giá trị chưa đáng tin
+    lookback: int  # số nến cần giữ trong cửa sổ (kể cả nến hiện tại)
+    warmup: int  # số nến đầu chuỗi mà giá trị chưa đáng tin
     inputs: Sequence[str]  # các cột thô bắt buộc phải có
 
 
@@ -66,8 +67,9 @@ def _pct_change(window: Window, lag: int) -> float:
 
 def _f_hl_spread(window: Window) -> float:
     """Biên độ nến chuẩn hoá theo giá đóng cửa — proxy biến động tức thời."""
-    return _safe_div(float(window["high"][-1]) - float(window["low"][-1]),
-                     float(window["close"][-1]))
+    return _safe_div(
+        float(window["high"][-1]) - float(window["low"][-1]), float(window["close"][-1])
+    )
 
 
 def _f_ret_1(window: Window) -> float:
@@ -150,14 +152,20 @@ def _f_ret_zscore(window: Window) -> float:
 # ĐĂNG KÝ — thêm feature mới CHỈ cần thêm một dòng vào đây
 # ============================================================================
 DERIVED_FEATURES: List[FeatureSpec] = [
-    FeatureSpec("hl_spread", _f_hl_spread, lookback=1, warmup=0,
-                inputs=("high", "low", "close")),
+    FeatureSpec(
+        "hl_spread", _f_hl_spread, lookback=1, warmup=0, inputs=("high", "low", "close")
+    ),
     FeatureSpec("ret_1", _f_ret_1, lookback=2, warmup=1, inputs=("close",)),
     FeatureSpec("ret_5", _f_ret_5, lookback=6, warmup=5, inputs=("close",)),
     FeatureSpec("vol_ratio", _f_vol_ratio, lookback=20, warmup=0, inputs=("volume",)),
     # --- Vi cấu trúc ---
-    FeatureSpec("range_position", _f_range_position, lookback=1, warmup=0,
-                inputs=("high", "low", "close")),
+    FeatureSpec(
+        "range_position",
+        _f_range_position,
+        lookback=1,
+        warmup=0,
+        inputs=("high", "low", "close"),
+    ),
     FeatureSpec("ofi_ma5", _f_ofi_ma5, lookback=5, warmup=4, inputs=("ofi",)),
     FeatureSpec("volume_z", _f_volume_z, lookback=20, warmup=5, inputs=("volume",)),
     FeatureSpec("ret_zscore", _f_ret_zscore, lookback=21, warmup=20, inputs=("close",)),
@@ -165,7 +173,12 @@ DERIVED_FEATURES: List[FeatureSpec] = [
 
 # Đặc trưng đi thẳng từ SignalBarSchema (đã được tính ở tầng signal_pipeline).
 PASSTHROUGH_FEATURES: List[str] = [
-    "ofi", "trend_score", "p_trend", "p_chop", "atr_14", "hurst_value",
+    "ofi",
+    "trend_score",
+    "p_trend",
+    "p_chop",
+    "atr_14",
+    "hurst_value",
 ]
 
 # `ofi` là cột thô của nến Binance (suy từ taker buy/sell volume) nên vừa được dùng
@@ -174,7 +187,9 @@ PASSTHROUGH_FEATURES: List[str] = [
 DERIVED_BY_NAME: Dict[str, FeatureSpec] = {spec.name: spec for spec in DERIVED_FEATURES}
 
 # Toàn bộ cột ứng viên đưa vào bước chọn đặc trưng.
-CANDIDATE_FEATURES: List[str] = [s.name for s in DERIVED_FEATURES] + PASSTHROUGH_FEATURES
+CANDIDATE_FEATURES: List[str] = [
+    s.name for s in DERIVED_FEATURES
+] + PASSTHROUGH_FEATURES
 
 # Số nến tối đa cần giữ để tính được mọi feature phái sinh.
 MAX_LOOKBACK: int = max(spec.lookback for spec in DERIVED_FEATURES)

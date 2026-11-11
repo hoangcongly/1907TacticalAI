@@ -1,4 +1,3 @@
-import pytest
 import numpy as np
 import pandas as pd
 from aegis.meta_labeling.feature_selection.clustering import (

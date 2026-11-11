@@ -17,6 +17,7 @@ Mô phỏng 20.000 lượt với độ mạnh tín hiệu ngẫu nhiên (trần 
 DD kỳ vọng 24,7%/năm nên $38 chạm $35 gần như chắc chắn xảy ra. Đây không phải
 biên hiếm; đây là đường đi mặc định của tài khoản thật.
 """
+
 import pytest
 
 from aegis.execution.portfolio_rebalancer import max_positions_for_capital
@@ -30,7 +31,7 @@ def _cut_balanced(weights: dict, cap: int):
     shorts = sorted(((s, w) for s, w in weights.items() if w < 0), key=lambda kv: kv[1])
     per_side = min(cap // 2, len(longs), len(shorts))
     if per_side <= 0:
-        return {}, False          # phải HALT, không được giao dịch một chiều
+        return {}, False  # phải HALT, không được giao dịch một chiều
     kl, ks = longs[:per_side], shorts[:per_side]
     sum_l = sum(w for _, w in kl)
     sum_s = -sum(w for _, w in ks)
@@ -47,7 +48,9 @@ def _net_ratio(w: dict) -> float:
     return sum(w.values()) / tot if tot else 0.0
 
 
-@pytest.mark.parametrize("equity", [38, 37, 36, 35, 34, 32, 30, 28, 25, 22, 20, 18, 15, 12])
+@pytest.mark.parametrize(
+    "equity", [38, 37, 36, 35, 34, 32, 30, 28, 25, 22, 20, 18, 15, 12]
+)
 def test_moi_muc_von_deu_giu_trung_lap(equity):
     """Quét toàn dải vốn thật — không mức nào được phép sinh sổ lệch."""
     # Độ mạnh KHÁC NHAU giữa các cặp (để phép cắt theo |trọng số| có ý nghĩa),
@@ -97,24 +100,39 @@ def test_von_qua_nho_thi_halt_chu_khong_cuoc_mot_chieu():
 
 def test_giu_dung_tin_hieu_manh_nhat_moi_chan():
     """Cắt phải giữ tín hiệu MẠNH NHẤT mỗi chân, không cắt bừa."""
-    weights = {"L_manh": 0.30, "L_yeu": 0.05, "L_vua": 0.15,
-               "S_manh": -0.30, "S_yeu": -0.05, "S_vua": -0.15}
+    weights = {
+        "L_manh": 0.30,
+        "L_yeu": 0.05,
+        "L_vua": 0.15,
+        "S_manh": -0.30,
+        "S_yeu": -0.05,
+        "S_vua": -0.15,
+    }
     cut, ok = _cut_balanced(weights, 4)
-    assert ok and set(cut) == {"L_manh", "L_vua", "S_manh", "S_vua"}, (
-        f"phải giữ 2 mạnh nhất mỗi chân, nhận {sorted(cut)}"
-    )
+    assert ok and set(cut) == {
+        "L_manh",
+        "L_vua",
+        "S_manh",
+        "S_vua",
+    }, f"phải giữ 2 mạnh nhất mỗi chân, nhận {sorted(cut)}"
 
 
 def test_do_lon_lech_cuc_doan_van_trung_lap():
     """Hai chân bằng SỐ CẶP nhưng lệch hẳn về ĐỘ LỚN — vẫn phải ra net = 0."""
-    weights = {"L0": 0.40, "L1": 0.08, "L2": 0.02,
-               "S0": -0.05, "S1": -0.20, "S2": -0.25}
+    weights = {
+        "L0": 0.40,
+        "L1": 0.08,
+        "L2": 0.02,
+        "S0": -0.05,
+        "S1": -0.20,
+        "S2": -0.25,
+    }
     cut, ok = _cut_balanced(weights, 4)
     assert ok
     assert abs(_net_ratio(cut)) <= 1e-12, (
         f"net {_net_ratio(cut)*100:+.4f}% — cân số cặp mà không cân notional thì "
         f"sổ vẫn lệch"
     )
-    assert all(weights[k] * v > 0 for k, v in cut.items()), (
-        "phép cân không được ĐẢO DẤU bất kỳ cặp nào — long phải còn là long"
-    )
+    assert all(
+        weights[k] * v > 0 for k, v in cut.items()
+    ), "phép cân không được ĐẢO DẤU bất kỳ cặp nào — long phải còn là long"

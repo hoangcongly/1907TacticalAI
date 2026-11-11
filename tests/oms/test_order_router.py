@@ -1,23 +1,33 @@
 """Test router lệnh — trọng tâm là các chốt chặn an toàn TRƯỚC khi gửi."""
+
 import pytest
 
 from aegis.execution.portfolio_rebalancer import RebalanceOrder, SymbolFilters
 from aegis.oms.order_router import (
-    BinanceOrderRouter, OrderRejected, make_client_order_id,
+    BinanceOrderRouter,
+    OrderRejected,
+    make_client_order_id,
 )
 from aegis.oms.state_machine import OrderBook, OrderState
 
 
 class _FakeClient:
     """Client giả — không chạm mạng."""
+
     credentials = None
-    def __init__(self): self.calls = []
+
+    def __init__(self):
+        self.calls = []
+
     def _request(self, method, path, params=None, signed=False):
         self.calls.append((method, path, params))
         return {"orderId": 111, "status": "NEW", "executedQty": "0", "avgPrice": "0"}
 
 
-def _filt(): return SymbolFilters("XRPUSDT", 0.0001, 0.1, 0.1, 5.0)
+def _filt():
+    return SymbolFilters("XRPUSDT", 0.0001, 0.1, 0.1, 5.0)
+
+
 def _order(qty=10.0, price=2.0, side="BUY", reason="mở"):
     return RebalanceOrder("XRPUSDT", side, qty, price, reason, qty * price)
 

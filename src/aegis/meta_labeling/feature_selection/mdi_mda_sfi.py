@@ -11,7 +11,6 @@ Fixes applied:
 import numpy as np
 import pandas as pd
 from typing import Callable, List, Optional
-from sklearn.metrics import log_loss, accuracy_score, f1_score
 import copy
 
 
@@ -19,30 +18,33 @@ def compute_mdi(clf, feature_names: List[str]) -> pd.DataFrame:
     """
     Tính Mean Decrease Impurity (MDI).
     Chỉ áp dụng cho các mô hình dạng Tree-based Ensemble (như RandomForest).
-    
+
     Args:
         clf: Mô hình đã fit, phải có thuộc tính estimators_ (RandomForest, BaggingClassifier, ...).
         feature_names: Danh sách tên feature đúng thứ tự.
-        
+
     Returns:
         pd.DataFrame với cột MDI_mean và MDI_std, index = feature_names.
     """
     if not hasattr(clf, "estimators_"):
-        raise ValueError("MDI yêu cầu mô hình dạng Tree-ensemble (có thuộc tính estimators_).")
+        raise ValueError(
+            "MDI yêu cầu mô hình dạng Tree-ensemble (có thuộc tính estimators_)."
+        )
 
     # Extract feature importances from each tree
-    importances = {i: tree.feature_importances_ for i, tree in enumerate(clf.estimators_)}
-    imp_df = pd.DataFrame.from_dict(importances, orient='index')
+    importances = {
+        i: tree.feature_importances_ for i, tree in enumerate(clf.estimators_)
+    }
+    imp_df = pd.DataFrame.from_dict(importances, orient="index")
     imp_df.columns = feature_names
 
     # Handle NaNs
     imp_df = imp_df.replace([np.inf, -np.inf], np.nan)
-    imp_df = imp_df.dropna(how='all', axis=1)
+    imp_df = imp_df.dropna(how="all", axis=1)
 
-    out = pd.DataFrame({
-        "MDI_mean": imp_df.mean(),
-        "MDI_std": imp_df.std() * imp_df.shape[0] ** -0.5
-    })
+    out = pd.DataFrame(
+        {"MDI_mean": imp_df.mean(), "MDI_std": imp_df.std() * imp_df.shape[0] ** -0.5}
+    )
     return out
 
 
@@ -51,7 +53,7 @@ def _build_split_kwargs(X, event_times, cv_gen):
     kwargs = {"X": X}
     # Chỉ truyền event_times nếu cv_gen thực sự nhận nó (PurgedKFold).
     # KFold/StratifiedKFold của sklearn sẽ crash nếu nhận keyword lạ.
-    if event_times is not None and hasattr(cv_gen, 'embargo_bars'):
+    if event_times is not None and hasattr(cv_gen, "embargo_bars"):
         kwargs["event_times"] = event_times
     return kwargs
 
@@ -61,19 +63,28 @@ def _resolve_prediction(fit_clf, X_data, scoring):
     Helper: Quyết định gọi predict_proba hay predict dựa trên scoring function.
     Trả về prediction phù hợp cho hàm scoring.
     """
-    needs_proba = hasattr(fit_clf, "predict_proba") and "loss" in getattr(scoring, "__name__", "").lower()
+    needs_proba = (
+        hasattr(fit_clf, "predict_proba")
+        and "loss" in getattr(scoring, "__name__", "").lower()
+    )
     if needs_proba:
         return fit_clf.predict_proba(X_data)
     return fit_clf.predict(X_data)
 
 
-def compute_mda(clf, X: pd.DataFrame, y: pd.Series, cv_gen,
-                scoring: Callable, is_higher_better: bool = True,
-                random_state: int = 42,
-                event_times: Optional[pd.Series] = None) -> pd.DataFrame:
+def compute_mda(
+    clf,
+    X: pd.DataFrame,
+    y: pd.Series,
+    cv_gen,
+    scoring: Callable,
+    is_higher_better: bool = True,
+    random_state: int = 42,
+    event_times: Optional[pd.Series] = None,
+) -> pd.DataFrame:
     """
     Tính Mean Decrease Accuracy (MDA) bằng phương pháp OOS xáo trộn.
-    
+
     Args:
         clf: Mô hình chưa fit (sẽ được deepcopy và fit trong mỗi fold).
         X: DataFrame features.
@@ -84,12 +95,14 @@ def compute_mda(clf, X: pd.DataFrame, y: pd.Series, cv_gen,
                           False nếu score càng thấp càng tốt (LogLoss, MSE).
         random_state: Seed cho shuffle.
         event_times: pd.Series (Index=t0, Values=t1). BẮT BUỘC khi cv_gen là PurgedKFold.
-        
+
     Returns:
         pd.DataFrame với cột MDA_mean và MDA_std, index = feature_names.
     """
     if not isinstance(X, pd.DataFrame):
-        raise ValueError("X phải là pandas DataFrame để giữ nguyên tên cột (feature_names).")
+        raise ValueError(
+            "X phải là pandas DataFrame để giữ nguyên tên cột (feature_names)."
+        )
 
     rng = np.random.RandomState(random_state)
     feature_names = X.columns.tolist()
@@ -130,20 +143,25 @@ def compute_mda(clf, X: pd.DataFrame, y: pd.Series, cv_gen,
 
             scr1.loc[i, j] = drop
 
-    out = pd.DataFrame({
-        "MDA_mean": scr1.mean(),
-        "MDA_std": scr1.std() * scr1.shape[0] ** -0.5
-    })
+    out = pd.DataFrame(
+        {"MDA_mean": scr1.mean(), "MDA_std": scr1.std() * scr1.shape[0] ** -0.5}
+    )
     return out
 
 
-def compute_sfi(clf, X: pd.DataFrame, y: pd.Series, cv_gen,
-                scoring: Callable, is_higher_better: bool = True,
-                event_times: Optional[pd.Series] = None) -> pd.DataFrame:
+def compute_sfi(
+    clf,
+    X: pd.DataFrame,
+    y: pd.Series,
+    cv_gen,
+    scoring: Callable,
+    is_higher_better: bool = True,
+    event_times: Optional[pd.Series] = None,
+) -> pd.DataFrame:
     """
     Tính Single Feature Importance (SFI).
     Train/Test OOS với duy nhất 1 feature tại một thời điểm.
-    
+
     Args:
         clf: Mô hình chưa fit.
         X: DataFrame features.
@@ -152,7 +170,7 @@ def compute_sfi(clf, X: pd.DataFrame, y: pd.Series, cv_gen,
         scoring: Hàm đánh giá.
         is_higher_better: True nếu score càng cao càng tốt.
         event_times: pd.Series cho PurgedKFold.
-        
+
     Returns:
         pd.DataFrame với cột SFI_mean và SFI_std, index = feature_names.
     """
@@ -185,32 +203,36 @@ def compute_sfi(clf, X: pd.DataFrame, y: pd.Series, cv_gen,
 
         imp[j] = fold_scores
 
-    out = pd.DataFrame({
-        "SFI_mean": imp.mean(),
-        "SFI_std": imp.std() * imp.shape[0] ** -0.5
-    })
+    out = pd.DataFrame(
+        {"SFI_mean": imp.mean(), "SFI_std": imp.std() * imp.shape[0] ** -0.5}
+    )
     return out
 
 
-def triple_consensus_ranker(mdi_df: pd.DataFrame, mda_df: pd.DataFrame,
-                            sfi_df: pd.DataFrame) -> pd.DataFrame:
+def triple_consensus_ranker(
+    mdi_df: pd.DataFrame, mda_df: pd.DataFrame, sfi_df: pd.DataFrame
+) -> pd.DataFrame:
     """
     Tổng hợp điểm MDI, MDA, SFI thành một bảng xếp hạng (Ranking).
     Cột có Rank 1 là tốt nhất.
     """
     # Gộp 3 bảng
-    consensus = pd.concat([mdi_df['MDI_mean'], mda_df['MDA_mean'], sfi_df['SFI_mean']], axis=1)
+    consensus = pd.concat(
+        [mdi_df["MDI_mean"], mda_df["MDA_mean"], sfi_df["SFI_mean"]], axis=1
+    )
 
     # Xếp hạng (Descending: Giá trị càng cao, hạng càng nhỏ/số 1)
-    consensus['Rank_MDI'] = consensus['MDI_mean'].rank(ascending=False)
-    consensus['Rank_MDA'] = consensus['MDA_mean'].rank(ascending=False)
-    consensus['Rank_SFI'] = consensus['SFI_mean'].rank(ascending=False)
+    consensus["Rank_MDI"] = consensus["MDI_mean"].rank(ascending=False)
+    consensus["Rank_MDA"] = consensus["MDA_mean"].rank(ascending=False)
+    consensus["Rank_SFI"] = consensus["SFI_mean"].rank(ascending=False)
 
     # Tính Consensus Score (Tổng hạng: số càng nhỏ càng tốt)
-    consensus['Consensus_Rank_Sum'] = consensus['Rank_MDI'] + consensus['Rank_MDA'] + consensus['Rank_SFI']
+    consensus["Consensus_Rank_Sum"] = (
+        consensus["Rank_MDI"] + consensus["Rank_MDA"] + consensus["Rank_SFI"]
+    )
 
     # Xếp hạng cuối cùng
-    consensus['Final_Rank'] = consensus['Consensus_Rank_Sum'].rank(ascending=True)
-    consensus = consensus.sort_values('Final_Rank')
+    consensus["Final_Rank"] = consensus["Consensus_Rank_Sum"].rank(ascending=True)
+    consensus = consensus.sort_values("Final_Rank")
 
     return consensus

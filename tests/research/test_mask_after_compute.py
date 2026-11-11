@@ -10,9 +10,9 @@ lưới bị cắt ngắn thì nó khởi động lại từ trọng số 0. B�
 gọi chuỗi tầng đều tái tạo lỗi này, nên bất biến phải được khoá ở tầng hành vi chứ
 không phải ở tầng "nhớ đừng làm thế".
 """
+
 import numpy as np
 import pandas as pd
-import pytest
 
 from aegis.research.adaptive_combiner import CombinerSpec, adaptive_weights
 
@@ -20,7 +20,9 @@ from aegis.research.adaptive_combiner import CombinerSpec, adaptive_weights
 def _fac_rets(n=400, k=3, seed=0):
     rng = np.random.default_rng(seed)
     idx = np.arange(n, dtype=np.int64) * 14_400_000
-    return {f"f{j}": pd.Series(rng.normal(0.0004, 0.01, n), index=idx) for j in range(k)}
+    return {
+        f"f{j}": pd.Series(rng.normal(0.0004, 0.01, n), index=idx) for j in range(k)
+    }
 
 
 def test_tang_gop_thich_ung_phu_thuoc_duong_di():
@@ -40,8 +42,9 @@ def test_tang_gop_thich_ung_phu_thuoc_duong_di():
 
     a = full.iloc[250:].to_numpy()
     b = cut.to_numpy()
-    assert not np.allclose(a, b, atol=1e-9), \
-        "tầng gộp không còn phụ thuộc đường đi — xem lại ghi chú [FIX F35]"
+    assert not np.allclose(
+        a, b, atol=1e-9
+    ), "tầng gộp không còn phụ thuộc đường đi — xem lại ghi chú [FIX F35]"
 
 
 def test_cat_sau_cho_ket_qua_giong_het_chay_toan_bo():
@@ -56,19 +59,25 @@ def test_cat_sau_cho_ket_qua_giong_het_chay_toan_bo():
     rng = np.random.default_rng(5)
     idx = np.arange(n, dtype=np.int64) * 14_400_000
     cols = [f"S{i}" for i in range(k)]
-    close = pd.DataFrame(100.0 * np.cumprod(1 + rng.normal(0, 0.01, (n, k)), 0),
-                         index=idx, columns=cols)
+    close = pd.DataFrame(
+        100.0 * np.cumprod(1 + rng.normal(0, 0.01, (n, k)), 0), index=idx, columns=cols
+    )
     W = pd.DataFrame(rng.normal(0, 1, (n, k)), index=idx, columns=cols)
     W = W.div(W.abs().sum(axis=1), axis=0)
 
-    res = simulate(W, close, None, CostModel(min_bps=1.0), bar_hours=4.0, rebalance_every=1)
+    res = simulate(
+        W, close, None, CostModel(min_bps=1.0), bar_hours=4.0, rebalance_every=1
+    )
     split = idx[200]
     keep = np.isin(res.returns.index, idx[idx >= split])
     tail = res.returns[keep].dropna()
 
-    res2 = simulate(W, close, None, CostModel(min_bps=1.0), bar_hours=4.0, rebalance_every=1)
+    res2 = simulate(
+        W, close, None, CostModel(min_bps=1.0), bar_hours=4.0, rebalance_every=1
+    )
     tail2 = res2.returns[np.isin(res2.returns.index, idx[idx >= split])].dropna()
 
-    assert np.allclose(tail.to_numpy(), tail2.to_numpy(), atol=0.0), \
-        "cùng một phép tính phải cho cùng một kết quả"
+    assert np.allclose(
+        tail.to_numpy(), tail2.to_numpy(), atol=0.0
+    ), "cùng một phép tính phải cho cùng một kết quả"
     assert len(tail) > 50

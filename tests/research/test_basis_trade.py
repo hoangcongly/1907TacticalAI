@@ -9,6 +9,7 @@ Trong lúc dựng module đã mắc đúng ba lỗi đó, và mỗi lỗi giờ 
   2. chọn theo funding CÙNG THỜI ĐIỂM -> nhìn trước, 25-43%/năm thay vì 5-9%
   3. đuổi theo funding cao nhất mỗi nến -> phí ăn -150%/năm
 """
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -51,11 +52,20 @@ def test_lai_khi_basis_THU_HEP():
     S = _frame(np.full((n, len(cols)), 100.0), cols)
     perp = np.linspace(102.0, 100.0, n)
     P = _frame(np.tile(perp.reshape(-1, 1), (1, len(cols))), cols)
-    F = _frame(np.zeros((n, len(cols))), cols)           # tắt funding để cô lập basis
+    F = _frame(np.zeros((n, len(cols))), cols)  # tắt funding để cô lập basis
 
-    df = backtest_basis(P, S, F, BasisSpec(n_positions=3, rebalance_bars=1,
-                                           funding_window=2, round_trip_bps=0.0,
-                                           min_universe=5))
+    df = backtest_basis(
+        P,
+        S,
+        F,
+        BasisSpec(
+            n_positions=3,
+            rebalance_bars=1,
+            funding_window=2,
+            round_trip_bps=0.0,
+            min_universe=5,
+        ),
+    )
     assert df["basis"].sum() > 0, "basis thu hẹp mà lại lỗ — quy ước dấu ngược"
 
 
@@ -66,9 +76,18 @@ def test_lo_khi_basis_NOI_RONG():
     perp = np.linspace(100.0, 102.0, n)
     P = _frame(np.tile(perp.reshape(-1, 1), (1, len(cols))), cols)
     F = _frame(np.zeros((n, len(cols))), cols)
-    df = backtest_basis(P, S, F, BasisSpec(n_positions=3, rebalance_bars=1,
-                                           funding_window=2, round_trip_bps=0.0,
-                                           min_universe=5))
+    df = backtest_basis(
+        P,
+        S,
+        F,
+        BasisSpec(
+            n_positions=3,
+            rebalance_bars=1,
+            funding_window=2,
+            round_trip_bps=0.0,
+            min_universe=5,
+        ),
+    )
     assert df["basis"].sum() < 0
 
 
@@ -78,10 +97,19 @@ def test_thu_funding_khi_rate_duong():
     cols = [f"S{i}" for i in range(10)]
     P = _frame(np.full((n, len(cols)), 100.0), cols)
     S = _frame(np.full((n, len(cols)), 100.0), cols)
-    F = _frame(np.full((n, len(cols)), 0.001), cols)     # +0.1% mỗi mốc
-    df = backtest_basis(P, S, F, BasisSpec(n_positions=3, rebalance_bars=1,
-                                           funding_window=2, round_trip_bps=0.0,
-                                           min_universe=5))
+    F = _frame(np.full((n, len(cols)), 0.001), cols)  # +0.1% mỗi mốc
+    df = backtest_basis(
+        P,
+        S,
+        F,
+        BasisSpec(
+            n_positions=3,
+            rebalance_bars=1,
+            funding_window=2,
+            round_trip_bps=0.0,
+            min_universe=5,
+        ),
+    )
     active = df["funding"][df["funding"] != 0]
     assert len(active) > 0
     assert active.iloc[-1] == pytest.approx(0.001 * 0.5), "sai hệ số nửa mốc funding"
@@ -93,9 +121,18 @@ def test_tra_funding_khi_rate_am():
     P = _frame(np.full((n, len(cols)), 100.0), cols)
     S = P.copy()
     F = _frame(np.full((n, len(cols)), -0.001), cols)
-    df = backtest_basis(P, S, F, BasisSpec(n_positions=3, rebalance_bars=1,
-                                           funding_window=2, round_trip_bps=0.0,
-                                           min_universe=5))
+    df = backtest_basis(
+        P,
+        S,
+        F,
+        BasisSpec(
+            n_positions=3,
+            rebalance_bars=1,
+            funding_window=2,
+            round_trip_bps=0.0,
+            min_universe=5,
+        ),
+    )
     assert df["funding"].sum() < 0
 
 
@@ -117,7 +154,7 @@ def test_xep_hang_khong_dung_funding_cung_thoi_diem():
     base = backtest_basis(P, S, F, spec)
 
     F2 = F.copy()
-    F2.iloc[-1] = 0.05                       # cú sốc khổng lồ ở mốc cuối
+    F2.iloc[-1] = 0.05  # cú sốc khổng lồ ở mốc cuối
     after = backtest_basis(P, S, F2, spec)
     pd.testing.assert_frame_equal(base.iloc[:-2], after.iloc[:-2])
 
@@ -131,7 +168,8 @@ def test_gia_tuong_lai_khong_anh_huong_qua_khu():
     spec = BasisSpec(n_positions=3, rebalance_bars=5, funding_window=4, min_universe=5)
 
     base = backtest_basis(P, S, F, spec)
-    P2 = P.copy(); P2.iloc[-1] *= 2.0
+    P2 = P.copy()
+    P2.iloc[-1] *= 2.0
     after = backtest_basis(P2, S, F, spec)
     pd.testing.assert_frame_equal(base.iloc[:-2], after.iloc[:-2])
 
@@ -148,8 +186,12 @@ def test_phi_ty_le_voi_thay_doi_danh_muc():
     S = _frame(P.to_numpy() * 0.999, cols)
     F = _frame(rng.normal(0.0002, 0.0005, (n, len(cols))), cols)
 
-    fast = backtest_basis(P, S, F, BasisSpec(n_positions=3, rebalance_bars=2, min_universe=5))
-    slow = backtest_basis(P, S, F, BasisSpec(n_positions=3, rebalance_bars=100, min_universe=5))
+    fast = backtest_basis(
+        P, S, F, BasisSpec(n_positions=3, rebalance_bars=2, min_universe=5)
+    )
+    slow = backtest_basis(
+        P, S, F, BasisSpec(n_positions=3, rebalance_bars=100, min_universe=5)
+    )
     assert abs(fast["fee"].sum()) > abs(slow["fee"].sum()) * 5
 
 
@@ -158,8 +200,9 @@ def test_phi_bang_khong_khi_khong_giao_dich():
     P = _frame(np.full((n, len(cols)), 100.0), cols)
     S = P.copy()
     F = _frame(np.full((n, len(cols)), 0.0001), cols)
-    df = backtest_basis(P, S, F, BasisSpec(n_positions=3, rebalance_bars=10**6,
-                                           min_universe=5))
+    df = backtest_basis(
+        P, S, F, BasisSpec(n_positions=3, rebalance_bars=10**6, min_universe=5)
+    )
     assert df["fee"].sum() == pytest.approx(0.0)
 
 
@@ -170,7 +213,9 @@ def test_tong_bang_cong_ba_thanh_phan():
     P = _frame(100 * np.cumprod(1 + rng.normal(0, 0.01, (n, len(cols))), axis=0), cols)
     S = _frame(P.to_numpy() * 0.999, cols)
     F = _frame(rng.normal(0.0002, 0.0004, (n, len(cols))), cols)
-    df = backtest_basis(P, S, F, BasisSpec(n_positions=3, rebalance_bars=20, min_universe=5))
+    df = backtest_basis(
+        P, S, F, BasisSpec(n_positions=3, rebalance_bars=20, min_universe=5)
+    )
     resid = (df["total"] - df["funding"] - df["basis"] - df["fee"]).abs().max()
     assert resid < 1e-12
 
@@ -183,10 +228,18 @@ def test_vung_dem_giam_turnover():
     S = _frame(P.to_numpy() * 0.999, cols)
     F = _frame(rng.normal(0.0002, 0.0006, (n, len(cols))), cols)
 
-    tight = backtest_basis(P, S, F, BasisSpec(n_positions=3, rebalance_bars=20,
-                                              exit_multiple=1, min_universe=5))
-    buffered = backtest_basis(P, S, F, BasisSpec(n_positions=3, rebalance_bars=20,
-                                                 exit_multiple=4, min_universe=5))
+    tight = backtest_basis(
+        P,
+        S,
+        F,
+        BasisSpec(n_positions=3, rebalance_bars=20, exit_multiple=1, min_universe=5),
+    )
+    buffered = backtest_basis(
+        P,
+        S,
+        F,
+        BasisSpec(n_positions=3, rebalance_bars=20, exit_multiple=4, min_universe=5),
+    )
     assert abs(buffered["fee"].sum()) <= abs(tight["fee"].sum())
 
 
@@ -195,6 +248,7 @@ def test_universe_qua_nho_thi_khong_mo_vi_the():
     P = _frame(np.full((n, 2), 100.0), cols)
     S = P.copy()
     F = _frame(np.full((n, 2), 0.001), cols)
-    df = backtest_basis(P, S, F, BasisSpec(n_positions=3, rebalance_bars=5,
-                                           min_universe=10))
+    df = backtest_basis(
+        P, S, F, BasisSpec(n_positions=3, rebalance_bars=5, min_universe=10)
+    )
     assert df["total"].abs().sum() == pytest.approx(0.0)

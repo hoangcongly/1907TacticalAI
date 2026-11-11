@@ -2,6 +2,7 @@
 Tiện ích tải YAML configuration an toàn và quản lý cấu hình tập trung.
 Đảm bảo tính nhất quán giữa Canonical Parameters Registry và Strategy Configs.
 """
+
 import os
 from typing import Optional, Dict, Any
 import yaml
@@ -19,7 +20,9 @@ def get_config_dir() -> str:
     for c in candidates:
         if os.path.exists(os.path.join(c, "aegis_canonical_parameters.yaml")):
             return os.path.abspath(c)
-    raise FileNotFoundError("Không tìm thấy thư mục config/ chứa aegis_canonical_parameters.yaml!")
+    raise FileNotFoundError(
+        "Không tìm thấy thư mục config/ chứa aegis_canonical_parameters.yaml!"
+    )
 
 
 def load_canonical_parameters(config_dir: Optional[str] = None) -> Dict[str, Any]:

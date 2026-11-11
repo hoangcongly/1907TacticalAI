@@ -1,0 +1,5 @@
+[flake8]
+max-line-length = 88
+# Formatting is owned by black; the rest are style choices this codebase does not follow.
+extend-ignore = E203, E501, W503, E402, E712, E731, E741, F541, F841
+exclude = .git, __pycache__, .venv, build

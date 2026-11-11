@@ -12,8 +12,7 @@ lợi nhuận thực tế với lợi nhuận kỳ vọng.
 
 import json
 import pathlib
-import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from typing import Any, Dict, List, Optional
 
 DEFAULT_LOG_PATH = "artifacts/execution_log.jsonl"
@@ -29,6 +28,7 @@ TAKER_FEE = 0.0005
 @dataclass
 class ExecutionRecord:
     """Một lượt tái cân bằng."""
+
     timestamp_ms: int
     equity: float
     n_targets: int
@@ -43,14 +43,14 @@ class ExecutionRecord:
     note: Optional[str] = None
 
     # --- trường phục vụ CỔNG CHẤT LƯỢNG (mặc định để tương thích bản ghi cũ) ---
-    plan_failures: int = 0        # lệnh trong kế hoạch KHÔNG đặt được [F22]
-    uncancelled: int = 0          # cặp còn lệnh sống không xác nhận huỷ [F21]
-    leverage: Optional[float] = None      # đòn bẩy gộp thật sau khi thực thi
+    plan_failures: int = 0  # lệnh trong kế hoạch KHÔNG đặt được [F22]
+    uncancelled: int = 0  # cặp còn lệnh sống không xác nhận huỷ [F21]
+    leverage: Optional[float] = None  # đòn bẩy gộp thật sau khi thực thi
     target_leverage: Optional[float] = None
-    net_ok: Optional[bool] = None         # qua cổng trung lập [F25]
-    gross_ok: Optional[bool] = None       # qua cổng đòn bẩy [F29]
-    manual_intervention: bool = False     # con người phải vào sửa tay
-    exec_error: Optional[str] = None      # thực thi ném lỗi [F24]
+    net_ok: Optional[bool] = None  # qua cổng trung lập [F25]
+    gross_ok: Optional[bool] = None  # qua cổng đòn bẩy [F29]
+    manual_intervention: bool = False  # con người phải vào sửa tay
+    exec_error: Optional[str] = None  # thực thi ném lỗi [F24]
 
     # --- CHẨN ĐOÁN TỶ LỆ MAKER (14/09/2026) ---
     # Tỷ lệ maker đo được 0,378-0,49 trong khi mức đạt được là ~0,85, và chênh lệch đó
@@ -60,11 +60,11 @@ class ExecutionRecord:
     #   (b) trần đuổi giá quá hẹp -> `requote_blocked_by_chase_cap` cao
     # Không ghi lại thì mọi tranh luận về nó là đoán mò. Ghi rồi thì một lượt sạch là
     # đủ để biết phải vá cái nào.
-    passive_timed_out: int = 0                 # lệnh hết giờ chờ mà chưa khớp hết
-    requote_blocked_by_chase_cap: int = 0      # lần không dám đuổi vì vượt max_chase_bps
-    requote_skipped_no_move: int = 0           # lần sổ chưa dịch đủ để đáng báo giá lại
-    requotes: int = 0                          # lần thực sự đặt lại giá
-    max_drift_bps_seen: float = 0.0            # giá đã trôi xa mốc ban đầu tới đâu
+    passive_timed_out: int = 0  # lệnh hết giờ chờ mà chưa khớp hết
+    requote_blocked_by_chase_cap: int = 0  # lần không dám đuổi vì vượt max_chase_bps
+    requote_skipped_no_move: int = 0  # lần sổ chưa dịch đủ để đáng báo giá lại
+    requotes: int = 0  # lần thực sự đặt lại giá
+    max_drift_bps_seen: float = 0.0  # giá đã trôi xa mốc ban đầu tới đâu
     #: [FIX F46] net/gross của KẾ HOẠCH, đo ở tầng lập kế hoạch — TRƯỚC khi mất một
     #: đồng phí nào. Thiếu trường này thì `net_exposure` (đo SAU thực thi) không trả
     #: lời được câu hỏi duy nhất đáng hỏi khi sổ lệch: kế hoạch vốn đã lệch, hay
@@ -77,10 +77,10 @@ class ExecutionRecord:
     #: quyết định — xem `order_router._requote_one`.
     chase_block_p50_ratio: float = 0.0
     chase_block_p90_ratio: float = 0.0
-    fill_drift: float = 0.0                    # lệch trung lập / gross ĐÃ KHỚP (chẩn đoán)
-    fill_drift_plan: float = 0.0               # lệch trung lập / gross KẾ HOẠCH [FIX F45]
-    fill_progress: float = 0.0                 # đã khớp bao nhiêu % kế hoạch [FIX F45]
-    early_exit: Optional[str] = None           # lý do thoát chờ sớm (van trung lập)
+    fill_drift: float = 0.0  # lệch trung lập / gross ĐÃ KHỚP (chẩn đoán)
+    fill_drift_plan: float = 0.0  # lệch trung lập / gross KẾ HOẠCH [FIX F45]
+    fill_progress: float = 0.0  # đã khớp bao nhiêu % kế hoạch [FIX F45]
+    early_exit: Optional[str] = None  # lý do thoát chờ sớm (van trung lập)
 
     @property
     def clean(self) -> bool:
@@ -91,12 +91,14 @@ class ExecutionRecord:
         ngoài tầm kiểm soát, danh mục đúng thiết kế cả về hướng lẫn đòn bẩy, và
         không ai phải vào sửa tay. Thiếu bất kỳ điều nào thì lượt đó KHÔNG tính.
         """
-        return (self.plan_failures == 0
-                and self.uncancelled == 0
-                and self.exec_error is None
-                and not self.manual_intervention
-                and self.net_ok is not False
-                and self.gross_ok is not False)
+        return (
+            self.plan_failures == 0
+            and self.uncancelled == 0
+            and self.exec_error is None
+            and not self.manual_intervention
+            and self.net_ok is not False
+            and self.gross_ok is not False
+        )
 
     @property
     def filled_notional(self) -> float:

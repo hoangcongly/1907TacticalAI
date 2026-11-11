@@ -6,7 +6,6 @@ Fixes applied:
 - #7: PurgedKFoldAdapter to make PurgedKFold compatible with sklearn CalibratedClassifierCV
 """
 
-import numpy as np
 from sklearn.calibration import CalibratedClassifierCV
 from typing import Optional
 import pandas as pd
@@ -15,7 +14,7 @@ import pandas as pd
 class PurgedKFoldAdapter:
     """
     Adapter giúp PurgedKFold tương thích với sklearn CalibratedClassifierCV.
-    
+
     sklearn gọi cv.split(X, y, groups) nội bộ — không truyền event_times.
     Adapter này pre-bind event_times để PurgedKFold nhận đúng tham số.
     """
@@ -38,10 +37,12 @@ class PurgedKFoldAdapter:
         return self.purged_kfold.n_splits
 
 
-def build_calibrated_classifier(base_estimator, cv_gen, event_times: Optional[pd.Series] = None):
+def build_calibrated_classifier(
+    base_estimator, cv_gen, event_times: Optional[pd.Series] = None
+):
     """
     Tạo mô hình nắn chuẩn xác suất (Calibration) theo chuẩn AFML.
-    
+
     Random Forest thường đẩy xác suất dự đoán về mức 0.5 (under-confidence ở biên).
     Dùng Isotonic Regression để nắn lại.
     BẮT BUỘC phải dùng PurgedKFold trong cross-validation để tránh leak.
@@ -56,14 +57,14 @@ def build_calibrated_classifier(base_estimator, cv_gen, event_times: Optional[pd
     Returns:
         CalibratedClassifierCV sẵn sàng fit(X, y).
     """
-    if not hasattr(base_estimator, 'predict_proba'):
+    if not hasattr(base_estimator, "predict_proba"):
         raise ValueError(
             "base_estimator phải có method predict_proba() "
             "để Isotonic Calibration hoạt động."
         )
 
     # Nếu cv_gen là PurgedKFold (có thuộc tính embargo_bars), bọc adapter
-    is_purged = hasattr(cv_gen, 'embargo_bars') or hasattr(cv_gen, 'embargo_pct')
+    is_purged = hasattr(cv_gen, "embargo_bars") or hasattr(cv_gen, "embargo_pct")
     if is_purged:
         if event_times is None:
             raise ValueError(
@@ -75,9 +76,7 @@ def build_calibrated_classifier(base_estimator, cv_gen, event_times: Optional[pd
         cv_wrapped = cv_gen
 
     calibrated_clf = CalibratedClassifierCV(
-        estimator=base_estimator,
-        method='isotonic',
-        cv=cv_wrapped
+        estimator=base_estimator, method="isotonic", cv=cv_wrapped
     )
 
     return calibrated_clf

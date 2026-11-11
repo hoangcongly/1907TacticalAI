@@ -14,6 +14,7 @@ Hai nguyên nhân đó sửa ở hai file khác nhau. Không đo được thì k
 Đây cũng đúng bài học F42: mọi bất biến phải đo được ở tầng CÒN SỬA ĐƯỢC MIỄN PHÍ,
 không chỉ sau khi lệnh đã nằm trên sàn.
 """
+
 from dataclasses import fields
 
 from aegis.core.execution_log import ExecutionRecord

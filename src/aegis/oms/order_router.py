@@ -69,19 +69,26 @@ class BinanceOrderRouter:
         if notifier is None:
             try:
                 from aegis.monitoring.alerts import TelegramNotifier
+
                 self.notifier = TelegramNotifier()
             except Exception:
                 self.notifier = None
         else:
             self.notifier = notifier
 
-        if self.client.credentials is not None and not self.client.credentials.testnet and not dry_run:
+        if (
+            self.client.credentials is not None
+            and not self.client.credentials.testnet
+            and not dry_run
+        ):
             logger.warning("⚠️  ROUTER ĐANG TRỎ MAINNET — lệnh sẽ dùng TIỀN THẬT")
 
     # ------------------------------------------------------------------
     # Cấu hình tài khoản (gọi một lần lúc khởi động)
     # ------------------------------------------------------------------
-    def configure_symbol(self, symbol: str, leverage: int, margin_type: str = "ISOLATED") -> None:
+    def configure_symbol(
+        self, symbol: str, leverage: int, margin_type: str = "ISOLATED"
+    ) -> None:
         """
         Đặt chế độ ký quỹ và đòn bẩy cho một cặp.
 
@@ -144,13 +151,22 @@ class BinanceOrderRouter:
 
         existing = self.book.get(coid)
         if existing is not None:
-            logger.info("Lệnh %s đã tồn tại (%s) — bỏ qua, chống trùng", coid, existing.state.value)
+            logger.info(
+                "Lệnh %s đã tồn tại (%s) — bỏ qua, chống trùng",
+                coid,
+                existing.state.value,
+            )
             return existing
 
-        managed = self.book.add(ManagedOrder(
-            client_order_id=coid, symbol=order.symbol, side=order.side,
-            qty=order.qty, price=order.price,
-        ))
+        managed = self.book.add(
+            ManagedOrder(
+                client_order_id=coid,
+                symbol=order.symbol,
+                side=order.side,
+                qty=order.qty,
+                price=order.price,
+            )
+        )
 
         # [FIX F19] Gửi CHUỖI đã định dạng theo đúng step_size/tick_size.
         # Truyền float thô khiến Python tuần tự hoá thành "1234.0" hoặc
@@ -162,10 +178,13 @@ class BinanceOrderRouter:
             "newClientOrderId": coid,
         }
         if post_only:
-            params.update({
-                "type": "LIMIT", "timeInForce": "GTX",
-                "price": filt.format_price(order.price),
-            })
+            params.update(
+                {
+                    "type": "LIMIT",
+                    "timeInForce": "GTX",
+                    "price": filt.format_price(order.price),
+                }
+            )
         else:
             params["type"] = "MARKET"
 
@@ -184,20 +203,39 @@ class BinanceOrderRouter:
             # thay vì bỏ lệnh và để danh mục lệch cân bằng long/short.
             if exc.code == -5022 and post_only and retries_left > 0:
                 step = filt.tick_size * backoff_ticks
-                new_price = order.price - step if order.side == "BUY" else order.price + step
-                logger.info("Lệnh %s bị -5022, lùi giá %s -> %s rồi thử lại",
-                            coid, order.price, filt.round_price(new_price))
-                retry = RebalanceOrder(order.symbol, order.side, order.qty,
-                                       filt.round_price(new_price), order.reason,
-                                       order.notional)
+                new_price = (
+                    order.price - step if order.side == "BUY" else order.price + step
+                )
+                logger.info(
+                    "Lệnh %s bị -5022, lùi giá %s -> %s rồi thử lại",
+                    coid,
+                    order.price,
+                    filt.round_price(new_price),
+                )
+                retry = RebalanceOrder(
+                    order.symbol,
+                    order.side,
+                    order.qty,
+                    filt.round_price(new_price),
+                    order.reason,
+                    order.notional,
+                )
                 managed.transition(OrderState.REJECTED, error=str(exc))
-                return self.submit(retry, filt, post_only=True,
-                                   epoch_bucket=(bucket + retries_left + 1),
-                                   retries_left=retries_left - 1,
-                                   backoff_ticks=backoff_ticks * 2)
+                return self.submit(
+                    retry,
+                    filt,
+                    post_only=True,
+                    epoch_bucket=(bucket + retries_left + 1),
+                    retries_left=retries_left - 1,
+                    backoff_ticks=backoff_ticks * 2,
+                )
             managed.transition(OrderState.REJECTED, error=str(exc))
             logger.error("Lệnh %s bị từ chối: %s", coid, exc)
-            if not self.dry_run and self.notifier and getattr(self.notifier, "is_configured", False):
+            if (
+                not self.dry_run
+                and self.notifier
+                and getattr(self.notifier, "is_configured", False)
+            ):
                 self.notifier.send_anomaly_alert(
                     title=f"Sàn từ chối lệnh {order.symbol}",
                     message=f"Lệnh {order.side} {order.qty} @ ${order.price} bị từ chối: {exc}",
@@ -219,7 +257,11 @@ class BinanceOrderRouter:
         if not post_only and not managed.is_terminal:
             managed = self.poll_status(managed)
 
-        if not self.dry_run and self.notifier and getattr(self.notifier, "is_configured", False):
+        if (
+            not self.dry_run
+            and self.notifier
+            and getattr(self.notifier, "is_configured", False)
+        ):
             self.notifier.send_single_order_alert(
                 symbol=order.symbol,
                 side=order.side,
@@ -234,28 +276,39 @@ class BinanceOrderRouter:
 
         return managed
 
-    def poll_status(self, managed: ManagedOrder, retries: int = 3, delay: float = 0.4) -> ManagedOrder:
+    def poll_status(
+        self, managed: ManagedOrder, retries: int = 3, delay: float = 0.4
+    ) -> ManagedOrder:
         """Hỏi lại sàn trạng thái thật của lệnh và cập nhật sổ nội bộ."""
         for attempt in range(retries):
             try:
                 resp = self.client._request(
-                    "GET", "/fapi/v1/order",
-                    {"symbol": managed.symbol, "origClientOrderId": managed.client_order_id},
+                    "GET",
+                    "/fapi/v1/order",
+                    {
+                        "symbol": managed.symbol,
+                        "origClientOrderId": managed.client_order_id,
+                    },
                     signed=True,
                 )
             except BinanceAPIError as exc:
-                logger.warning("Không truy vấn được lệnh %s: %s", managed.client_order_id, exc)
+                logger.warning(
+                    "Không truy vấn được lệnh %s: %s", managed.client_order_id, exc
+                )
                 return managed
 
             status = resp.get("status", "NEW")
             filled = float(resp.get("executedQty", 0.0) or 0.0)
             try:
                 managed.apply_exchange_status(
-                    status, filled_qty=filled,
+                    status,
+                    filled_qty=filled,
                     avg_price=float(resp.get("avgPrice", 0.0) or 0.0),
                 )
             except Exception as exc:
-                logger.warning("Trạng thái lệch khi truy vấn %s: %s", managed.client_order_id, exc)
+                logger.warning(
+                    "Trạng thái lệch khi truy vấn %s: %s", managed.client_order_id, exc
+                )
 
             if managed.is_terminal:
                 return managed
@@ -287,17 +340,33 @@ class BinanceOrderRouter:
             if filt is None:
                 logger.error("Thiếu bộ lọc sàn cho %s — bỏ qua", order.symbol)
                 self.last_plan_failures.append(
-                    {"symbol": order.symbol, "side": order.side, "qty": order.qty,
-                     "reason": "thiếu bộ lọc sàn"})
+                    {
+                        "symbol": order.symbol,
+                        "side": order.side,
+                        "qty": order.qty,
+                        "reason": "thiếu bộ lọc sàn",
+                    }
+                )
                 continue
             try:
-                results.append(self.submit(order, filt, post_only=post_only, epoch_bucket=bucket))
+                results.append(
+                    self.submit(order, filt, post_only=post_only, epoch_bucket=bucket)
+                )
             except OrderRejected as exc:
                 logger.error("Chặn tại chỗ: %s", exc)
                 self.last_plan_failures.append(
-                    {"symbol": order.symbol, "side": order.side, "qty": order.qty,
-                     "reason": f"OrderRejected: {exc}"})
-                if not self.dry_run and self.notifier and getattr(self.notifier, "is_configured", False):
+                    {
+                        "symbol": order.symbol,
+                        "side": order.side,
+                        "qty": order.qty,
+                        "reason": f"OrderRejected: {exc}",
+                    }
+                )
+                if (
+                    not self.dry_run
+                    and self.notifier
+                    and getattr(self.notifier, "is_configured", False)
+                ):
                     self.notifier.send_anomaly_alert(
                         title=f"Chặn lệnh {order.symbol}",
                         message=f"Vi phạm kiểm tra an toàn: {exc}",
@@ -315,16 +384,27 @@ class BinanceOrderRouter:
                 #   - danh mục còn 10/12 vị thế, lệch +35% khỏi trung lập
                 # Một cặp lỗi KHÔNG được phép kéo theo 11 cặp còn lại. Ghi nhận rồi
                 # đi tiếp; phía gọi quyết định dựa trên `last_plan_failures`.
-                logger.exception("[F22] Lỗi ngoài dự kiến khi đặt %s — bỏ qua cặp này, "
-                                 "TIẾP TỤC phần còn lại của kế hoạch", order.symbol)
+                logger.exception(
+                    "[F22] Lỗi ngoài dự kiến khi đặt %s — bỏ qua cặp này, "
+                    "TIẾP TỤC phần còn lại của kế hoạch",
+                    order.symbol,
+                )
                 self.last_plan_failures.append(
-                    {"symbol": order.symbol, "side": order.side, "qty": order.qty,
-                     "reason": f"{type(exc).__name__}: {exc}"})
+                    {
+                        "symbol": order.symbol,
+                        "side": order.side,
+                        "qty": order.qty,
+                        "reason": f"{type(exc).__name__}: {exc}",
+                    }
+                )
 
         if self.last_plan_failures:
-            logger.error("[F22] %d/%d lệnh KHÔNG đặt được: %s", len(self.last_plan_failures),
-                         len(closing) + len(opening),
-                         ", ".join(f["symbol"] for f in self.last_plan_failures))
+            logger.error(
+                "[F22] %d/%d lệnh KHÔNG đặt được: %s",
+                len(self.last_plan_failures),
+                len(closing) + len(opening),
+                ", ".join(f["symbol"] for f in self.last_plan_failures),
+            )
         return results
 
     # ------------------------------------------------------------------
@@ -379,8 +459,11 @@ class BinanceOrderRouter:
         khôi phục trung lập ngay — đắt hơn về phí, rẻ hơn nhiều về rủi ro.
         """
         report: Dict[str, Any] = {
-            "passive_submitted": 0, "passive_filled_notional": 0.0,
-            "taker_orders": 0, "taker_notional": 0.0, "unfilled": [],
+            "passive_submitted": 0,
+            "passive_filled_notional": 0.0,
+            "taker_orders": 0,
+            "taker_notional": 0.0,
+            "unfilled": [],
         }
 
         self.uncancelled = []
@@ -406,9 +489,19 @@ class BinanceOrderRouter:
         report["plan_failures"] = list(self.last_plan_failures)
 
         try:
-            self._passive_wait_loop(passive, intents, filters, deadline, poll_interval_s,
-                                    requote, max_chase_bps, anchor, report,
-                                    max_fill_imbalance, chase_caps or {})
+            self._passive_wait_loop(
+                passive,
+                intents,
+                filters,
+                deadline,
+                poll_interval_s,
+                requote,
+                max_chase_bps,
+                anchor,
+                report,
+                max_fill_imbalance,
+                chase_caps or {},
+            )
         except Exception:
             # [FIX F23] Dù vòng chờ hỏng vì bất kỳ lý do gì, phần DỌN DẸP bên dưới
             # vẫn phải chạy. Bỏ qua dọn dẹp đồng nghĩa để lệnh post-only sống trên
@@ -416,7 +509,9 @@ class BinanceOrderRouter:
             logger.exception("[F23] Vòng chờ khớp thụ động lỗi — vẫn tiếp tục dọn dẹp")
             report["passive_loop_error"] = True
 
-        return self._cleanup_and_fallback(passive, intents, filters, allow_taker_fallback, report)
+        return self._cleanup_and_fallback(
+            passive, intents, filters, allow_taker_fallback, report
+        )
 
     def fill_imbalance(self, plan_net: float, plan_gross: float) -> Dict[str, float]:
         """
@@ -466,22 +561,42 @@ class BinanceOrderRouter:
                 net += n if m.side == "BUY" else -n
                 gross += n
         if gross <= 1e-9:
-            return {"drift": 0.0, "drift_plan": 0.0, "filled_gross": 0.0,
-                    "filled_net": 0.0, "progress": 0.0}
+            return {
+                "drift": 0.0,
+                "drift_plan": 0.0,
+                "filled_gross": 0.0,
+                "filled_net": 0.0,
+                "progress": 0.0,
+            }
         progress = gross / plan_gross if plan_gross > 1e-9 else 0.0
         expected_net = plan_net * progress
         excess = net - expected_net
-        return {"drift": excess / gross,
-                "drift_plan": (excess / plan_gross) if plan_gross > 1e-9 else 0.0,
-                "filled_gross": gross, "filled_net": net, "progress": progress}
+        return {
+            "drift": excess / gross,
+            "drift_plan": (excess / plan_gross) if plan_gross > 1e-9 else 0.0,
+            "filled_gross": gross,
+            "filled_net": net,
+            "progress": progress,
+        }
 
-    def _passive_wait_loop(self, passive, intents, filters, deadline, poll_interval_s,
-                           requote, max_chase_bps, anchor, report,
-                           max_fill_imbalance=0.25,
-                           chase_caps=None) -> None:
+    def _passive_wait_loop(
+        self,
+        passive,
+        intents,
+        filters,
+        deadline,
+        poll_interval_s,
+        requote,
+        max_chase_bps,
+        anchor,
+        report,
+        max_fill_imbalance=0.25,
+        chase_caps=None,
+    ) -> None:
         """Chờ khớp thụ động, định kỳ báo giá lại, và canh độ lệch trung lập."""
-        plan_net = sum((o.notional if o.side == "BUY" else -o.notional)
-                       for o in intents.values())
+        plan_net = sum(
+            (o.notional if o.side == "BUY" else -o.notional) for o in intents.values()
+        )
         plan_gross = sum(abs(o.notional) for o in intents.values())
 
         while time.time() < deadline:
@@ -518,8 +633,11 @@ class BinanceOrderRouter:
                 logger.warning(
                     "[VAN TRUNG LẬP] khớp lệch %+.1f%% gross KẾ HOẠCH (ngưỡng %.0f%%) "
                     "sau khi hoàn thành %.0f%% kế hoạch — thoát chờ thụ động, cắn giá "
-                    "cho cân", imb["drift_plan"] * 100, max_fill_imbalance * 100,
-                    imb["progress"] * 100)
+                    "cho cân",
+                    imb["drift_plan"] * 100,
+                    max_fill_imbalance * 100,
+                    imb["progress"] * 100,
+                )
                 return
 
             if not requote:
@@ -530,13 +648,17 @@ class BinanceOrderRouter:
                 # theo phần còn lại của vòng báo giá lại.
                 try:
                     cap_bps = (chase_caps or {}).get(m.symbol, max_chase_bps)
-                    self._requote_one(idx, m, passive, intents, filters, anchor,
-                                      cap_bps, report)
+                    self._requote_one(
+                        idx, m, passive, intents, filters, anchor, cap_bps, report
+                    )
                 except Exception:
-                    logger.exception("[F23] Báo giá lại %s lỗi — bỏ qua cặp này", m.symbol)
+                    logger.exception(
+                        "[F23] Báo giá lại %s lỗi — bỏ qua cặp này", m.symbol
+                    )
 
-    def _requote_one(self, idx, m, passive, intents, filters, anchor,
-                     max_chase_bps, report) -> None:
+    def _requote_one(
+        self, idx, m, passive, intents, filters, anchor, max_chase_bps, report
+    ) -> None:
         """
         Huỷ lệnh thụ động cũ và đặt lại ở BBO hiện tại cho MỘT cặp.
 
@@ -557,7 +679,9 @@ class BinanceOrderRouter:
 
         target = bid if m.side == "BUY" else ask
         if abs(target - (m.price or target)) < filt.tick_size:
-            report["requote_skipped_no_move"] = report.get("requote_skipped_no_move", 0) + 1
+            report["requote_skipped_no_move"] = (
+                report.get("requote_skipped_no_move", 0) + 1
+            )
             return  # sổ chưa dịch đủ để đáng báo giá lại
 
         # Chặn đuổi giá quá xa mốc ban đầu.
@@ -585,9 +709,12 @@ class BinanceOrderRouter:
         # thật mà trần này sinh ra để tránh.
         drift_bps = abs(target - base) / base * 10000.0
         if drift_bps > max_chase_bps:
-            report["requote_blocked_by_chase_cap"] = \
+            report["requote_blocked_by_chase_cap"] = (
                 report.get("requote_blocked_by_chase_cap", 0) + 1
-            report["max_drift_bps_seen"] = max(report.get("max_drift_bps_seen", 0.0), drift_bps)
+            )
+            report["max_drift_bps_seen"] = max(
+                report.get("max_drift_bps_seen", 0.0), drift_bps
+            )
             # [FIX F49] Ghi lại VƯỢT TRẦN BAO NHIÊU LẦN, không chỉ đếm số lần vượt.
             #
             # Lượt 23/09/2026 cho `requote_blocked_by_chase_cap=358` so với
@@ -599,7 +726,9 @@ class BinanceOrderRouter:
             # Tỷ lệ này trả lời thẳng: "nới trần lên k lần thì thu lại được bao nhiêu
             # phần trăm số lần bị chặn". Không có nó thì lần chỉnh tới lại là phỏng đoán.
             if max_chase_bps > 0:
-                report.setdefault("chase_block_ratios", []).append(drift_bps / max_chase_bps)
+                report.setdefault("chase_block_ratios", []).append(
+                    drift_bps / max_chase_bps
+                )
             return
 
         # [FIX F21] Chỉ đặt lệnh mới khi đã XÁC NHẬN lệnh cũ bị huỷ. Nếu không,
@@ -616,12 +745,17 @@ class BinanceOrderRouter:
             return
 
         intent = intents.get(m.symbol)
-        new_order = RebalanceOrder(m.symbol, m.side, remaining,
-                                   filt.round_price(target),
-                                   intent.reason if intent else "điều chỉnh",
-                                   remaining * target)
-        replaced = self.submit(new_order, filt, post_only=True,
-                               epoch_bucket=int(time.time()))
+        new_order = RebalanceOrder(
+            m.symbol,
+            m.side,
+            remaining,
+            filt.round_price(target),
+            intent.reason if intent else "điều chỉnh",
+            remaining * target,
+        )
+        replaced = self.submit(
+            new_order, filt, post_only=True, epoch_bucket=int(time.time())
+        )
         passive[idx] = replaced
         self._cycle_orders.setdefault(m.symbol, []).append(replaced)
         report["requotes"] += 1
@@ -645,21 +779,25 @@ class BinanceOrderRouter:
                 try:
                     self.poll_status(m, retries=2, delay=0.3)
                 except Exception:
-                    logger.warning("[F27] Không truy vấn được %s khi cộng dồn khối lượng",
-                                   m.client_order_id)
+                    logger.warning(
+                        "[F27] Không truy vấn được %s khi cộng dồn khối lượng",
+                        m.client_order_id,
+                    )
             total += m.filled_qty
         return total
 
-    def remaining_for(self, symbol: str, intents: Dict[str, Any],
-                      refresh: bool = True) -> float:
+    def remaining_for(
+        self, symbol: str, intents: Dict[str, Any], refresh: bool = True
+    ) -> float:
         """Khối lượng còn thiếu so với Ý ĐỊNH GỐC của cặp. [FIX F27]"""
         intent = intents.get(symbol)
         if intent is None:
             return 0.0
         return max(0.0, intent.qty - self.filled_for(symbol, refresh=refresh))
 
-    def _cleanup_and_fallback(self, passive, intents, filters,
-                              allow_taker_fallback, report) -> Dict[str, Any]:
+    def _cleanup_and_fallback(
+        self, passive, intents, filters, allow_taker_fallback, report
+    ) -> Dict[str, Any]:
         """
         Dọn lệnh treo rồi cắn giá phần còn thiếu. LUÔN chạy, kể cả khi vòng chờ lỗi.
         """
@@ -682,16 +820,20 @@ class BinanceOrderRouter:
 
         # Chẩn đoán tỷ lệ maker: lệnh nào hết giờ mà chưa khớp, và vì sao.
         report["passive_timed_out"] = sum(
-            1 for m in passive if not m.is_terminal or m.remaining_qty > 0)
+            1 for m in passive if not m.is_terminal or m.remaining_qty > 0
+        )
         report["uncancelled"] = list(self.uncancelled)
         if self.uncancelled:
-            logger.error("[F21] CÒN LỆNH SỐNG không xác nhận huỷ được: %s",
-                         ", ".join(self.uncancelled))
+            logger.error(
+                "[F21] CÒN LỆNH SỐNG không xác nhận huỷ được: %s",
+                ", ".join(self.uncancelled),
+            )
 
         if not allow_taker_fallback:
             report["unfilled"] = [
                 {"symbol": m.symbol, "remaining": m.remaining_qty}
-                for m in passive if m.remaining_qty > 0
+                for m in passive
+                if m.remaining_qty > 0
             ]
             return report
 
@@ -707,32 +849,53 @@ class BinanceOrderRouter:
 
             qty = filt.round_qty(remaining)
             if qty <= 0 or not filt.is_tradeable(qty, m.price or intent.price):
-                report["unfilled"].append({"symbol": m.symbol, "remaining": remaining,
-                                           "reason": "dưới min_notional"})
+                report["unfilled"].append(
+                    {
+                        "symbol": m.symbol,
+                        "remaining": remaining,
+                        "reason": "dưới min_notional",
+                    }
+                )
                 continue
 
-            taker = RebalanceOrder(m.symbol, m.side, qty, intent.price,
-                                   intent.reason, qty * intent.price)
+            taker = RebalanceOrder(
+                m.symbol, m.side, qty, intent.price, intent.reason, qty * intent.price
+            )
             try:
-                filled = self.submit(taker, filt, post_only=False,
-                                     epoch_bucket=int(time.time() // 60) + 7919)
+                filled = self.submit(
+                    taker,
+                    filt,
+                    post_only=False,
+                    epoch_bucket=int(time.time() // 60) + 7919,
+                )
                 report["taker_orders"] += 1
-                report["taker_notional"] += filled.filled_qty * (filled.avg_fill_price or intent.price)
+                report["taker_notional"] += filled.filled_qty * (
+                    filled.avg_fill_price or intent.price
+                )
             except OrderRejected as exc:
-                report["unfilled"].append({"symbol": m.symbol, "remaining": remaining,
-                                           "reason": str(exc)})
+                report["unfilled"].append(
+                    {"symbol": m.symbol, "remaining": remaining, "reason": str(exc)}
+                )
             except Exception as exc:
                 # [FIX F22] Một cặp lỗi ở bước cắn giá cũng không được giết phần còn lại.
-                logger.exception("[F22] Cắn giá %s lỗi — tiếp tục các cặp còn lại", m.symbol)
-                report["unfilled"].append({"symbol": m.symbol, "remaining": remaining,
-                                           "reason": f"{type(exc).__name__}: {exc}"})
+                logger.exception(
+                    "[F22] Cắn giá %s lỗi — tiếp tục các cặp còn lại", m.symbol
+                )
+                report["unfilled"].append(
+                    {
+                        "symbol": m.symbol,
+                        "remaining": remaining,
+                        "reason": f"{type(exc).__name__}: {exc}",
+                    }
+                )
         return report
 
     # ------------------------------------------------------------------
     # Huỷ / dừng khẩn cấp
     # ------------------------------------------------------------------
-    def cancel_all(self, symbol: str, verify: bool = True,
-                   retries: int = 3, delay: float = 0.5) -> bool:
+    def cancel_all(
+        self, symbol: str, verify: bool = True, retries: int = 3, delay: float = 0.5
+    ) -> bool:
         """
         Huỷ mọi lệnh treo của một cặp và XÁC NHẬN sàn đã huỷ thật.
 
@@ -752,20 +915,24 @@ class BinanceOrderRouter:
 
         for attempt in range(retries):
             try:
-                self.client._request("DELETE", "/fapi/v1/allOpenOrders",
-                                     {"symbol": symbol}, signed=True)
+                self.client._request(
+                    "DELETE", "/fapi/v1/allOpenOrders", {"symbol": symbol}, signed=True
+                )
             except BinanceAPIError as exc:
                 # -2011 = không có lệnh nào để huỷ: đó là trạng thái ta muốn.
                 if getattr(exc, "code", None) == -2011:
                     return True
-                logger.warning("Huỷ lệnh %s thất bại (lần %d): %s", symbol, attempt + 1, exc)
+                logger.warning(
+                    "Huỷ lệnh %s thất bại (lần %d): %s", symbol, attempt + 1, exc
+                )
             except Exception as exc:
                 # Lỗi mạng / timeout / DNS KHÔNG phải BinanceAPIError. Bản đầu của
                 # bản vá này chỉ bắt BinanceAPIError và một test hồi quy đã bắt được
                 # thiếu sót đó: một `ConnectionError` lúc huỷ sẽ thoát ra ngoài và
                 # giết cả lượt — đúng loại lỗi mà F22/F23 sinh ra để chặn.
-                logger.warning("Huỷ lệnh %s lỗi hạ tầng (lần %d): %s",
-                               symbol, attempt + 1, exc)
+                logger.warning(
+                    "Huỷ lệnh %s lỗi hạ tầng (lần %d): %s", symbol, attempt + 1, exc
+                )
 
             if not verify:
                 return True
@@ -780,8 +947,11 @@ class BinanceOrderRouter:
             if attempt < retries - 1:
                 time.sleep(delay)
 
-        logger.error("[F21] KHÔNG XÁC NHẬN được đã huỷ lệnh %s — phải coi như còn "
-                     "lệnh sống trên sàn", symbol)
+        logger.error(
+            "[F21] KHÔNG XÁC NHẬN được đã huỷ lệnh %s — phải coi như còn "
+            "lệnh sống trên sàn",
+            symbol,
+        )
         return False
 
     def kill_switch(self, symbols: Optional[List[str]] = None) -> Dict[str, Any]:
@@ -804,15 +974,22 @@ class BinanceOrderRouter:
                 self.cancel_all(symbol)
                 report["canceled"].append(symbol)
                 if self.dry_run:
-                    report["closed"].append({"symbol": symbol, "qty": abs(amt), "dry_run": True})
+                    report["closed"].append(
+                        {"symbol": symbol, "qty": abs(amt), "dry_run": True}
+                    )
                     continue
-                self.client._request("POST", "/fapi/v1/order", {
-                    "symbol": symbol,
-                    "side": "SELL" if amt > 0 else "BUY",
-                    "type": "MARKET",
-                    "quantity": f"{abs(amt):.10f}".rstrip("0").rstrip("."),
-                    "reduceOnly": "true",
-                }, signed=True)
+                self.client._request(
+                    "POST",
+                    "/fapi/v1/order",
+                    {
+                        "symbol": symbol,
+                        "side": "SELL" if amt > 0 else "BUY",
+                        "type": "MARKET",
+                        "quantity": f"{abs(amt):.10f}".rstrip("0").rstrip("."),
+                        "reduceOnly": "true",
+                    },
+                    signed=True,
+                )
                 report["closed"].append({"symbol": symbol, "qty": abs(amt)})
             except BinanceAPIError as exc:
                 report["errors"].append({"symbol": symbol, "error": str(exc)})

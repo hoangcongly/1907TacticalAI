@@ -2,6 +2,7 @@
 IMM Kalman 2D — 2 bộ lọc Trending & Choppy chạy song song kết hợp sanitize_covariance_matrix.
 Module B.2 (PATCH D v11.5) theo đặc tả kiến trúc Mục 2.3.
 """
+
 from typing import Optional, Tuple
 import numpy as np
 import pandas as pd
@@ -54,8 +55,12 @@ class IMMKalman2D:
         # Trạng thái ban đầu [P, nu]^T
         self.x1 = np.zeros((2, 1), dtype=np.float64)
         self.x2 = np.zeros((2, 1), dtype=np.float64)
-        self.P1 = sanitize_covariance_matrix(np.eye(2, dtype=np.float64), self.eigenvalue_floor)
-        self.P2 = sanitize_covariance_matrix(np.eye(2, dtype=np.float64), self.eigenvalue_floor)
+        self.P1 = sanitize_covariance_matrix(
+            np.eye(2, dtype=np.float64), self.eigenvalue_floor
+        )
+        self.P2 = sanitize_covariance_matrix(
+            np.eye(2, dtype=np.float64), self.eigenvalue_floor
+        )
 
         self.p_prev = np.array([0.5, 0.5], dtype=np.float64)
         self._initialized = False
@@ -65,8 +70,12 @@ class IMMKalman2D:
         p0 = float(initial_price) if initial_price is not None else 0.0
         self.x1 = np.array([[p0], [0.0]], dtype=np.float64)
         self.x2 = np.array([[p0], [0.0]], dtype=np.float64)
-        self.P1 = sanitize_covariance_matrix(np.eye(2, dtype=np.float64), self.eigenvalue_floor)
-        self.P2 = sanitize_covariance_matrix(np.eye(2, dtype=np.float64), self.eigenvalue_floor)
+        self.P1 = sanitize_covariance_matrix(
+            np.eye(2, dtype=np.float64), self.eigenvalue_floor
+        )
+        self.P2 = sanitize_covariance_matrix(
+            np.eye(2, dtype=np.float64), self.eigenvalue_floor
+        )
         self.p_prev = np.array([0.5, 0.5], dtype=np.float64)
         self._initialized = initial_price is not None
 
@@ -83,7 +92,7 @@ class IMMKalman2D:
         p_trend: Xác suất regime Trending từ HMM.
         p_chop: Xác suất regime Choppy từ HMM.
         atr: Độ biến động ATR_14 hiện tại.
-        
+
         Trả về: (P_hat, nu_hat, trend_score)
         """
         y_t = float(observation)
@@ -177,7 +186,9 @@ class IMMKalman2D:
         # BƯỚC 7: TREND SCORE OUTPUT (Chuẩn hóa theo ATR)
         # Trend_Score = nu_hat / (ATR_14 + 10^-8)
         # ====================================================================
-        atr_safe = max(float(atr) if (atr is not None and not np.isnan(atr)) else 1.0, 1e-8)
+        atr_safe = max(
+            float(atr) if (atr is not None and not np.isnan(atr)) else 1.0, 1e-8
+        )
         trend_score = nu_hat / atr_safe
 
         return p_hat, nu_hat, trend_score
@@ -212,8 +223,10 @@ def filter_imm_kalman_series(
         nu_hat[i] = nu_h
         trend_score[i] = t_s
 
-    return pd.DataFrame({
-        "p_hat": p_hat,
-        "nu_hat": nu_hat,
-        "trend_score": trend_score,
-    })
+    return pd.DataFrame(
+        {
+            "p_hat": p_hat,
+            "nu_hat": nu_hat,
+            "trend_score": trend_score,
+        }
+    )

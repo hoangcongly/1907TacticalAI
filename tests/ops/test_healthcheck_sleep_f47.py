@@ -10,6 +10,7 @@ Healthcheck cũ báo ĐỎ y hệt nhau cho hai tình huống khác hẳn. Một
 phân biệt được chúng sẽ bị người vận hành học cách bỏ qua — rồi khi nó kêu THẬT thì
 không ai nghe. Đó là bài học F41 lặp lại ở tầng cảnh báo thay vì tầng tiến trình.
 """
+
 import sys
 import time
 import types
@@ -22,11 +23,18 @@ import healthcheck as H  # noqa: E402
 
 def _fake_pmset(monkeypatch, body: str):
     """Thay `pmset -g log` bằng nội dung dựng sẵn."""
+
     def run(cmd, **kw):
         return types.SimpleNamespace(stdout=body)
-    monkeypatch.setattr(H.subprocess if hasattr(H, "subprocess") else __import__("subprocess"),
-                        "run", run, raising=False)
+
+    monkeypatch.setattr(
+        H.subprocess if hasattr(H, "subprocess") else __import__("subprocess"),
+        "run",
+        run,
+        raising=False,
+    )
     import subprocess
+
     monkeypatch.setattr(subprocess, "run", run)
 
 
@@ -36,10 +44,12 @@ def _stamp(offset_s: float) -> str:
 
 def test_may_ngu_duoc_tru_ra_khoi_tuoi_nhip_tim(monkeypatch):
     """Ngủ 2 giờ trong 3 giờ qua -> `_slept_since` phải trả về ~2 giờ."""
-    body = "\n".join([
-        f"{_stamp(-10800)} +0700 Sleep               Entering Sleep state",
-        f"{_stamp(-3600)} +0700 Wake from Normal Sleep [CDNVA]",
-    ])
+    body = "\n".join(
+        [
+            f"{_stamp(-10800)} +0700 Sleep               Entering Sleep state",
+            f"{_stamp(-3600)} +0700 Wake from Normal Sleep [CDNVA]",
+        ]
+    )
     _fake_pmset(monkeypatch, body)
     assert H._slept_since(time.time() - 4 * 3600) == pytest.approx(2.0, abs=0.05)
 
@@ -61,6 +71,7 @@ def test_doc_pmset_that_bai_thi_nga_ve_phia_than_trong(monkeypatch):
 
     def boom(cmd, **kw):
         raise OSError("pmset không tồn tại")
+
     monkeypatch.setattr(subprocess, "run", boom)
     assert H._slept_since(time.time() - 4 * 3600) == 0.0
 

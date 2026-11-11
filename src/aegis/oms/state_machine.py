@@ -17,35 +17,50 @@ from typing import Dict, List, Optional, Set
 
 class OrderState(Enum):
     """Trạng thái lệnh. Trạng thái CUỐI không bao giờ rời đi được."""
-    CREATED = "CREATED"              # đã dựng cục bộ, chưa gửi
-    SUBMITTED = "SUBMITTED"          # đã gửi, chờ sàn xác nhận
-    ACKNOWLEDGED = "ACKNOWLEDGED"    # sàn đã nhận, nằm trên sổ
+
+    CREATED = "CREATED"  # đã dựng cục bộ, chưa gửi
+    SUBMITTED = "SUBMITTED"  # đã gửi, chờ sàn xác nhận
+    ACKNOWLEDGED = "ACKNOWLEDGED"  # sàn đã nhận, nằm trên sổ
     PARTIALLY_FILLED = "PARTIALLY_FILLED"
-    FILLED = "FILLED"                # CUỐI
-    CANCELED = "CANCELED"            # CUỐI
-    REJECTED = "REJECTED"            # CUỐI
-    EXPIRED = "EXPIRED"              # CUỐI
+    FILLED = "FILLED"  # CUỐI
+    CANCELED = "CANCELED"  # CUỐI
+    REJECTED = "REJECTED"  # CUỐI
+    EXPIRED = "EXPIRED"  # CUỐI
 
 
 TERMINAL_STATES: Set[OrderState] = {
-    OrderState.FILLED, OrderState.CANCELED,
-    OrderState.REJECTED, OrderState.EXPIRED,
+    OrderState.FILLED,
+    OrderState.CANCELED,
+    OrderState.REJECTED,
+    OrderState.EXPIRED,
 }
 
 # Bảng chuyển trạng thái hợp lệ — nguồn sự thật duy nhất.
 VALID_TRANSITIONS: Dict[OrderState, Set[OrderState]] = {
-    OrderState.CREATED: {OrderState.SUBMITTED, OrderState.REJECTED, OrderState.CANCELED},
+    OrderState.CREATED: {
+        OrderState.SUBMITTED,
+        OrderState.REJECTED,
+        OrderState.CANCELED,
+    },
     OrderState.SUBMITTED: {
-        OrderState.ACKNOWLEDGED, OrderState.PARTIALLY_FILLED, OrderState.FILLED,
-        OrderState.REJECTED, OrderState.CANCELED, OrderState.EXPIRED,
+        OrderState.ACKNOWLEDGED,
+        OrderState.PARTIALLY_FILLED,
+        OrderState.FILLED,
+        OrderState.REJECTED,
+        OrderState.CANCELED,
+        OrderState.EXPIRED,
     },
     OrderState.ACKNOWLEDGED: {
-        OrderState.PARTIALLY_FILLED, OrderState.FILLED,
-        OrderState.CANCELED, OrderState.EXPIRED,
+        OrderState.PARTIALLY_FILLED,
+        OrderState.FILLED,
+        OrderState.CANCELED,
+        OrderState.EXPIRED,
     },
     OrderState.PARTIALLY_FILLED: {
-        OrderState.PARTIALLY_FILLED, OrderState.FILLED,
-        OrderState.CANCELED, OrderState.EXPIRED,
+        OrderState.PARTIALLY_FILLED,
+        OrderState.FILLED,
+        OrderState.CANCELED,
+        OrderState.EXPIRED,
     },
     OrderState.FILLED: set(),
     OrderState.CANCELED: set(),
@@ -72,9 +87,10 @@ class InvalidTransitionError(RuntimeError):
 @dataclass
 class ManagedOrder:
     """Một lệnh cùng toàn bộ lịch sử vòng đời của nó."""
+
     client_order_id: str
     symbol: str
-    side: str                     # BUY / SELL
+    side: str  # BUY / SELL
     qty: float
     price: Optional[float] = None  # None = lệnh MARKET
     state: OrderState = OrderState.CREATED
@@ -152,7 +168,9 @@ class ManagedOrder:
         """Áp trạng thái thô của Binance qua bảng ánh xạ."""
         mapped = BINANCE_STATUS_MAP.get(status.upper())
         if mapped is None:
-            raise InvalidTransitionError(f"Trạng thái Binance không nhận diện được: {status}")
+            raise InvalidTransitionError(
+                f"Trạng thái Binance không nhận diện được: {status}"
+            )
         return self.transition(mapped, **kwargs)
 
 

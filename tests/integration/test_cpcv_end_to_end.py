@@ -11,9 +11,9 @@ def test_cpcv_end_to_end_splits_and_leakage_guards():
     """
     n_samples = 300
     cpcv = CombinatorialPurgedKFold(n_groups=6, n_test_groups=2, embargo_bars=10)
-    
-    assert cpcv.n_splits == 15          # C(6, 2) = 15
-    assert cpcv.n_backtest_paths == 5   # C(5, 1) = 5
+
+    assert cpcv.n_splits == 15  # C(6, 2) = 15
+    assert cpcv.n_backtest_paths == 5  # C(5, 1) = 5
 
     # Thời gian đóng lệnh mỗi nến vắt qua 5 nến tiếp theo (t1 = t0 + 5)
     t0 = np.arange(n_samples)
@@ -40,16 +40,18 @@ def test_cpcv_end_to_end_splits_and_leakage_guards():
             idx_t1 = t1[idx]
             for min_test_t0, max_test_t1 in test_bounds:
                 # 1. Không giao cắt với từng khối test
-                assert idx_t1 <= min_test_t0 or idx_t0 >= max_test_t1, (
-                    f"Fold {fold_idx}: Lệnh Train {idx} [{idx_t0}, {idx_t1}] giao cắt với Test block [{min_test_t0}, {max_test_t1}]"
-                )
+                assert (
+                    idx_t1 <= min_test_t0 or idx_t0 >= max_test_t1
+                ), f"Fold {fold_idx}: Lệnh Train {idx} [{idx_t0}, {idx_t1}] giao cắt với Test block [{min_test_t0}, {max_test_t1}]"
                 # 2. Lệnh sau khối Test phải nằm ngoài vùng cách ly Embargo (10 nến)
                 if idx_t0 >= max_test_t1:
-                    assert idx_t0 >= max_test_t1 + 10, (
-                        f"Fold {fold_idx}: Lệnh Train {idx} [{idx_t0}, {idx_t1}] vi phạm Embargo sau Test block [{min_test_t0}, {max_test_t1}]!"
-                    )
+                    assert (
+                        idx_t0 >= max_test_t1 + 10
+                    ), f"Fold {fold_idx}: Lệnh Train {idx} [{idx_t0}, {idx_t1}] vi phạm Embargo sau Test block [{min_test_t0}, {max_test_t1}]!"
 
-    print("✅ [CPCV END-TO-END] 15 Folds Combinatorial Purged Cross-Validation với Zero-Leakage & Embargo PASSED!")
+    print(
+        "✅ [CPCV END-TO-END] 15 Folds Combinatorial Purged Cross-Validation với Zero-Leakage & Embargo PASSED!"
+    )
 
 
 def test_cpcv_armor_plated_guards():

@@ -58,7 +58,12 @@ def classify_trade_mode(
         )
 
     if fade_enabled:
-        if not isinstance(fade_regime_gate_threshold, (int, float)) or math.isnan(fade_regime_gate_threshold) or math.isinf(fade_regime_gate_threshold) or not (0.0 <= fade_regime_gate_threshold <= 1.0):
+        if (
+            not isinstance(fade_regime_gate_threshold, (int, float))
+            or math.isnan(fade_regime_gate_threshold)
+            or math.isinf(fade_regime_gate_threshold)
+            or not (0.0 <= fade_regime_gate_threshold <= 1.0)
+        ):
             raise ValueError(
                 f"Lỗi hải quan B-1-2: fade_regime_gate_threshold phải là số hợp lệ [0, 1], nhận {fade_regime_gate_threshold}"
             )
@@ -165,9 +170,7 @@ def resolve_trade_execution_params(
 
     leverage_used = min(float(leverage_requested), float(max_safe))
     if leverage_used < 1.0:
-        raise ValueError(
-            f"Lỗi hải quan B-1-6: leverage_used ({leverage_used}) < 1.0"
-        )
+        raise ValueError(f"Lỗi hải quan B-1-6: leverage_used ({leverage_used}) < 1.0")
 
     # 7. Tính giá thanh lý liquidation_price
     liquidation_price = compute_liquidation_price(
@@ -188,7 +191,3 @@ def resolve_trade_execution_params(
         "leverage_used": leverage_used,
         "liquidation_price": liquidation_price,
     }
-
-
-
-

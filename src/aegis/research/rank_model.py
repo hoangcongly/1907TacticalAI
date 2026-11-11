@@ -38,11 +38,11 @@ __all__ = ["RankModelSpec", "build_dataset", "combine_lambdarank"]
 class RankModelSpec:
     """Tham số tầng xếp hạng."""
 
-    n_labels: int = 8              # số bậc nhãn (phân vị lợi suất trong kỳ)
-    train_periods: int = 400       # số kỳ dùng để huấn luyện mỗi lần
-    retrain_every: int = 30        # cứ bao nhiêu kỳ thì huấn luyện lại
-    purge: int = 2                 # số kỳ cuối của train bị loại bỏ
-    min_train_periods: int = 150   # chưa đủ thì chưa dự báo
+    n_labels: int = 8  # số bậc nhãn (phân vị lợi suất trong kỳ)
+    train_periods: int = 400  # số kỳ dùng để huấn luyện mỗi lần
+    retrain_every: int = 30  # cứ bao nhiêu kỳ thì huấn luyện lại
+    purge: int = 2  # số kỳ cuối của train bị loại bỏ
+    min_train_periods: int = 150  # chưa đủ thì chưa dự báo
     min_names: int = 15
     num_leaves: int = 15
     n_estimators: int = 120
@@ -62,7 +62,8 @@ class RankModelSpec:
         if self.train_periods < self.min_train_periods:
             raise ValueError(
                 f"train_periods ({self.train_periods}) phải >= min_train_periods "
-                f"({self.min_train_periods}), nếu không model không bao giờ được huấn luyện")
+                f"({self.min_train_periods}), nếu không model không bao giờ được huấn luyện"
+            )
         if self.purge < 0:
             raise ValueError(f"purge phải >= 0, nhận {self.purge}")
         if self.n_labels < 2:
@@ -88,8 +89,9 @@ def build_dataset(
     Xs, ys, ts_list = [], [], []
     for ts in close.index:
         cols = close.columns
-        S = np.column_stack([signals[n].reindex(index=[ts], columns=cols).to_numpy()[0]
-                             for n in names])
+        S = np.column_stack(
+            [signals[n].reindex(index=[ts], columns=cols).to_numpy()[0] for n in names]
+        )
         y = fwd.loc[ts].reindex(cols).to_numpy(dtype=np.float64)
         ok = np.isfinite(y) & np.isfinite(S).all(axis=1)
         if ok.sum() < spec.min_names:
@@ -106,7 +108,12 @@ def build_dataset(
         ts_list.append(np.full(ok.sum(), ts, dtype=np.int64))
 
     if not Xs:
-        return pd.DataFrame(columns=names), pd.Series(dtype=int), pd.Series(dtype=np.int64), names
+        return (
+            pd.DataFrame(columns=names),
+            pd.Series(dtype=int),
+            pd.Series(dtype=np.int64),
+            names,
+        )
 
     X = pd.DataFrame(np.vstack(Xs), columns=names)
     return X, pd.Series(np.concatenate(ys)), pd.Series(np.concatenate(ts_list)), names
@@ -133,17 +140,24 @@ def combine_lambdarank(
     uniq = np.array(sorted(pd.unique(ts)))
     out = pd.DataFrame(np.nan, index=close.index, columns=close.columns)
     model = None
-    trained_at = -10**9
+    trained_at = -(10**9)
 
-    base = dict(objective="lambdarank", metric="ndcg",
-                num_leaves=spec.num_leaves, n_estimators=spec.n_estimators,
-                learning_rate=spec.learning_rate,
-                min_child_samples=spec.min_child_samples,
-                subsample=spec.subsample, subsample_freq=1,
-                colsample_bytree=spec.colsample_bytree,
-                reg_lambda=spec.reg_lambda, random_state=spec.seed,
-                n_jobs=-1, verbose=-1,
-                label_gain=list(range(spec.n_labels)))
+    base = dict(
+        objective="lambdarank",
+        metric="ndcg",
+        num_leaves=spec.num_leaves,
+        n_estimators=spec.n_estimators,
+        learning_rate=spec.learning_rate,
+        min_child_samples=spec.min_child_samples,
+        subsample=spec.subsample,
+        subsample_freq=1,
+        colsample_bytree=spec.colsample_bytree,
+        reg_lambda=spec.reg_lambda,
+        random_state=spec.seed,
+        n_jobs=-1,
+        verbose=-1,
+        label_gain=list(range(spec.n_labels)),
+    )
     base.update(spec.params)
 
     ts_arr = ts.to_numpy()
@@ -165,16 +179,23 @@ def combine_lambdarank(
             Xtr, ytr, ttr = X[mask], y[mask].to_numpy(), ts_arr[mask]
             order = np.argsort(ttr, kind="stable")
             Xtr, ytr, ttr = Xtr.iloc[order], ytr[order], ttr[order]
-            groups = pd.Series(ttr).value_counts(sort=False).reindex(
-                pd.unique(ttr)).to_numpy()
+            groups = (
+                pd.Series(ttr)
+                .value_counts(sort=False)
+                .reindex(pd.unique(ttr))
+                .to_numpy()
+            )
 
             try:
                 model = lgb.LGBMRanker(**base)
                 model.fit(Xtr, ytr, group=groups)
                 trained_at = i
                 if verbose:
-                    print(f"  huấn luyện lại tại kỳ {i}/{len(uniq)} "
-                          f"({len(window)} kỳ, {mask.sum()} mẫu)", flush=True)
+                    print(
+                        f"  huấn luyện lại tại kỳ {i}/{len(uniq)} "
+                        f"({len(window)} kỳ, {mask.sum()} mẫu)",
+                        flush=True,
+                    )
             except Exception as exc:
                 if verbose:
                     print(f"  huấn luyện lỗi tại kỳ {i}: {exc}", flush=True)
@@ -189,8 +210,9 @@ def combine_lambdarank(
         # không biết lợi suất tương lai, nên universe live sẽ khác universe backtest,
         # và backtest âm thầm loại bỏ đúng những cặp bị ngừng giao dịch/huỷ niêm yết.
         cols = close.columns
-        S = np.column_stack([signals[n].reindex(index=[t], columns=cols).to_numpy()[0]
-                             for n in names])
+        S = np.column_stack(
+            [signals[n].reindex(index=[t], columns=cols).to_numpy()[0] for n in names]
+        )
         ok = np.isfinite(S).all(axis=1)
         if ok.sum() < spec.min_names:
             continue

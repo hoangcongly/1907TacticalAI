@@ -7,6 +7,7 @@ chính vì trước đây không có test nào như thế này.
 
 Nếu test này đỏ, TUYỆT ĐỐI không đem hệ thống đi giao dịch.
 """
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -26,13 +27,15 @@ from aegis.features.feature_spec import (
 def _make_bars(n: int = 200, seed: int = 7) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
     close = 100.0 + np.cumsum(rng.normal(0.0, 0.5, n))
-    return pd.DataFrame({
-        "high": close + np.abs(rng.normal(0.4, 0.2, n)),
-        "low": close - np.abs(rng.normal(0.4, 0.2, n)),
-        "close": close,
-        "volume": rng.uniform(1.0, 500.0, n),
-        "ofi": rng.uniform(-1.0, 1.0, n),
-    })
+    return pd.DataFrame(
+        {
+            "high": close + np.abs(rng.normal(0.4, 0.2, n)),
+            "low": close - np.abs(rng.normal(0.4, 0.2, n)),
+            "close": close,
+            "volume": rng.uniform(1.0, 500.0, n),
+            "ofi": rng.uniform(-1.0, 1.0, n),
+        }
+    )
 
 
 def test_online_matches_batch_elementwise():

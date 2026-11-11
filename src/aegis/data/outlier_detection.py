@@ -11,18 +11,18 @@ from numba import njit
 def compute_rolling_mad(prices: np.ndarray, window: int = 100) -> np.ndarray:
     """
     [TASK A-1-1] Tính Robust Sigma dựa trên Median Absolute Deviation (MAD) cửa sổ trượt.
-    
+
     Toán học (AFML & Aegis Master Blueprint):
         w = P[i-window : i]  (không bao gồm P[i] để tránh look-ahead bias)
         MAD_i = median(|w - median(w)|)
         sigma_MAD_i = 1.4826 * MAD_i
-        
+
     Tham số:
         prices (np.ndarray): Mảng giá tick 1D.
         window (int): Kích thước cửa sổ trượt (Mặc định 100 tick).
-        
+
     Trả về:
-        np.ndarray: Mảng Robust Sigma có cùng độ dài với mảng giá. 
+        np.ndarray: Mảng Robust Sigma có cùng độ dài với mảng giá.
                     (Các phần tử khởi động < window được gán bằng NaN).
     """
     n = len(prices)
@@ -35,16 +35,16 @@ def compute_rolling_mad(prices: np.ndarray, window: int = 100) -> np.ndarray:
     for i in range(window, n):
         # 1. Trích xuất cửa sổ nghiêm ngặt không nhìn trước tương lai (Causal Window)
         w = prices[i - window : i]
-        
+
         # 2. Tính trung vị của cửa sổ
         m = np.median(w)
-        
+
         # 3. Tính độ lệch tuyệt đối
         d = np.abs(w - m)
-        
+
         # 4. Tính MAD
         mad_i = np.median(d)
-        
+
         # 5. Quy đổi thành Robust Standard Deviation
         robust_sigmas[i] = 1.4826 * mad_i
 
@@ -52,32 +52,37 @@ def compute_rolling_mad(prices: np.ndarray, window: int = 100) -> np.ndarray:
 
 
 @njit
-def detect_bad_tick_core(prices: np.ndarray, volumes: np.ndarray, robust_sigmas: np.ndarray, window: int = 100):
+def detect_bad_tick_core(
+    prices: np.ndarray,
+    volumes: np.ndarray,
+    robust_sigmas: np.ndarray,
+    window: int = 100,
+):
     """
     [TASK A-1-2] Phân loại Bad Tick và Tail Event dựa trên 3 điều kiện lõi.
-    
+
     Điều kiện:
       1. Lệch cực đoan: |P_i - P_{i-1}| > 5 * sigma_i
       2. Khối lượng tĩnh: V_i < 2 * median(V_{i-window : i-1})
       3. Đảo chiều chớp nhoáng: |P_{i+1} - P_{i-1}| < 0.3 * |P_i - P_{i-1}|
-      
+
     Tham số:
         prices: Mảng 1D giá khớp lệnh.
         volumes: Mảng 1D khối lượng.
         robust_sigmas: Mảng sigma kháng nhiễu (đã tính từ compute_rolling_mad).
         window: Cửa sổ trượt (Mặc định 100).
-        
+
     Trả về:
         (is_bad_tick, is_tail_event): Tuple chứa 2 mảng boolean phân loại tick.
     """
     n = len(prices)
     is_bad_tick = np.zeros(n, dtype=np.bool_)
     is_tail_event = np.zeros(n, dtype=np.bool_)
-    
+
     # Không đủ dữ liệu để tính toán
     if n <= window:
         return is_bad_tick, is_tail_event
-        
+
     # Phải dừng ở n-2 vì ĐK3 yêu cầu P_{i+1}
     for i in range(window, n - 1):
         sigma = robust_sigmas[i]
@@ -90,25 +95,25 @@ def detect_bad_tick_core(prices: np.ndarray, volumes: np.ndarray, robust_sigmas:
         # tham lam luot qua dieu kien 1 ma khong bi danh dau is_bad_tick.
         # He qua: tick NaN lot vao pipeline tin hieu nhu mot Good Tick.
         # Fix: Phan loai truc tiep NaN tick la bad_tick va bo qua cac dieu kien tiep theo.
-        if np.isnan(prices[i]) or np.isnan(prices[i-1]):
+        if np.isnan(prices[i]) or np.isnan(prices[i - 1]):
             is_bad_tick[i] = True
             continue
 
-        diff_price = np.abs(prices[i] - prices[i-1])
-        
+        diff_price = np.abs(prices[i] - prices[i - 1])
+
         # ĐK1: Extreme Deviation Check
         cond_1 = diff_price > 5.0 * sigma
-        
+
         if cond_1:
             # ĐK2: Volume Consistency Check
             v_window = volumes[i - window : i]
             median_vol = np.median(v_window)
             cond_2 = volumes[i] < 2.0 * median_vol
-            
+
             # ĐK3: Micro-Reversal Check
-            reversal_diff = np.abs(prices[i+1] - prices[i-1])
+            reversal_diff = np.abs(prices[i + 1] - prices[i - 1])
             cond_3 = reversal_diff < 0.3 * diff_price
-            
+
             if cond_2 and cond_3:
                 # Khớp cả 3 ĐK -> Đích thị là Bad Tick (Nhiễu)
                 is_bad_tick[i] = True
@@ -118,6 +123,7 @@ def detect_bad_tick_core(prices: np.ndarray, volumes: np.ndarray, robust_sigmas:
 
     return is_bad_tick, is_tail_event
 
+
 @njit
 def detect_bad_tick_cross_venue(
     timestamps: np.ndarray,
@@ -125,7 +131,7 @@ def detect_bad_tick_cross_venue(
     ref_prices: np.ndarray,
     robust_sigmas_ref: np.ndarray,
     window_ms: int = 500,
-    eta_confirm: float = 2.0
+    eta_confirm: float = 2.0,
 ) -> np.ndarray:
     """
     [TASK A-1-3] Điều kiện 4: Kiểm tra Cross-Venue Parity.
@@ -134,7 +140,7 @@ def detect_bad_tick_cross_venue(
     """
     n = len(timestamps)
     m = len(ref_timestamps)
-    
+
     # Mặc định False: Khi mất feed hoặc thiếu dữ liệu sàn phụ, ta Fallback về việc
     # KHÔNG coi nó là Bad Tick (để bảo toàn Tail Event thật, thiên về không lọc mất data).
     condition4_satisfied = np.zeros(n, dtype=np.bool_)
@@ -175,4 +181,3 @@ def detect_bad_tick_cross_venue(
         condition4_satisfied[i] = max_move_ref < eta_confirm * sigma_ref
 
     return condition4_satisfied
-

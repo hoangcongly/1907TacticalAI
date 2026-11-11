@@ -5,13 +5,16 @@ Các test ở đây không kiểm tra "DP cho ra con số đẹp" — con số p
 đổi. Chúng khoá những thứ PHẢI đúng bất kể dữ liệu nào, và mỗi test tương ứng với một
 cách cụ thể mà module này từng sai hoặc có thể sai im lặng.
 """
+
 import numpy as np
-import pandas as pd
 import pytest
 
 from aegis.research.goal_dp import (
-    GoalSpec, constant_leverage_ceiling, dynamic_leverage_ceiling,
-    evaluate_policy, solve_goal_dp,
+    GoalSpec,
+    constant_leverage_ceiling,
+    dynamic_leverage_ceiling,
+    evaluate_policy,
+    solve_goal_dp,
 )
 
 
@@ -110,8 +113,9 @@ def test_luoi_don_bay_bo_qua_vung_khong_dat_duoc_lenh():
     spec = GoalSpec(max_leverage=5.0, min_executable_leverage=1.58)
     g = spec.leverage_grid()
     assert g[0] == 0.0, "đứng ngoài thị trường luôn là hành động hợp lệ"
-    assert not ((g > 1e-9) & (g < 1.58 - 1e-9)).any(), \
-        "không được có mức đòn bẩy dương nào dưới sàn đặt lệnh"
+    assert not (
+        (g > 1e-9) & (g < 1.58 - 1e-9)
+    ).any(), "không được có mức đòn bẩy dương nào dưới sàn đặt lệnh"
 
 
 def test_san_dat_lenh_tinh_dung():
@@ -130,7 +134,9 @@ def test_danh_sach_don_bay_rong_thi_chi_cham_dp(returns):
     """
     spec = GoalSpec(target_return=0.05, horizon_periods=12, n_wealth=161)
     pol = solve_goal_dp(returns, spec)
-    df = evaluate_policy(returns, pol, spec, constant_leverages=[], n_paths=2000, block=4)
+    df = evaluate_policy(
+        returns, pol, spec, constant_leverages=[], n_paths=2000, block=4
+    )
     assert len(df) == 1 and df.iloc[0]["policy"] == "DP mục tiêu"
 
 
@@ -138,8 +144,14 @@ def test_dp_khong_te_hon_don_bay_co_dinh_tot_nhat(returns):
     """DP tối ưu theo đúng đại lượng này, nên nó không được thua — dù chấm ngoài mẫu."""
     spec = GoalSpec(target_return=0.05, horizon_periods=24, n_wealth=201)
     pol = solve_goal_dp(returns[:2000], spec)
-    df = evaluate_policy(returns[2000:], pol, spec,
-                         constant_leverages=[1, 2, 3, 4, 5], n_paths=6000, block=5)
+    df = evaluate_policy(
+        returns[2000:],
+        pol,
+        spec,
+        constant_leverages=[1, 2, 3, 4, 5],
+        n_paths=6000,
+        block=5,
+    )
     dp = df[df["policy"] == "DP mục tiêu"]["p_target"].iloc[0]
     best_const = df[df["policy"] != "DP mục tiêu"]["p_target"].max()
     assert dp >= best_const
@@ -147,11 +159,16 @@ def test_dp_khong_te_hon_don_bay_co_dinh_tot_nhat(returns):
 
 def test_frac_flat_va_don_bay_khi_vao_nhat_quan(returns):
     """`avg_leverage` là trung bình trộn 0x với các mức dương — dễ đọc nhầm thành trạng thái."""
-    spec = GoalSpec(target_return=0.05, horizon_periods=16, n_wealth=161,
-                    min_executable_leverage=1.58)
+    spec = GoalSpec(
+        target_return=0.05,
+        horizon_periods=16,
+        n_wealth=161,
+        min_executable_leverage=1.58,
+    )
     pol = solve_goal_dp(returns, spec)
-    df = evaluate_policy(returns, pol, spec, constant_leverages=[2.0],
-                         n_paths=3000, block=4)
+    df = evaluate_policy(
+        returns, pol, spec, constant_leverages=[2.0], n_paths=3000, block=4
+    )
     dp = df.iloc[-1]
     assert 0.0 <= dp["frac_flat"] <= 1.0
     if dp["frac_flat"] < 1.0:

@@ -203,17 +203,21 @@ def clean_tick_stream(
     else:
         Q_tick_arr = np.asarray(Q_tick, dtype=np.float64)
         if Q_tick_arr.shape != (2, 2):
-            raise ValueError(f"Q_tick phai co kich thuoc (2, 2), nhan {Q_tick_arr.shape}")
+            raise ValueError(
+                f"Q_tick phai co kich thuoc (2, 2), nhan {Q_tick_arr.shape}"
+            )
 
     # Chinh dung Armor Guard Cholesky PD cho Q_tick truoc khi chay
     Q_pd = ensure_pd_matrix_2x2_numba(Q_tick_arr)
 
     # 3. Thuc thi Kalman Predict-Only Replacer boi Numba C-Engine (O(N) high performance)
-    clean_prices, level_estimates, trend_estimates = kalman_replacer_filter_series_numba(
-        prices=prices,
-        is_bad_ticks=is_bad_tick,
-        Q_tick=Q_pd,
-        R_tick=float(R_tick),
+    clean_prices, level_estimates, trend_estimates = (
+        kalman_replacer_filter_series_numba(
+            prices=prices,
+            is_bad_ticks=is_bad_tick,
+            Q_tick=Q_pd,
+            R_tick=float(R_tick),
+        )
     )
 
     return CleanedTickStreamResult(

@@ -15,6 +15,7 @@ F49 — ĐẾM SỐ LẦN CHẶN KHÔNG ĐỦ ĐỂ QUYẾT ĐỊNH. Cùng lư�
 lần so với 40 lần đuổi thành công. Nhưng chặn vì vượt trần 1,1 lần và chặn vì vượt 20
 lần đòi hai hành động khác hẳn nhau, và bản ghi cũ không phân biệt được.
 """
+
 import re
 from dataclasses import fields
 
@@ -30,7 +31,8 @@ def test_readiness_gate_khong_duoc_cat_cut_thong_diep_loi():
     assert m, "không tìm thấy dòng in lỗi treo"
     assert "[:" not in m.group(1), (
         "thông điệp lỗi bị cắt cụt — cắt giữa một con số tiền biến cảnh báo thành "
-        "một sự cố khác hẳn (xem docstring)")
+        "một sự cố khác hẳn (xem docstring)"
+    )
 
 
 def test_ban_ghi_do_duoc_MUC_vuot_tran_chu_khong_chi_so_lan():
@@ -43,15 +45,19 @@ def test_ban_ghi_do_duoc_MUC_vuot_tran_chu_khong_chi_so_lan():
 def test_router_ghi_ty_le_vuot_tran():
     src = open("src/aegis/oms/order_router.py", encoding="utf-8").read()
     assert "chase_block_ratios" in src
-    assert "drift_bps / max_chase_bps" in src, \
-        "phải ghi TỶ LỆ drift/trần, vì đó mới là đại lượng chuyển thành hành động"
+    assert (
+        "drift_bps / max_chase_bps" in src
+    ), "phải ghi TỶ LỆ drift/trần, vì đó mới là đại lượng chuyển thành hành động"
 
 
-@pytest.mark.parametrize("vals,q,want", [
-    (None, 50, 0.0),          # không có lần chặn nào -> 0, không phải lỗi
-    ([], 90, 0.0),
-    ([1.0, 2.0, 3.0, 10.0], 50, 2.5),
-    ([2.0], 90, 2.0),
-])
+@pytest.mark.parametrize(
+    "vals,q,want",
+    [
+        (None, 50, 0.0),  # không có lần chặn nào -> 0, không phải lỗi
+        ([], 90, 0.0),
+        ([1.0, 2.0, 3.0, 10.0], 50, 2.5),
+        ([2.0], 90, 2.0),
+    ],
+)
 def test_pct_chiu_duoc_rong(vals, q, want):
     assert _pct(vals, q) == pytest.approx(want)

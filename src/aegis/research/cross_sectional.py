@@ -11,7 +11,7 @@ Mọi tín hiệu đều được DỊCH MỘT NHỊP (shift) trước khi vào 
 """
 
 from dataclasses import dataclass
-from typing import Callable, Dict, Optional
+from typing import Dict, Optional
 
 import numpy as np
 import pandas as pd
@@ -23,7 +23,8 @@ BAR_HOURS = {"1h": 1, "4h": 4, "8h": 8, "1d": 24}
 @dataclass
 class BacktestResult:
     """Kết quả backtest cross-sectional."""
-    returns: pd.Series          # lợi suất ròng mỗi chu kỳ tái cân bằng
+
+    returns: pd.Series  # lợi suất ròng mỗi chu kỳ tái cân bằng
     gross_returns: pd.Series
     cost_drag: pd.Series
     funding_pnl: pd.Series
@@ -113,7 +114,9 @@ def rank_to_weights_buffered(
     Cặp nằm giữa hai ngưỡng được giữ nguyên nếu đang nắm, không mở mới nếu chưa.
     """
     if not (0 < entry_frac <= exit_frac < 0.5):
-        raise ValueError(f"Cần 0 < entry_frac <= exit_frac < 0.5, nhận {entry_frac}, {exit_frac}")
+        raise ValueError(
+            f"Cần 0 < entry_frac <= exit_frac < 0.5, nhận {entry_frac}, {exit_frac}"
+        )
 
     weights = pd.DataFrame(0.0, index=signal.index, columns=signal.columns)
     held_long: set = set()
@@ -145,10 +148,16 @@ def rank_to_weights_buffered(
         room_long = max(0, k_in - len(survivors_long))
         room_short = max(0, k_in - len(survivors_short))
 
-        cand_long = [x for x in reversed(ordered.index)
-                     if x in enter_long and x not in survivors_long and x not in survivors_short]
-        cand_short = [x for x in ordered.index
-                      if x in enter_short and x not in survivors_short and x not in survivors_long]
+        cand_long = [
+            x
+            for x in reversed(ordered.index)
+            if x in enter_long and x not in survivors_long and x not in survivors_short
+        ]
+        cand_short = [
+            x
+            for x in ordered.index
+            if x in enter_short and x not in survivors_short and x not in survivors_long
+        ]
 
         held_long = survivors_long | set(cand_long[:room_long])
         held_short = survivors_short | set(cand_short[:room_short])
@@ -204,8 +213,9 @@ def backtest_cross_sectional(
     fwd = px.shift(-1) / px - 1.0
 
     if exit_frac is not None:
-        weights = rank_to_weights_buffered(sig, entry_frac=top_frac,
-                                           exit_frac=exit_frac, neutral=neutral)
+        weights = rank_to_weights_buffered(
+            sig, entry_frac=top_frac, exit_frac=exit_frac, neutral=neutral
+        )
     else:
         weights = rank_to_weights(sig, top_frac=top_frac, neutral=neutral)
 
@@ -226,8 +236,12 @@ def backtest_cross_sectional(
     net.iloc[-1] = np.nan  # kỳ cuối chưa có lợi suất tương lai
 
     return BacktestResult(
-        returns=net, gross_returns=gross, cost_drag=cost,
-        funding_pnl=funding_pnl, turnover=turnover, weights=weights,
+        returns=net,
+        gross_returns=gross,
+        cost_drag=cost,
+        funding_pnl=funding_pnl,
+        turnover=turnover,
+        weights=weights,
     )
 
 
@@ -241,7 +255,9 @@ def xs_zscore(df: pd.DataFrame) -> pd.DataFrame:
     return df.sub(mean, axis=0).div(std, axis=0)
 
 
-def signal_momentum(close: pd.DataFrame, lookback: int = 30, skip: int = 1) -> pd.DataFrame:
+def signal_momentum(
+    close: pd.DataFrame, lookback: int = 30, skip: int = 1
+) -> pd.DataFrame:
     """Động lượng cross-sectional: lợi suất quá khứ, bỏ qua `skip` nến gần nhất."""
     return xs_zscore(close.shift(skip) / close.shift(skip + lookback) - 1.0)
 
@@ -291,7 +307,9 @@ def signal_risk_adjusted_momentum(
     return xs_zscore(mom / vol.replace(0.0, np.nan))
 
 
-def signal_long_term_reversal(close: pd.DataFrame, lookback: int = 360, skip: int = 90) -> pd.DataFrame:
+def signal_long_term_reversal(
+    close: pd.DataFrame, lookback: int = 360, skip: int = 90
+) -> pd.DataFrame:
     """
     Đảo chiều dài hạn: NGƯỢC dấu lợi suất rất dài hạn (bỏ qua đoạn gần đây).
 
@@ -352,7 +370,7 @@ def combine_inverse_vol(
     """
     df = pd.DataFrame(returns_by_signal).dropna(how="all")
     vol = df.rolling(lookback, min_periods=min_periods).std().shift(1)
-    inv = (1.0 / vol.replace(0.0, np.nan))
+    inv = 1.0 / vol.replace(0.0, np.nan)
     weights = inv.div(inv.sum(axis=1), axis=0)
     return (df * weights).sum(axis=1, min_count=1).dropna()
 
@@ -376,7 +394,9 @@ def volatility_target(
     """
     realized = returns.rolling(lookback, min_periods=min_periods).std().shift(1)
     ann = realized * np.sqrt(periods_per_year)
-    lev = (target_ann_vol / ann.replace(0.0, np.nan)).clip(upper=max_leverage).fillna(0.0)
+    lev = (
+        (target_ann_vol / ann.replace(0.0, np.nan)).clip(upper=max_leverage).fillna(0.0)
+    )
     return (returns * lev).dropna()
 
 

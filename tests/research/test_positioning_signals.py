@@ -9,13 +9,14 @@ Hai nhóm test:
     vẫn làm dịch kết quả của giai đoạn warm-up. Bất biến này là thứ giữ cho
     `artifacts/strategy_v3.json` còn tái lập được.
 """
+
 import numpy as np
 import pandas as pd
 import pytest
 
 from aegis.data.panel_v2 import METRICS_FIELDS, load_metrics_panel_v2
 from aegis.research.signal_library import SIGNAL_REGISTRY, build_signal
-from aegis.research.strategy_v3 import V3, V3_SIGNALS, StrategyV3Config
+from aegis.research.strategy_v3 import V3, V3_SIGNALS
 
 POS = [n for n, s in SIGNAL_REGISTRY.items() if s.family == "positioning"]
 
@@ -26,10 +27,14 @@ def panel():
     rng = np.random.default_rng(0)
     idx = np.arange(n, dtype=np.int64) * 14_400_000
     cols = [f"S{i}" for i in range(k)]
-    close = pd.DataFrame(100 * np.cumprod(1 + rng.normal(0, 0.01, (n, k)), 0), idx, cols)
+    close = pd.DataFrame(
+        100 * np.cumprod(1 + rng.normal(0, 0.01, (n, k)), 0), idx, cols
+    )
     return {
         "close": close,
-        "high": close * 1.01, "low": close * 0.99, "open": close,
+        "high": close * 1.01,
+        "low": close * 0.99,
+        "open": close,
         "volume": pd.DataFrame(rng.lognormal(10, 1, (n, k)), idx, cols),
         "ofi": pd.DataFrame(rng.normal(0, 0.3, (n, k)), idx, cols),
         "tick_count": pd.DataFrame(rng.integers(100, 900, (n, k)), idx, cols),
@@ -45,10 +50,18 @@ def metrics(panel):
     return {
         "sum_open_interest": oi / 100.0,
         "sum_open_interest_value": oi,
-        "count_toptrader_long_short_ratio": pd.DataFrame(rng.lognormal(0, 0.2, (n, k)), idx, cols),
-        "sum_toptrader_long_short_ratio": pd.DataFrame(rng.lognormal(0, 0.3, (n, k)), idx, cols),
-        "count_long_short_ratio": pd.DataFrame(rng.lognormal(0, 0.25, (n, k)), idx, cols),
-        "sum_taker_long_short_vol_ratio": pd.DataFrame(rng.lognormal(0, 0.15, (n, k)), idx, cols),
+        "count_toptrader_long_short_ratio": pd.DataFrame(
+            rng.lognormal(0, 0.2, (n, k)), idx, cols
+        ),
+        "sum_toptrader_long_short_ratio": pd.DataFrame(
+            rng.lognormal(0, 0.3, (n, k)), idx, cols
+        ),
+        "count_long_short_ratio": pd.DataFrame(
+            rng.lognormal(0, 0.25, (n, k)), idx, cols
+        ),
+        "sum_taker_long_short_vol_ratio": pd.DataFrame(
+            rng.lognormal(0, 0.15, (n, k)), idx, cols
+        ),
     }
 
 
@@ -69,8 +82,11 @@ def test_thieu_du_lieu_thi_tra_nan_chu_khong_crash(panel):
 
 
 def test_co_du_lieu_thi_sinh_ra_gia_tri(panel, metrics):
-    p = dict(panel); p.update(metrics)
-    fund = pd.DataFrame(0.0001, index=panel["close"].index, columns=panel["close"].columns)
+    p = dict(panel)
+    p.update(metrics)
+    fund = pd.DataFrame(
+        0.0001, index=panel["close"].index, columns=panel["close"].columns
+    )
     for n in POS:
         out = build_signal(n, p, fund)
         frac = float(out.notna().mean().mean())
@@ -82,8 +98,11 @@ def test_nhan_qua_khong_nhin_truoc(panel, metrics):
     Đổi dữ liệu SAU mốc t không được làm đổi tín hiệu TẠI t. Đây là bất biến duy nhất
     ngăn một tín hiệu trông tuyệt vời trên giấy và vô dụng khi chạy thật.
     """
-    p = dict(panel); p.update(metrics)
-    fund = pd.DataFrame(0.0001, index=panel["close"].index, columns=panel["close"].columns)
+    p = dict(panel)
+    p.update(metrics)
+    fund = pd.DataFrame(
+        0.0001, index=panel["close"].index, columns=panel["close"].columns
+    )
     cut = 400
     p2 = {k: v.copy() for k, v in p.items()}
     rng = np.random.default_rng(9)
@@ -97,8 +116,9 @@ def test_nhan_qua_khong_nhin_truoc(panel, metrics):
         m = a.notna() & b.notna()
         if m.to_numpy().sum() == 0:
             continue
-        assert np.allclose(a.to_numpy()[m.to_numpy()], b.to_numpy()[m.to_numpy()],
-                           atol=1e-9), f"{n} nhìn trước tương lai"
+        assert np.allclose(
+            a.to_numpy()[m.to_numpy()], b.to_numpy()[m.to_numpy()], atol=1e-9
+        ), f"{n} nhìn trước tương lai"
 
 
 def test_loader_thieu_thu_muc_thi_tra_khung_rong(tmp_path):
@@ -115,8 +135,12 @@ def test_loader_khong_ffill(tmp_path):
     cuối, vĩnh viễn — và tín hiệu sẽ giao dịch trên một con số đã chết.
     """
     idx = np.arange(20, dtype=np.int64) * 14_400_000
-    df = pd.DataFrame({"timestamp_ms": idx[:5],
-                       **{f: np.arange(5, dtype=float) + 1 for f in METRICS_FIELDS}})
+    df = pd.DataFrame(
+        {
+            "timestamp_ms": idx[:5],
+            **{f: np.arange(5, dtype=float) + 1 for f in METRICS_FIELDS},
+        }
+    )
     df.to_parquet(tmp_path / "AAAUSDT_4h.parquet", index=False)
     out = load_metrics_panel_v2(["AAAUSDT"], pd.Index(idx), root=str(tmp_path))
     col = out["sum_open_interest"]["AAAUSDT"]
@@ -145,6 +169,7 @@ def test_them_tin_hieu_vao_registry_khong_doi_v3():
 
 def test_cau_hinh_mo_rong_thi_dung_bo_moi():
     from dataclasses import replace
+
     ext = replace(V3, signals=tuple(V3_SIGNALS) + tuple(POS))
     assert len(ext.signal_names()) == 26 + len(POS)
     assert len(V3.signal_names()) == 26, "cấu hình mới không được lây sang V3"

@@ -47,20 +47,17 @@ def ensure_pd_matrix_2x2_numba(mat: np.ndarray, min_jitter: float = 1e-8) -> np.
 
 @njit
 def kalman_replacer_filter_series_numba(
-    prices: np.ndarray,
-    is_bad_ticks: np.ndarray,
-    Q_tick: np.ndarray,
-    R_tick: float
+    prices: np.ndarray, is_bad_ticks: np.ndarray, Q_tick: np.ndarray, R_tick: float
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     [TASK A-1-4 - OPTIMIZED NUMBA ENGINE] Thực thi Kalman Replacer trên toàn bộ mảng tick bằng C-speed Numba.
-    
+
     Tham số:
         prices: Mảng 1D giá khớp lệnh thô.
         is_bad_ticks: Mảng 1D cờ boolean đánh dấu Bad Tick (hoặc truyền toàn False nếu chỉ lọc NaN).
         Q_tick: Ma trận 2x2 hiệp phương sai nhiễu quá trình.
         R_tick: Hiệp phương sai (variance) nhiễu quan sát.
-        
+
     Trả về:
         Tuple (replaced_prices, level_estimates, trend_estimates):
         - replaced_prices: Chuỗi giá đã được thay thế (Good Tick giữ giá quan sát, Bad Tick dùng y_hat predict).
@@ -130,10 +127,10 @@ def kalman_replacer_filter_series_numba(
 
             K = (P_pred @ H.T) / S_scalar
             innovation = p_obs - y_hat_one_step
-            
+
             # Cập nhật trạng thái
             x = x_pred + K * innovation
-            
+
             # Cập nhật hiệp phương sai P = (I - K H) P_pred
             I2 = np.eye(2, dtype=np.float64)
             P = (I2 - K @ H) @ P_pred
@@ -165,12 +162,18 @@ class TickLevelKalmanReplacer:
         else:
             Q_tick = np.asarray(Q_tick, dtype=np.float64)
             if Q_tick.shape != (2, 2):
-                raise ValueError(f"Q_tick phải có kích thước (2, 2), nhận {Q_tick.shape}")
+                raise ValueError(
+                    f"Q_tick phải có kích thước (2, 2), nhận {Q_tick.shape}"
+                )
 
         # Bảo đảm Q_tick là Positive Definite ngay từ khi khởi tạo (SOP constraint)
         self.Q = ensure_pd_matrix_2x2_numba(Q_tick)
 
-        if not isinstance(R_tick, (int, float)) or math.isnan(R_tick) or math.isinf(R_tick):
+        if (
+            not isinstance(R_tick, (int, float))
+            or math.isnan(R_tick)
+            or math.isinf(R_tick)
+        ):
             raise ValueError(f"R_tick phải là con số hợp lệ, nhận {R_tick}")
         self.R = max(float(R_tick), 1e-12)
 
@@ -188,7 +191,11 @@ class TickLevelKalmanReplacer:
         Nếu is_bad_tick = True hoặc price_observed bị NaN/không hợp lệ, kích hoạt nhánh
         Predict-Only không dùng giá quan sát để duy trì động lượng.
         """
-        is_unobserved = np.isnan(price_observed) or price_observed <= 0.0 or math.isinf(price_observed)
+        is_unobserved = (
+            np.isnan(price_observed)
+            or price_observed <= 0.0
+            or math.isinf(price_observed)
+        )
         skip_update = bool(is_bad_tick) or is_unobserved
 
         if self.x is None:
@@ -225,19 +232,19 @@ class TickLevelKalmanReplacer:
             self.x = x_pred + (K.flatten().reshape(2, 1) * innovation)
             I2 = np.eye(2, dtype=np.float64)
             self.P = (I2 - K @ self.H) @ P_pred
-            self.P = ensure_pd_matrix_2x2_numba(self.P)  # Đảm bảo Cholesky decomposition
+            self.P = ensure_pd_matrix_2x2_numba(
+                self.P
+            )  # Đảm bảo Cholesky decomposition
 
             return float(price_observed)
 
     def filter_series(
-        self,
-        prices: np.ndarray,
-        is_bad_ticks: Optional[np.ndarray] = None
+        self, prices: np.ndarray, is_bad_ticks: Optional[np.ndarray] = None
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         [TASK A-1-4] Chạy xử lý hàng loạt trên mảng tick-level sử dụng Numba C-level Engine.
         Đạt tốc độ O(1) per-tick cho dữ liệu tần suất cao.
-        
+
         Trả về Tuple: (replaced_prices, level_estimates, trend_estimates)
         """
         prices_arr = np.asarray(prices, dtype=np.float64)
@@ -249,17 +256,16 @@ class TickLevelKalmanReplacer:
             bad_ticks_arr = np.asarray(is_bad_ticks, dtype=np.bool_)  # type: ignore[assignment]
 
         if len(bad_ticks_arr) != n:
-            raise ValueError("Độ dài mảng prices và is_bad_ticks phải hoàn toàn khớp nhau")
+            raise ValueError(
+                "Độ dài mảng prices và is_bad_ticks phải hoàn toàn khớp nhau"
+            )
 
         rep, lvl, trnd = kalman_replacer_filter_series_numba(
-            prices=prices_arr,
-            is_bad_ticks=bad_ticks_arr,
-            Q_tick=self.Q,
-            R_tick=self.R
+            prices=prices_arr, is_bad_ticks=bad_ticks_arr, Q_tick=self.Q, R_tick=self.R
         )
-        
+
         # Cập nhật trạng thái cuối vào object để có thể step tiếp seamless
         if n > 0 and not np.isnan(lvl[-1]):
             self.x = np.array([[lvl[-1]], [trnd[-1]]], dtype=np.float64)
-            
+
         return rep, lvl, trnd

@@ -16,11 +16,9 @@ import numpy as np
 import pandas as pd
 
 from aegis.features.feature_spec import (
-    CANDIDATE_FEATURES,
     DERIVED_BY_NAME,
     DERIVED_FEATURES,
     MAX_LOOKBACK,
-    PASSTHROUGH_FEATURES,
     REQUIRED_INPUTS,
     FeatureSpec,
     Window,
@@ -40,7 +38,7 @@ def _window_from_frame(df: pd.DataFrame, end_idx: int, lookback: int) -> Window:
     """Cắt cửa sổ [end_idx-lookback+1 .. end_idx] (đã kẹp biên trái)."""
     start = max(0, end_idx - lookback + 1)
     return {
-        col: df[col].to_numpy()[start:end_idx + 1]
+        col: df[col].to_numpy()[start : end_idx + 1]
         for col in REQUIRED_INPUTS
         if col in df.columns
     }

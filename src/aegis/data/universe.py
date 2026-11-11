@@ -35,7 +35,8 @@ DATA_ROOT = "data/binance"
 @dataclass
 class UniverseFilter:
     """Tiêu chí lọc universe."""
-    min_history_bars: int = 120       # > lookback dài nhất (momentum_90 = 90)
+
+    min_history_bars: int = 120  # > lookback dài nhất (momentum_90 = 90)
     min_quote_volume_24h: float = 5e6  # USD
     require_tradeable_on: Optional[Set[str]] = None  # tập cặp của sàn thực thi
     #: [FIX F40] Notional tối đa mà MỘT vị thế được phép cần. Cặp có min notional của
@@ -53,16 +54,19 @@ class UniverseFilter:
     max_min_notional: Optional[float] = None
 
     def describe(self) -> str:
-        return (f"lịch sử >= {self.min_history_bars} nến, "
-                f"khối lượng 24h >= ${self.min_quote_volume_24h/1e6:.0f}M"
-                + (", có trên sàn thực thi" if self.require_tradeable_on else ""))
+        return (
+            f"lịch sử >= {self.min_history_bars} nến, "
+            f"khối lượng 24h >= ${self.min_quote_volume_24h/1e6:.0f}M"
+            + (", có trên sàn thực thi" if self.require_tradeable_on else "")
+        )
 
 
 def tradeable_symbols(client) -> Set[str]:
     """Tập perp USDT đang giao dịch được trên sàn mà client đang trỏ tới."""
     info = client.exchange_info()
     return {
-        s["symbol"] for s in info.get("symbols", [])
+        s["symbol"]
+        for s in info.get("symbols", [])
         if s.get("status") == "TRADING"
         and s.get("quoteAsset") == "USDT"
         and s.get("contractType") == "PERPETUAL"
@@ -76,12 +80,17 @@ def liquid_symbols(client, min_quote_volume_24h: float) -> Set[str]:
     except Exception as exc:
         logger.warning("Không lấy được ticker 24h (%s) — bỏ qua lọc thanh khoản", exc)
         return set()
-    return {t["symbol"] for t in tickers
-            if float(t.get("quoteVolume", 0) or 0) >= min_quote_volume_24h}
+    return {
+        t["symbol"]
+        for t in tickers
+        if float(t.get("quoteVolume", 0) or 0) >= min_quote_volume_24h
+    }
 
 
 def history_lengths(
-    symbols: List[str], interval: str, root: str = DATA_ROOT,
+    symbols: List[str],
+    interval: str,
+    root: str = DATA_ROOT,
     source_interval: Optional[str] = "1h",
 ) -> Dict[str, int]:
     """
@@ -114,7 +123,7 @@ def history_lengths(
         else:
             ratio = INTERVAL_MS[interval] // INTERVAL_MS[source_interval]
             if ratio < 1:
-                source_interval = None      # nguồn thô hơn đích -> không tổng hợp được
+                source_interval = None  # nguồn thô hơn đích -> không tổng hợp được
 
     for symbol in symbols:
         n = 0
@@ -132,13 +141,21 @@ def history_lengths(
                     n = len(pd.read_parquet(direct, columns=["timestamp_ms"]))
                 except Exception:
                     n = 0
-        if n or (root_p / f"{symbol}_{interval}.parquet").is_file() \
-                or (source_interval and (root_p / f"{symbol}_{source_interval}.parquet").is_file()):
+        if (
+            n
+            or (root_p / f"{symbol}_{interval}.parquet").is_file()
+            or (
+                source_interval
+                and (root_p / f"{symbol}_{source_interval}.parquet").is_file()
+            )
+        ):
             out[symbol] = n
     return out
 
 
-def symbol_min_notionals(client, symbols: Optional[Set[str]] = None) -> Dict[str, float]:
+def symbol_min_notionals(
+    client, symbols: Optional[Set[str]] = None
+) -> Dict[str, float]:
     """Notional tối thiểu của từng cặp, đọc MỘT LẦN từ `exchangeInfo`."""
     out: Dict[str, float] = {}
     for s in client.exchange_info().get("symbols", []):
@@ -182,7 +199,9 @@ def build_universe(
         if liquid:
             for s in list(keep):
                 if s not in liquid:
-                    rejected[s] = f"khối lượng 24h < ${filt.min_quote_volume_24h/1e6:.0f}M"
+                    rejected[s] = (
+                        f"khối lượng 24h < ${filt.min_quote_volume_24h/1e6:.0f}M"
+                    )
                     keep.remove(s)
 
     # [FIX F40] Loại cặp mà vốn KHÔNG mua nổi — trước khi xếp hạng, không phải khi đặt lệnh.
@@ -195,8 +214,10 @@ def build_universe(
         for s in list(keep):
             need = mins.get(s)
             if need is not None and need > filt.max_min_notional:
-                rejected[s] = (f"min notional ${need:.0f} > ${filt.max_min_notional:.2f} "
-                               f"vốn cho phép mỗi vị thế")
+                rejected[s] = (
+                    f"min notional ${need:.0f} > ${filt.max_min_notional:.2f} "
+                    f"vốn cho phép mỗi vị thế"
+                )
                 keep.remove(s)
 
     lengths = history_lengths(keep, interval, root, source_interval=source_interval)

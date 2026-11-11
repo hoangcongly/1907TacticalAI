@@ -11,7 +11,9 @@ import pandas as pd
 import numpy as np
 
 
-def compute_num_concurrent_events(t1: pd.Series, bar_index: pd.Series = None) -> pd.Series:
+def compute_num_concurrent_events(
+    t1: pd.Series, bar_index: pd.Series = None
+) -> pd.Series:
     """
     Tính số lượng sự kiện (trades) đang diễn ra (active) tại mỗi thời điểm t.
     Ký hiệu: c_t
@@ -31,7 +33,11 @@ def compute_num_concurrent_events(t1: pd.Series, bar_index: pd.Series = None) ->
     t1_valid = t1.dropna()
 
     if bar_index is None:
-        bar_index = t1_valid.index.append(pd.Index(t1_valid.values)).drop_duplicates().sort_values()
+        bar_index = (
+            t1_valid.index.append(pd.Index(t1_valid.values))
+            .drop_duplicates()
+            .sort_values()
+        )
 
     if not bar_index.is_monotonic_increasing:
         raise ValueError("bar_index phải tăng nghiêm ngặt (monotonic increasing).")
@@ -41,9 +47,9 @@ def compute_num_concurrent_events(t1: pd.Series, bar_index: pd.Series = None) ->
 
     for t0, t_end in t1_valid.items():
         # Tìm vị trí bắt đầu: bar đầu tiên >= t0
-        start_loc = bar_index.searchsorted(t0, side='left')
+        start_loc = bar_index.searchsorted(t0, side="left")
         # Tìm vị trí kết thúc: bar đầu tiên > t_end (tức là ngay SAU t_end)
-        end_loc = bar_index.searchsorted(t_end, side='right')
+        end_loc = bar_index.searchsorted(t_end, side="right")
 
         if start_loc < n_bars:
             delta[start_loc] += 1
@@ -91,7 +97,9 @@ def compute_average_uniqueness(t1: pd.Series, c_t: pd.Series) -> pd.Series:
     return out
 
 
-def compute_sample_weights(t1: pd.Series, c_t: pd.Series, returns: pd.Series) -> pd.Series:
+def compute_sample_weights(
+    t1: pd.Series, c_t: pd.Series, returns: pd.Series
+) -> pd.Series:
     """
     Tính Sample Weights dựa trên Uniqueness và Absolute Returns.
     w_i = |R_i| * \\bar{u}_i

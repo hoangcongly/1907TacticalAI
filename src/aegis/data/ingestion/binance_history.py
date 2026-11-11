@@ -24,20 +24,41 @@ DEFAULT_DATA_ROOT = "data/binance"
 
 # Cột thô Binance trả về cho mỗi nến.
 _KLINE_COLUMNS = [
-    "open_time", "open", "high", "low", "close", "volume", "close_time",
-    "quote_volume", "tick_count", "taker_buy_base", "taker_buy_quote", "ignore",
+    "open_time",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "close_time",
+    "quote_volume",
+    "tick_count",
+    "taker_buy_base",
+    "taker_buy_quote",
+    "ignore",
 ]
 
 _INTERVAL_MS = {
-    "1m": 60_000, "3m": 180_000, "5m": 300_000, "15m": 900_000, "30m": 1_800_000,
-    "1h": 3_600_000, "2h": 7_200_000, "4h": 14_400_000, "6h": 21_600_000,
-    "8h": 28_800_000, "12h": 43_200_000, "1d": 86_400_000,
+    "1m": 60_000,
+    "3m": 180_000,
+    "5m": 300_000,
+    "15m": 900_000,
+    "30m": 1_800_000,
+    "1h": 3_600_000,
+    "2h": 7_200_000,
+    "4h": 14_400_000,
+    "6h": 21_600_000,
+    "8h": 28_800_000,
+    "12h": 43_200_000,
+    "1d": 86_400_000,
 }
 
 
 def interval_to_ms(interval: str) -> int:
     if interval not in _INTERVAL_MS:
-        raise ValueError(f"Khung thời gian không hỗ trợ: {interval}. Có: {list(_INTERVAL_MS)}")
+        raise ValueError(
+            f"Khung thời gian không hỗ trợ: {interval}. Có: {list(_INTERVAL_MS)}"
+        )
     return _INTERVAL_MS[interval]
 
 
@@ -49,23 +70,43 @@ def klines_to_frame(rows: List[list]) -> pd.DataFrame:
     lượng vi cấu trúc thật sự có giá trị dự báo ở quy mô nhỏ.
     """
     if not rows:
-        return pd.DataFrame(columns=["timestamp_ms", "open", "high", "low", "close",
-                                     "volume", "tick_count", "ofi"])
+        return pd.DataFrame(
+            columns=[
+                "timestamp_ms",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "tick_count",
+                "ofi",
+            ]
+        )
 
     df = pd.DataFrame(rows, columns=_KLINE_COLUMNS)
-    numeric = ["open", "high", "low", "close", "volume", "quote_volume",
-               "taker_buy_base", "taker_buy_quote"]
+    numeric = [
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "quote_volume",
+        "taker_buy_base",
+        "taker_buy_quote",
+    ]
     df[numeric] = df[numeric].astype(np.float64)
 
-    out = pd.DataFrame({
-        "timestamp_ms": df["open_time"].astype(np.int64),
-        "open": df["open"],
-        "high": df["high"],
-        "low": df["low"],
-        "close": df["close"],
-        "volume": df["volume"],
-        "tick_count": df["tick_count"].astype(np.int64),
-    })
+    out = pd.DataFrame(
+        {
+            "timestamp_ms": df["open_time"].astype(np.int64),
+            "open": df["open"],
+            "high": df["high"],
+            "low": df["low"],
+            "close": df["close"],
+            "volume": df["volume"],
+            "tick_count": df["tick_count"].astype(np.int64),
+        }
+    )
 
     # OFI = (mua chủ động - bán chủ động) / tổng khối lượng, kẹp về [-1, 1].
     taker_buy = df["taker_buy_base"].to_numpy()
@@ -100,7 +141,9 @@ def download_klines(
     n_requests = 0
 
     while cursor < end:
-        rows = client.klines(symbol, interval=interval, start_ms=cursor, end_ms=end, limit=1500)
+        rows = client.klines(
+            symbol, interval=interval, start_ms=cursor, end_ms=end, limit=1500
+        )
         n_requests += 1
         if not rows:
             break
@@ -123,7 +166,9 @@ def download_klines(
     df = df.drop_duplicates(subset="timestamp_ms", keep="last")
     df = df.sort_values("timestamp_ms").reset_index(drop=True)
 
-    logger.info("Tải %d nến %s %s qua %d request", len(df), symbol, interval, n_requests)
+    logger.info(
+        "Tải %d nến %s %s qua %d request", len(df), symbol, interval, n_requests
+    )
     return df
 
 
@@ -146,7 +191,9 @@ def download_funding_rates(
     rates: Dict[int, float] = {}
     cursor = start
     while cursor < end:
-        rows = client.funding_rate_history(symbol, start_ms=cursor, end_ms=end, limit=1000)
+        rows = client.funding_rate_history(
+            symbol, start_ms=cursor, end_ms=end, limit=1000
+        )
         if not rows:
             break
         for row in rows:
@@ -165,7 +212,9 @@ def download_funding_rates(
 # ============================================================================
 # Lưu trữ parquet
 # ============================================================================
-def _parquet_path(symbol: str, interval: str, root: str = DEFAULT_DATA_ROOT) -> pathlib.Path:
+def _parquet_path(
+    symbol: str, interval: str, root: str = DEFAULT_DATA_ROOT
+) -> pathlib.Path:
     return pathlib.Path(root) / f"{symbol.upper()}_{interval}.parquet"
 
 

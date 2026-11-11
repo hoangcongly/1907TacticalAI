@@ -1,6 +1,7 @@
 import numpy as np
 from aegis.features.regime.ghe import compute_ghe
 
+
 def test_ghe_distinguishes_random_walk_and_trend():
     """
     Kiểm chứng GHE (Generalized Hurst Exponent) phân biệt được:
@@ -9,21 +10,22 @@ def test_ghe_distinguishes_random_walk_and_trend():
     """
     np.random.seed(42)
     n = 2000
-    
+
     # 1. Random Walk
     rw = np.cumsum(np.random.randn(n))
     h_rw = compute_ghe(rw, max_lag=20)
-    
+
     # H của Random Walk thường dao động từ 0.45 đến 0.55
     assert 0.40 < h_rw < 0.60, f"H của Random Walk phải gần 0.5, hiện tại: {h_rw}"
-    
+
     # 2. Trending Series (rất mượt)
     # y = t + noise nhẹ
     trend = np.arange(n) + np.random.randn(n) * 2.0
     h_trend = compute_ghe(trend, max_lag=20)
-    
+
     # H của Trending thường > 0.8
     assert h_trend > 0.60, f"H của Trending Series phải cao (>0.6), hiện tại: {h_trend}"
+
 
 def test_ghe_nan_handling():
     """
@@ -39,6 +41,7 @@ def test_ghe_nan_handling():
 
     # Sau fix: NaN trong prices phải raise ValueError rõ ràng thay vì trả về H sai
     import pytest
+
     with pytest.raises(ValueError, match="prices chứa NaN"):
         compute_ghe(rw_nan, max_lag=10)
 
@@ -54,6 +57,7 @@ def test_ghe_inf_handling():
     Inf tạo ra H=NaN silent, không crash, không có cảnh báo.
     """
     import pytest
+
     np.random.seed(42)
     rw = np.cumsum(np.random.randn(200))
     rw_inf = rw.copy()

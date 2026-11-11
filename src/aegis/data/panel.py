@@ -36,14 +36,20 @@ def load_panel(
         path = pathlib.Path(root) / f"{symbol}_{interval}.parquet"
         if not path.is_file():
             continue
-        df = pd.read_parquet(path).drop_duplicates("timestamp_ms").set_index("timestamp_ms")
+        df = (
+            pd.read_parquet(path)
+            .drop_duplicates("timestamp_ms")
+            .set_index("timestamp_ms")
+        )
         for field in fields:
             if field in df.columns:
                 frames[field][symbol] = df[field].astype(np.float64)
 
     panel = {f: pd.DataFrame(cols).sort_index() for f, cols in frames.items() if cols}
     if not panel or "close" not in panel:
-        raise RuntimeError("Không nạp được panel — chưa tải dữ liệu? Chạy scripts/download_universe.py")
+        raise RuntimeError(
+            "Không nạp được panel — chưa tải dữ liệu? Chạy scripts/download_universe.py"
+        )
 
     # Loại cặp thiếu dữ liệu quá nhiều (chống survivorship + chống NaN lan)
     coverage = panel["close"].notna().mean()
@@ -67,9 +73,15 @@ def load_funding_panel(
         path = pathlib.Path(root) / f"{symbol}_funding.parquet"
         if not path.is_file():
             continue
-        df = pd.read_parquet(path).drop_duplicates("funding_time").sort_values("funding_time")
+        df = (
+            pd.read_parquet(path)
+            .drop_duplicates("funding_time")
+            .sort_values("funding_time")
+        )
         s = pd.Series(df["rate"].to_numpy(), index=df["funding_time"].to_numpy())
-        series[symbol] = s.reindex(s.index.union(close_index)).ffill().reindex(close_index)
+        series[symbol] = (
+            s.reindex(s.index.union(close_index)).ffill().reindex(close_index)
+        )
 
     return pd.DataFrame(series).reindex(columns=[c for c in series])
 

@@ -21,7 +21,6 @@ import logging
 import os
 import pathlib
 from contextlib import contextmanager
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +51,8 @@ def acquire_lock(path: str = DEFAULT_LOCK):
         handle.close()
         if exc.errno in (errno.EACCES, errno.EAGAIN):
             raise ProcessLockBusy(
-                f"Tiến trình khác đang giữ khoá {path} (pid {holder})") from exc
+                f"Tiến trình khác đang giữ khoá {path} (pid {holder})"
+            ) from exc
         raise
 
     handle.seek(0)

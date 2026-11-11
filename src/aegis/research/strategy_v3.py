@@ -23,21 +23,34 @@ không có tham số nào đảo ngược được nó.
 """
 
 from dataclasses import dataclass, field, asdict
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 import numpy as np
 import pandas as pd
 
 from aegis.research.adaptive_combiner import CombinerSpec, combine_adaptive
 from aegis.research.backtest_v2 import (
-    BacktestV2Result, CostModel, estimate_cost_bps, simulate,
+    BacktestV2Result,
+    CostModel,
+    estimate_cost_bps,
+    simulate,
     simulate_marked_to_market,
 )
-from aegis.research.signal_library import SIGNAL_REGISTRY, build_signal
+from aegis.research.signal_library import build_signal
 from aegis.risk.portfolio import PortfolioSpec, build_weights
 
-__all__ = ["StrategyV3Config", "V3", "V3_SIGNALS", "V3_VINTAGE_MS", "V3Data", "load_v3_data",
-           "combined_signal", "run_v3", "run_v3_fine", "split_train_holdout"]
+__all__ = [
+    "StrategyV3Config",
+    "V3",
+    "V3_SIGNALS",
+    "V3_VINTAGE_MS",
+    "V3Data",
+    "load_v3_data",
+    "combined_signal",
+    "run_v3",
+    "run_v3_fine",
+    "split_train_holdout",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -67,14 +80,14 @@ class StrategyV3Config:
     universe_file: str = "artifacts/universe_wide.json"
     interval: str = "4h"
     source_interval: str = "1h"
-    rebalance_every: int = 18        # 18 nến 4h = 72h giữa hai lần tái cân bằng
-    n_positions: int = 12            # 6 long + 6 short — RÀNG BUỘC CỨNG, không phải top_frac
-    top_frac: float = 0.10           # dùng cho tầng gộp (lợi suất nhân tố), không phải sizing
-    maker_ratio: float = 0.50        # giả định BI QUAN; testnet đo 0.378, mục tiêu 0.85
+    rebalance_every: int = 18  # 18 nến 4h = 72h giữa hai lần tái cân bằng
+    n_positions: int = 12  # 6 long + 6 short — RÀNG BUỘC CỨNG, không phải top_frac
+    top_frac: float = 0.10  # dùng cho tầng gộp (lợi suất nhân tố), không phải sizing
+    maker_ratio: float = 0.50  # giả định BI QUAN; testnet đo 0.378, mục tiêu 0.85
     min_coverage: float = 0.15
-    capital_usd: float = 38.0        # 1.000.000 VND
+    capital_usd: float = 38.0  # 1.000.000 VND
     min_notional_usd: float = 5.0
-    gross_leverage: float = 2.0      # đòn bẩy gộp đang chạy trên testnet
+    gross_leverage: float = 2.0  # đòn bẩy gộp đang chạy trên testnet
     #: Đòn bẩy dùng khi ƯỚC LƯỢNG chi phí trượt giá. KHÁC `gross_leverage` một cách
     #: có chủ ý: `validate_v3.py` ước lượng ở 3x ($9.50/lệnh) trong khi hệ thống chạy
     #: 2x ($6.33/lệnh). Giữ 3.0 ở đây để tái lập được con số đã ghi; chênh lệch thật
@@ -83,17 +96,30 @@ class StrategyV3Config:
     cost_notional_leverage: float = 3.0
     num_trials_declared: int = 250
 
-    combiner: CombinerSpec = field(default_factory=lambda: CombinerSpec(
-        lookback=500, min_periods=120, t_threshold=2.0,
-        max_abs_weight=0.20, max_step=0.05))
-    portfolio: PortfolioSpec = field(default_factory=lambda: PortfolioSpec(
-        mode="zscore_riskparity", n_positions=12, max_weight=0.20,
-        beta_neutral=False, vol_window=60))
+    combiner: CombinerSpec = field(
+        default_factory=lambda: CombinerSpec(
+            lookback=500,
+            min_periods=120,
+            t_threshold=2.0,
+            max_abs_weight=0.20,
+            max_step=0.05,
+        )
+    )
+    portfolio: PortfolioSpec = field(
+        default_factory=lambda: PortfolioSpec(
+            mode="zscore_riskparity",
+            n_positions=12,
+            max_weight=0.20,
+            beta_neutral=False,
+            vol_window=60,
+        )
+    )
 
     # -- đại lượng dẫn xuất, không phải tham số tự do ------------------------
     @property
     def bar_hours(self) -> float:
         from aegis.data.panel_v2 import interval_hours
+
         return interval_hours(self.interval)
 
     @property
@@ -131,20 +157,42 @@ class StrategyV3Config:
 
     def to_dict(self) -> Dict:
         d = asdict(self)
-        d.update(period_hours=self.period_hours,
-                 periods_per_year=self.periods_per_year,
-                 periods_per_week=self.periods_per_week)
+        d.update(
+            period_hours=self.period_hours,
+            periods_per_year=self.periods_per_year,
+            periods_per_week=self.periods_per_week,
+        )
         return d
 
 
 #: 26 tín hiệu của bản đã kiểm định holdout. ĐỪNG THÊM BỚT — xem `StrategyV3Config.signals`.
 V3_SIGNALS: tuple = (
-    "carry_level", "carry_level_slow", "carry_zscore", "carry_momentum", "carry_vol",
-    "mom_fast", "mom_mid", "mom_slow", "mom_vlong", "mom_risk_adj", "mom_consistency",
+    "carry_level",
+    "carry_level_slow",
+    "carry_zscore",
+    "carry_momentum",
+    "carry_vol",
+    "mom_fast",
+    "mom_mid",
+    "mom_slow",
+    "mom_vlong",
+    "mom_risk_adj",
+    "mom_consistency",
     "mom_52w_high",
-    "ofi_fast", "ofi_mid", "ofi_slow", "ofi_persistence", "volume_shock", "amihud_illiq",
-    "low_idio_vol", "neg_skew", "low_max_ret", "vol_of_vol", "downside_beta",
-    "close_location", "range_compression", "trade_intensity",
+    "ofi_fast",
+    "ofi_mid",
+    "ofi_slow",
+    "ofi_persistence",
+    "volume_shock",
+    "amihud_illiq",
+    "low_idio_vol",
+    "neg_skew",
+    "low_max_ret",
+    "vol_of_vol",
+    "downside_beta",
+    "close_location",
+    "range_compression",
+    "trade_intensity",
 )
 
 #: Cấu hình đang chạy. ĐỪNG SỬA — xem docstring của `StrategyV3Config`.
@@ -164,7 +212,7 @@ V3 = StrategyV3Config()
 #: Hệ quả thứ hai, tinh vi hơn: rổ được lọc bằng dữ liệu tới HÔM NAY rồi áp ngược cho
 #: quá khứ. Một cặp có mặt trong backtest 2021 vì hôm nay nó đủ phủ — đó là một dạng
 #: thiên vị sống sót nhẹ. Ghim mốc không xoá được nó, nhưng làm nó ĐỨNG YÊN và đo được.
-V3_VINTAGE_MS = 1789012800000   # 2026-09-10 04:00:00 UTC — mốc cho holdout đúng 219 kỳ
+V3_VINTAGE_MS = 1789012800000  # 2026-09-10 04:00:00 UTC — mốc cho holdout đúng 219 kỳ
 
 
 # ---------------------------------------------------------------------------
@@ -191,8 +239,12 @@ class V3Data:
         return self.panel["close"].index
 
 
-def load_v3_data(cfg: StrategyV3Config = V3, verbose: bool = True,
-                 end_ms: Optional[int] = None, with_metrics: bool = False) -> V3Data:
+def load_v3_data(
+    cfg: StrategyV3Config = V3,
+    verbose: bool = True,
+    end_ms: Optional[int] = None,
+    with_metrics: bool = False,
+) -> V3Data:
     """
     Nạp panel, funding và dựng toàn bộ tín hiệu TRÊN TOÀN CHUỖI.
 
@@ -210,9 +262,17 @@ def load_v3_data(cfg: StrategyV3Config = V3, verbose: bool = True,
 
     syms = json.load(open(cfg.universe_file))
     if verbose:
-        print(f"nạp panel: {len(syms)} cặp, {cfg.interval} (từ {cfg.source_interval})...", flush=True)
-    panel = load_panel_v2(syms, cfg.interval, source_interval=cfg.source_interval,
-                          min_coverage=cfg.min_coverage, end_ms=end_ms)
+        print(
+            f"nạp panel: {len(syms)} cặp, {cfg.interval} (từ {cfg.source_interval})...",
+            flush=True,
+        )
+    panel = load_panel_v2(
+        syms,
+        cfg.interval,
+        source_interval=cfg.source_interval,
+        min_coverage=cfg.min_coverage,
+        end_ms=end_ms,
+    )
     funding = load_funding_panel_v2(syms, panel["close"].index)
     panel, funding = align_panel(panel, funding)
 
@@ -221,27 +281,41 @@ def load_v3_data(cfg: StrategyV3Config = V3, verbose: bool = True,
         # `scripts/download_metrics.py`. Thêm vào panel chứ không thay gì cả, nên
         # mọi tín hiệu cũ tính ra y hệt.
         from aegis.data.panel_v2 import load_metrics_panel_v2
-        met = load_metrics_panel_v2(list(panel["close"].columns), panel["close"].index,
-                                    interval=cfg.interval)
+
+        met = load_metrics_panel_v2(
+            list(panel["close"].columns), panel["close"].index, interval=cfg.interval
+        )
         n_cov = int(met["sum_open_interest_value"].notna().any().sum()) if met else 0
         panel.update(met)
         if verbose:
-            print(f"nạp dữ liệu vị thế: {n_cov}/{panel['close'].shape[1]} cặp có metrics",
-                  flush=True)
+            print(
+                f"nạp dữ liệu vị thế: {n_cov}/{panel['close'].shape[1]} cặp có metrics",
+                flush=True,
+            )
 
     names = cfg.signal_names()
     if verbose:
-        print(f"dựng {len(names)} tín hiệu trên {panel['close'].shape[1]} cặp...", flush=True)
+        print(
+            f"dựng {len(names)} tín hiệu trên {panel['close'].shape[1]} cặp...",
+            flush=True,
+        )
     signals = {n: build_signal(n, panel, funding) for n in names}
 
     per_sym = estimate_cost_bps(
-        panel, notional_usd=cfg.notional_per_order(cfg.cost_notional_leverage),
-        bars_per_day=6)
+        panel,
+        notional_usd=cfg.notional_per_order(cfg.cost_notional_leverage),
+        bars_per_day=6,
+    )
 
     split_ts = json.load(open("artifacts/holdout_split.json"))["split_ts"]
-    return V3Data(panel=panel, funding=funding, signals=signals,
-                  per_symbol_bps=per_sym, split_ts=int(split_ts),
-                  data_end_ms=int(panel["close"].index[-1]))
+    return V3Data(
+        panel=panel,
+        funding=funding,
+        signals=signals,
+        per_symbol_bps=per_sym,
+        split_ts=int(split_ts),
+        data_end_ms=int(panel["close"].index[-1]),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -258,7 +332,7 @@ def combined_signal(data: V3Data, cfg: StrategyV3Config = V3) -> pd.DataFrame:
     Tách ra để một nghiên cứu quét 10 cấu hình danh mục trả giá tầng gộp ĐÚNG MỘT LẦN
     thay vì 10 lần. Đo được: quét 7 giá trị `n_positions` giảm từ 112s xuống ~20s.
     """
-    marks = data.close.index[::cfg.rebalance_every]
+    marks = data.close.index[:: cfg.rebalance_every]
 
     # [FIX F39] LỌC theo cấu hình, KHÔNG dùng cả `data.signals`.
     #
@@ -273,10 +347,12 @@ def combined_signal(data: V3Data, cfg: StrategyV3Config = V3) -> pd.DataFrame:
     if missing:
         raise KeyError(
             f"V3Data thiếu {len(missing)} tín hiệu mà cấu hình yêu cầu: {missing[:5]}. "
-            f"Nạp lại bằng `load_v3_data(cfg)` với ĐÚNG cấu hình này.")
+            f"Nạp lại bằng `load_v3_data(cfg)` với ĐÚNG cấu hình này."
+        )
     sigs = {n: data.signals[n].reindex(marks) for n in names}
-    return combine_adaptive(sigs, data.close.reindex(marks), cfg.combiner,
-                            top_frac=cfg.top_frac)
+    return combine_adaptive(
+        sigs, data.close.reindex(marks), cfg.combiner, top_frac=cfg.top_frac
+    )
 
 
 def run_v3(
@@ -301,7 +377,7 @@ def run_v3(
     maker_ratio = cfg.maker_ratio if maker_ratio is None else maker_ratio
     close_full = data.close
 
-    marks = close_full.index[::cfg.rebalance_every]
+    marks = close_full.index[:: cfg.rebalance_every]
     close = close_full.reindex(marks)
 
     # `sig` truyền vào để tái dùng giữa nhiều cấu hình danh mục — xem `combined_signal`.
@@ -311,20 +387,39 @@ def run_v3(
     spec = portfolio if portfolio is not None else cfg.portfolio
     if n_positions is not None and n_positions != spec.n_positions:
         from dataclasses import replace
+
         spec = replace(spec, n_positions=n_positions)
     W = build_weights(sig, close, spec)
 
-    cost = CostModel(maker_ratio=maker_ratio, half_spread_bps=0.0,
-                     per_symbol_bps=data.per_symbol_bps * (1 - maker_ratio), min_bps=0.5)
-    res = simulate(W, close, data.funding.reindex(marks), cost,
-                   bar_hours=cfg.bar_hours * cfg.rebalance_every, rebalance_every=1)
+    cost = CostModel(
+        maker_ratio=maker_ratio,
+        half_spread_bps=0.0,
+        per_symbol_bps=data.per_symbol_bps * (1 - maker_ratio),
+        min_bps=0.5,
+    )
+    res = simulate(
+        W,
+        close,
+        data.funding.reindex(marks),
+        cost,
+        bar_hours=cfg.bar_hours * cfg.rebalance_every,
+        rebalance_every=1,
+    )
 
     if mask is None:
         return res
 
     keep = np.isin(res.returns.index, close_full.index[mask])
-    for fld in ("returns", "gross_returns", "cost_drag", "funding_pnl",
-                "turnover", "n_positions", "net_exposure", "gross_exposure"):
+    for fld in (
+        "returns",
+        "gross_returns",
+        "cost_drag",
+        "funding_pnl",
+        "turnover",
+        "n_positions",
+        "net_exposure",
+        "gross_exposure",
+    ):
         setattr(res, fld, getattr(res, fld)[keep])
     return res
 
@@ -332,8 +427,10 @@ def run_v3(
 def split_train_holdout(data: V3Data, cfg: StrategyV3Config = V3, **kw):
     """Trả về `(res_train, res_holdout)` theo mốc chia đã chốt trong `holdout_split.json`."""
     idx = data.index
-    return (run_v3(data, cfg, mask=idx < data.split_ts, **kw),
-            run_v3(data, cfg, mask=idx >= data.split_ts, **kw))
+    return (
+        run_v3(data, cfg, mask=idx < data.split_ts, **kw),
+        run_v3(data, cfg, mask=idx >= data.split_ts, **kw),
+    )
 
 
 def run_v3_fine(
@@ -355,20 +452,35 @@ def run_v3_fine(
     maker_ratio = cfg.maker_ratio if maker_ratio is None else maker_ratio
     close_full = data.close
 
-    marks = close_full.index[::cfg.rebalance_every]
+    marks = close_full.index[:: cfg.rebalance_every]
     sigs = {k: v.reindex(marks) for k, v in data.signals.items()}
-    sig = combine_adaptive(sigs, close_full.reindex(marks), cfg.combiner, top_frac=cfg.top_frac)
+    sig = combine_adaptive(
+        sigs, close_full.reindex(marks), cfg.combiner, top_frac=cfg.top_frac
+    )
     W = build_weights(sig, close_full.reindex(marks), cfg.portfolio)
 
-    cost = CostModel(maker_ratio=maker_ratio, half_spread_bps=0.0,
-                     per_symbol_bps=data.per_symbol_bps * (1 - maker_ratio), min_bps=0.5)
-    res = simulate_marked_to_market(W, close_full, data.funding, cost,
-                                    bar_hours=cfg.bar_hours)
+    cost = CostModel(
+        maker_ratio=maker_ratio,
+        half_spread_bps=0.0,
+        per_symbol_bps=data.per_symbol_bps * (1 - maker_ratio),
+        min_bps=0.5,
+    )
+    res = simulate_marked_to_market(
+        W, close_full, data.funding, cost, bar_hours=cfg.bar_hours
+    )
 
     if mask is None:
         return res
     keep = np.isin(res.returns.index, close_full.index[mask])
-    for fld in ("returns", "gross_returns", "cost_drag", "funding_pnl",
-                "turnover", "n_positions", "net_exposure", "gross_exposure"):
+    for fld in (
+        "returns",
+        "gross_returns",
+        "cost_drag",
+        "funding_pnl",
+        "turnover",
+        "n_positions",
+        "net_exposure",
+        "gross_exposure",
+    ):
         setattr(res, fld, getattr(res, fld)[keep])
     return res

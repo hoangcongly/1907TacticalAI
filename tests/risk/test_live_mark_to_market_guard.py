@@ -5,6 +5,7 @@ F7: Circuit Breaker trước đây chỉ nhìn wallet_balance (tiền mặt ĐÃ
     vị thế đang mở có thể lỗ sạch tài khoản mà vẫn báo NORMAL.
 F12: Lệnh dừng trước đây khớp đúng bằng sl_current (không trượt giá).
 """
+
 import json
 import numpy as np
 import pytest
@@ -72,7 +73,9 @@ def test_unrealized_pnl_is_marked_to_market_on_open_position():
         pipe.on_bar(_bar(idx, price))
         idx += 1
 
-    assert pipe.current_position is not None, "Cần có vị thế mở để kiểm tra mark-to-market"
+    assert (
+        pipe.current_position is not None
+    ), "Cần có vị thế mở để kiểm tra mark-to-market"
     pos = pipe.current_position
     entry = pos.entry_price
 
@@ -119,9 +122,9 @@ def test_circuit_breaker_sees_open_position_drawdown():
     state = pipe.circuit_breaker.update_equity(
         pipe.account_tracker.margin_balance, current_time_ms=1_700_000_999_000
     )
-    assert state.tier != CircuitBreakerTier.NORMAL, (
-        "Circuit Breaker phải rời NORMAL khi equity mark-to-market sụt quá ngưỡng Tier 1"
-    )
+    assert (
+        state.tier != CircuitBreakerTier.NORMAL
+    ), "Circuit Breaker phải rời NORMAL khi equity mark-to-market sụt quá ngưỡng Tier 1"
 
 
 def test_stop_loss_fill_includes_slippage():

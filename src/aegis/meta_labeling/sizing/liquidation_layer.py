@@ -6,7 +6,6 @@
 import math
 from typing import Dict, Any, Optional, List
 
-
 # ============================================================================
 # HẰNG SỐ KIẾN TRÚC — TRẦN MARGIN EFFICIENCY (độc lập với Kelly notional cap)
 # ============================================================================
@@ -19,9 +18,13 @@ MARGIN_LEVERAGE_CAP = 20.0
 # [TASK v11.9] TÍNH TOÁN GIÁ THANH LÝ VỚI BỌC THÉP BẢO MẬT
 # ============================================================================
 def compute_liquidation_price(
-    entry_price: float, side: int, leverage: float, maintenance_margin_rate: float,
-    fee_rate: float = 0.0004, liquidation_fee_rate: float = 0.005,
-    funding_accrued_pct: float = 0.0
+    entry_price: float,
+    side: int,
+    leverage: float,
+    maintenance_margin_rate: float,
+    fee_rate: float = 0.0004,
+    liquidation_fee_rate: float = 0.005,
+    funding_accrued_pct: float = 0.0,
 ) -> float:
     """
     [v11.9] Xấp xỉ giá thanh lý cho Isolated Margin Perpetual Futures.
@@ -108,7 +111,13 @@ def compute_liquidation_price(
     # Khoảng cho phép lỗ trước khi sàn thanh lý (trừ hao mọi loại phí và funding cộng dồn)
     # funding_accrued_pct > 0: trả funding -> allowance nhỏ đi -> P_liq sát Entry
     # funding_accrued_pct < 0: nhận funding (- (-)) -> allowance lớn lên -> P_liq xa Entry
-    margin_loss_allowance = (1.0 / leverage) - maintenance_margin_rate - fee_rate - liquidation_fee_rate - funding_accrued_pct
+    margin_loss_allowance = (
+        (1.0 / leverage)
+        - maintenance_margin_rate
+        - fee_rate
+        - liquidation_fee_rate
+        - funding_accrued_pct
+    )
 
     # Nếu margin_loss_allowance <= 0, đòn bẩy quá cao hoặc funding/phí ăn hết ký quỹ → giá thanh lý = entry
     if margin_loss_allowance <= 0:
@@ -181,7 +190,13 @@ def validate_leverage_against_sl(
         )
 
     liq_price = compute_liquidation_price(
-        entry_price, side, leverage, maintenance_margin_rate, fee_rate, liquidation_fee_rate, funding_accrued_pct
+        entry_price,
+        side,
+        leverage,
+        maintenance_margin_rate,
+        fee_rate,
+        liquidation_fee_rate,
+        funding_accrued_pct,
     )
 
     if side > 0:
@@ -216,7 +231,9 @@ def validate_leverage_against_sl(
     }
 
 
-def get_maintenance_margin_rate(size_notional: float, margin_tier_table: Optional[List[dict]] = None) -> float:
+def get_maintenance_margin_rate(
+    size_notional: float, margin_tier_table: Optional[List[dict]] = None
+) -> float:
     """
     Tra cứu tỷ lệ Ký quỹ duy trì (MMR) theo quy mô vị thế.
     [VÁ LỖ HỔNG 3]: Bọc thép chống số âm và rác NaN/Inf.
@@ -345,7 +362,13 @@ def resolve_max_safe_leverage(
             f"Lỗi hải quan v11.9: Điểm Cắt Lỗ sl_initial ({sl_initial}) đặt sai chiều hoặc bằng Entry ({entry_price}) cho lệnh side={side}!"
         )
 
-    denom = (sl_distance_frac / (1.0 - safety_buffer_pct)) + maintenance_margin_rate + fee_rate + liquidation_fee_rate + max_expected_funding_loss
+    denom = (
+        (sl_distance_frac / (1.0 - safety_buffer_pct))
+        + maintenance_margin_rate
+        + fee_rate
+        + liquidation_fee_rate
+        + max_expected_funding_loss
+    )
     max_leverage = 1.0 / max(denom, 1e-6)
     return float(min(max_leverage, leverage_cap))
 
@@ -357,10 +380,10 @@ def compute_liquidation_loss(
     """
     [QĐ #7] Tính tổn thất vốn ký quỹ (Isolated Margin) khi bị thanh lý.
     Trả về: -(size_notional / leverage)
-    
+
     Phí vào lệnh (fee_entry) được xử lý THỐNG NHẤT tại tầng pnl.py
     (giống nhánh Normal), KHÔNG trừ ở đây để tránh double-count.
-    
+
     [VÁ LỖ HỔNG #4]: KHÔNG KHẤU TRỪ FUNDING FEE TẠI ĐÂY.
     Funding Fee bòn rút dần Ký Quỹ, làm Giá Thanh Lý (P_liq) xê dịch lại gần Entry.
     Khi chạm P_liq, lượng Ký Quỹ còn lại = 0. Tổng thiệt hại thực sự so với

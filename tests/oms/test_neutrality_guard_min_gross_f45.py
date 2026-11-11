@@ -24,6 +24,7 @@ chặn trên ở ~7,6% bất kể tiến độ. Ngưỡng 0,25 cho báo nhầm 0
 Vì sao 558 test cũ không bắt được: `early_exit` không xuất hiện trong bất kỳ test
 nào. Đường thoát sớm hoàn toàn không được phủ.
 """
+
 import time
 from dataclasses import dataclass, fields
 
@@ -40,14 +41,16 @@ class _StubClient:
 @dataclass
 class _Intent:
     """Ý định đặt lệnh — chỉ cần đủ cho `plan_net` / `plan_gross`."""
+
     symbol: str
     side: str
     notional: float
 
 
 def _mo(symbol, side, qty, price, filled):
-    m = ManagedOrder(client_order_id=f"c_{symbol}", symbol=symbol, side=side,
-                     qty=qty, price=price)
+    m = ManagedOrder(
+        client_order_id=f"c_{symbol}", symbol=symbol, side=side, qty=qty, price=price
+    )
     m.filled_qty = filled
     m.avg_fill_price = price
     return m
@@ -61,27 +64,36 @@ def _run_loop(max_fill_imbalance: float, filled_legs: int = 1):
     `filled_legs` chân BUY đã khớp, phần còn lại treo -> lệch một chiều.
     """
     r = BinanceOrderRouter(client=_StubClient(), dry_run=True)
-    r.poll_status = lambda m, retries=1: None          # sàn giả: không đổi trạng thái
+    r.poll_status = lambda m, retries=1: None  # sàn giả: không đổi trạng thái
 
     calls = []
     r._requote_one = lambda *a, **k: calls.append(a[1].symbol)
 
     passive, cycle = [], {}
-    for i in range(5):                                  # 5 BUY
+    for i in range(5):  # 5 BUY
         m = _mo(f"B{i}", "BUY", 10, 100.0, 10 if i < filled_legs else 0)
-        cycle[f"B{i}"] = [m]; passive.append(m)
-    for i in range(5):                                  # 5 SELL, không khớp gì
+        cycle[f"B{i}"] = [m]
+        passive.append(m)
+    for i in range(5):  # 5 SELL, không khớp gì
         m = _mo(f"S{i}", "SELL", 10, 100.0, 0)
-        cycle[f"S{i}"] = [m]; passive.append(m)
+        cycle[f"S{i}"] = [m]
+        passive.append(m)
     r._cycle_orders = cycle
 
     intents = {m.symbol: _Intent(m.symbol, m.side, 1000.0) for m in passive}
     report: dict = {}
     r._passive_wait_loop(
-        passive, intents, filters={}, deadline=time.time() + 0.03,
-        poll_interval_s=0.01, requote=True, max_chase_bps=15.0,
-        anchor={m.symbol: 100.0 for m in passive}, report=report,
-        max_fill_imbalance=max_fill_imbalance, chase_caps={},
+        passive,
+        intents,
+        filters={},
+        deadline=time.time() + 0.03,
+        poll_interval_s=0.01,
+        requote=True,
+        max_chase_bps=15.0,
+        anchor={m.symbol: 100.0 for m in passive},
+        report=report,
+        max_fill_imbalance=max_fill_imbalance,
+        chase_caps={},
     )
     return report, calls
 
@@ -95,8 +107,8 @@ def test_mot_lenh_khop_khong_duoc_lam_van_ban():
     """
     report, calls = _run_loop(max_fill_imbalance=0.25)
     imb = report["fill_imbalance"]
-    assert imb["drift"] == pytest.approx(1.0)         # nhiễu: 100% gross đã khớp
-    assert imb["drift_plan"] == pytest.approx(0.10)   # rủi ro thật: 10% sổ định cầm
+    assert imb["drift"] == pytest.approx(1.0)  # nhiễu: 100% gross đã khớp
+    assert imb["drift_plan"] == pytest.approx(0.10)  # rủi ro thật: 10% sổ định cầm
     assert "early_exit" not in report
     assert calls, "vòng báo giá lại phải được chạy khi độ lệch thật còn nhỏ"
 
@@ -124,7 +136,7 @@ def test_cong_tien_do_khong_cuu_duoc_thuoc_do_sai():
     cycle = {}
     for i in range(50):
         side = "BUY" if i < 25 else "SELL"
-        filled = 10 if (i < 9 or 25 <= i < 29) else 0    # 9 BUY + 4 SELL đã khớp
+        filled = 10 if (i < 9 or 25 <= i < 29) else 0  # 9 BUY + 4 SELL đã khớp
         cycle[f"X{i}"] = [_mo(f"X{i}", side, 10, 100.0, filled)]
     r._cycle_orders = cycle
     imb = r.fill_imbalance(plan_net=0.0, plan_gross=50 * 1000.0)
@@ -148,15 +160,17 @@ def test_pipeline_thuc_su_truyen_tran_va_dung_don_vi():
     from aegis.pipelines.xs_live_pipeline import LiveConfig, CrossSectionalLivePipeline
 
     assert hasattr(LiveConfig, "max_fill_imbalance")
-    assert not hasattr(LiveConfig, "neutrality_min_progress"), \
-        "cổng tiến độ đã bị bác bỏ bằng đo đạc — đừng dựng lại"
+    assert not hasattr(
+        LiveConfig, "neutrality_min_progress"
+    ), "cổng tiến độ đã bị bác bỏ bằng đo đạc — đừng dựng lại"
     cfg = LiveConfig(universe=[])
     assert 0.0 < cfg.max_fill_imbalance < 1.0
 
     src = inspect.getsource(CrossSectionalLivePipeline)
-    assert "max_fill_imbalance=self.config.max_fill_imbalance" in src, \
-        ("pipeline phải TRUYỀN max_fill_imbalance cho execute_with_fallback; "
-         "bỏ trống là để router dùng mặc định thay vì cấu hình đã kiểm định")
+    assert "max_fill_imbalance=self.config.max_fill_imbalance" in src, (
+        "pipeline phải TRUYỀN max_fill_imbalance cho execute_with_fallback; "
+        "bỏ trống là để router dùng mặc định thay vì cấu hình đã kiểm định"
+    )
 
 
 def test_ban_ghi_luu_du_de_chan_doan_lan_sau():

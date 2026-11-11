@@ -1,4 +1,3 @@
-import os
 import shutil
 import tempfile
 import numpy as np
@@ -6,8 +5,7 @@ import pandas as pd
 import pytest
 
 from aegis.pipelines.research_pipeline import ResearchPipeline
-from aegis.pipelines.live_pipeline import AegisLivePipeline, ActivePosition
-from aegis.execution.position_sizer import AccountStateTracker
+from aegis.pipelines.live_pipeline import AegisLivePipeline
 from aegis.risk.circuit_breaker import CircuitBreakerTier
 
 
@@ -22,29 +20,37 @@ def fitted_artifacts_dir():
     lows = prices - 0.5
     volumes = np.random.uniform(10.0, 100.0, n_bars)
 
-    bars = pd.DataFrame({
-        "bar_idx": np.arange(n_bars, dtype=np.int64),
-        "symbol": "BTCUSDT",
-        "timestamp_ms": timestamps,
-        "open": prices,
-        "high": highs,
-        "low": lows,
-        "close": prices,
-        "volume": volumes,
-        "ofi": np.clip(np.random.normal(0.0, 0.3, n_bars), -1.0, 1.0),
-        "tick_count": np.random.randint(10, 50, n_bars, dtype=np.int64),
-        "is_toxic_flag": np.zeros(n_bars, dtype=bool),
-        "is_tail_event": np.zeros(n_bars, dtype=bool),
-        "insufficient_history": np.array([True] * 20 + [False] * (n_bars - 20), dtype=bool),
-        "trend_score": [np.nan] * 20 + list(np.random.normal(0.2, 0.5, n_bars - 20)),
-        "p_trend": [np.nan] * 20 + list(np.random.uniform(0.4, 0.8, n_bars - 20)),
-        "p_chop": [np.nan] * 20 + list(np.random.uniform(0.2, 0.6, n_bars - 20)),
-        "atr_14": [np.nan] * 20 + list(np.random.uniform(0.5, 1.5, n_bars - 20)),
-        "hurst_value": [np.nan] * 20 + list(np.random.uniform(0.4, 0.6, n_bars - 20)),
-        "d_star_used": [0.35] * n_bars,
-    })
+    bars = pd.DataFrame(
+        {
+            "bar_idx": np.arange(n_bars, dtype=np.int64),
+            "symbol": "BTCUSDT",
+            "timestamp_ms": timestamps,
+            "open": prices,
+            "high": highs,
+            "low": lows,
+            "close": prices,
+            "volume": volumes,
+            "ofi": np.clip(np.random.normal(0.0, 0.3, n_bars), -1.0, 1.0),
+            "tick_count": np.random.randint(10, 50, n_bars, dtype=np.int64),
+            "is_toxic_flag": np.zeros(n_bars, dtype=bool),
+            "is_tail_event": np.zeros(n_bars, dtype=bool),
+            "insufficient_history": np.array(
+                [True] * 20 + [False] * (n_bars - 20), dtype=bool
+            ),
+            "trend_score": [np.nan] * 20
+            + list(np.random.normal(0.2, 0.5, n_bars - 20)),
+            "p_trend": [np.nan] * 20 + list(np.random.uniform(0.4, 0.8, n_bars - 20)),
+            "p_chop": [np.nan] * 20 + list(np.random.uniform(0.2, 0.6, n_bars - 20)),
+            "atr_14": [np.nan] * 20 + list(np.random.uniform(0.5, 1.5, n_bars - 20)),
+            "hurst_value": [np.nan] * 20
+            + list(np.random.uniform(0.4, 0.6, n_bars - 20)),
+            "d_star_used": [0.35] * n_bars,
+        }
+    )
 
-    research = ResearchPipeline(config={"fast_mode": True, "n_groups": 3, "n_test_groups": 1, "embargo_bars": 2})
+    research = ResearchPipeline(
+        config={"fast_mode": True, "n_groups": 3, "n_test_groups": 1, "embargo_bars": 2}
+    )
     research.run(signal_bars=bars, artifacts_dir=temp_dir)
 
     yield temp_dir
@@ -96,7 +102,10 @@ def test_live_pipeline_streaming_flow(fitted_artifacts_dir):
 
     # Sau 15 bars, hoặc vị thế đang mở hoặc đã chốt lời/cắt lỗ
     assert live_pipeline.account_tracker.wallet_balance > 0.0
-    assert live_pipeline.circuit_breaker.update_equity(
-        live_pipeline.account_tracker.wallet_balance,
-        current_time_ms=base_time + 15 * 60000,
-    ).tier != CircuitBreakerTier.TIER_3_KILL
+    assert (
+        live_pipeline.circuit_breaker.update_equity(
+            live_pipeline.account_tracker.wallet_balance,
+            current_time_ms=base_time + 15 * 60000,
+        ).tier
+        != CircuitBreakerTier.TIER_3_KILL
+    )

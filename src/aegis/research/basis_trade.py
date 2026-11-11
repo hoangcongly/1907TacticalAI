@@ -34,7 +34,7 @@ hai đều tạo ra kết quả đẹp giả tạo:
 """
 
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -46,10 +46,10 @@ __all__ = ["BasisSpec", "basis_series", "backtest_basis"]
 class BasisSpec:
     """Tham số basis trade."""
 
-    n_positions: int = 8          # số cặp nắm cùng lúc
-    rebalance_bars: int = 1008    # số nến 4h giữa hai lần xét lại (1008 = 168 ngày)
-    funding_window: int = 12      # cửa sổ trung bình funding để xếp hạng (nhân quả)
-    exit_multiple: int = 3        # vùng đệm: giữ tới khi rơi khỏi top n*exit_multiple
+    n_positions: int = 8  # số cặp nắm cùng lúc
+    rebalance_bars: int = 1008  # số nến 4h giữa hai lần xét lại (1008 = 168 ngày)
+    funding_window: int = 12  # cửa sổ trung bình funding để xếp hạng (nhân quả)
+    exit_multiple: int = 3  # vùng đệm: giữ tới khi rơi khỏi top n*exit_multiple
     round_trip_bps: float = 24.0  # phí một vòng đầy đủ 2 chân (perp maker + spot maker)
     min_universe: int = 8
 
@@ -79,8 +79,11 @@ def backtest_basis(
     S = spot_close.reindex(index=P.index)[cols]
     F = funding.reindex(index=P.index, columns=cols)
 
-    rank_src = F.rolling(spec.funding_window,
-                         min_periods=max(2, spec.funding_window // 3)).mean().shift(1)
+    rank_src = (
+        F.rolling(spec.funding_window, min_periods=max(2, spec.funding_window // 3))
+        .mean()
+        .shift(1)
+    )
 
     idx = P.index
     out = {}
@@ -110,8 +113,8 @@ def backtest_basis(
                     continue
                 dp = P.loc[ts, s] / P.loc[prev, s] - 1.0
                 ds = S.loc[ts, s] / S.loc[prev, s] - 1.0
-                bas += -(dp - ds) / n                      # short perp, long spot
-                fnd += float(F.loc[prev, s]) * 0.5 / n     # 4h = nửa mốc funding
+                bas += -(dp - ds) / n  # short perp, long spot
+                fnd += float(F.loc[prev, s]) * 0.5 / n  # 4h = nửa mốc funding
 
         out[ts] = (bas + fnd - fee, fnd, bas, -fee)
 

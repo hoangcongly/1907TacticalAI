@@ -1,8 +1,13 @@
 """Test máy trạng thái OMS — chốt cứng vòng đời lệnh."""
+
 import pytest
 
 from aegis.oms.state_machine import (
-    InvalidTransitionError, ManagedOrder, OrderBook, OrderState, TERMINAL_STATES,
+    InvalidTransitionError,
+    ManagedOrder,
+    OrderBook,
+    OrderState,
+    TERMINAL_STATES,
 )
 
 
@@ -45,7 +50,7 @@ def test_duplicate_terminal_event_is_tolerated():
 def test_illegal_transition_rejected():
     o = _order()
     with pytest.raises(InvalidTransitionError):
-        o.transition(OrderState.FILLED)   # CREATED không thể nhảy thẳng sang FILLED
+        o.transition(OrderState.FILLED)  # CREATED không thể nhảy thẳng sang FILLED
 
 
 def test_filled_qty_can_never_decrease():
@@ -92,9 +97,12 @@ def test_net_position_counts_only_filled():
     b = book.add(_order(client_order_id="b", side="SELL", qty=4.0))
     pending = book.add(_order(client_order_id="c", side="BUY", qty=100.0))
 
-    a.transition(OrderState.SUBMITTED); a.apply_exchange_status("FILLED", filled_qty=10.0)
-    b.transition(OrderState.SUBMITTED); b.apply_exchange_status("FILLED", filled_qty=4.0)
-    pending.transition(OrderState.SUBMITTED); pending.apply_exchange_status("NEW")
+    a.transition(OrderState.SUBMITTED)
+    a.apply_exchange_status("FILLED", filled_qty=10.0)
+    b.transition(OrderState.SUBMITTED)
+    b.apply_exchange_status("FILLED", filled_qty=4.0)
+    pending.transition(OrderState.SUBMITTED)
+    pending.apply_exchange_status("NEW")
 
     assert book.net_position("XRPUSDT") == pytest.approx(6.0)
     assert len(book.open_orders()) == 1
@@ -102,5 +110,6 @@ def test_net_position_counts_only_filled():
 
 def test_every_terminal_state_has_no_exits():
     from aegis.oms.state_machine import VALID_TRANSITIONS
+
     for st in TERMINAL_STATES:
         assert VALID_TRANSITIONS[st] == set(), f"{st} phải là trạng thái cuối"

@@ -5,10 +5,10 @@ Trọng tâm: các ràng buộc CỨNG của sàn. Vi phạm bất kỳ điều 
 từ chối lúc chạy thật, và với danh mục 12 vị thế thì một lệnh hỏng làm lệch cả
 trạng thái market-neutral.
 """
+
 import pytest
 
 from aegis.execution.portfolio_rebalancer import (
-    RebalanceOrder,
     SymbolFilters,
     build_rebalance_plan,
     max_positions_for_capital,
@@ -44,8 +44,8 @@ def test_round_price_snaps_to_tick():
 
 def test_is_tradeable_enforces_both_limits():
     f = _filters(min_qty=1.0, min_notional=5.0)
-    assert not f.is_tradeable(0.5, 100.0)   # dưới min_qty
-    assert not f.is_tradeable(2.0, 1.0)     # dưới min_notional
+    assert not f.is_tradeable(0.5, 100.0)  # dưới min_qty
+    assert not f.is_tradeable(2.0, 1.0)  # dưới min_notional
     assert f.is_tradeable(6.0, 1.0)
 
 
@@ -58,8 +58,11 @@ def test_position_below_min_notional_is_skipped_not_shrunk():
     filters, prices = _std_setup()
     plan = build_rebalance_plan(
         target_weights={"AAAUSDT": 1.0},
-        current_qty={}, prices=prices, filters=filters,
-        equity=3.0, leverage=1.0,   # gross $3 < min_notional $5
+        current_qty={},
+        prices=prices,
+        filters=filters,
+        equity=3.0,
+        leverage=1.0,  # gross $3 < min_notional $5
     )
     assert plan.orders == []
     assert "min_notional" in plan.skipped["AAAUSDT"]
@@ -72,9 +75,12 @@ def test_closing_is_always_allowed_even_below_min_notional():
     """
     filters, prices = _std_setup()
     plan = build_rebalance_plan(
-        target_weights={},                    # mục tiêu: phẳng hoàn toàn
-        current_qty={"AAAUSDT": 2.0},         # đang giữ $2 < min_notional $5
-        prices=prices, filters=filters, equity=100.0, leverage=1.0,
+        target_weights={},  # mục tiêu: phẳng hoàn toàn
+        current_qty={"AAAUSDT": 2.0},  # đang giữ $2 < min_notional $5
+        prices=prices,
+        filters=filters,
+        equity=100.0,
+        leverage=1.0,
     )
     assert len(plan.orders) == 1
     assert plan.orders[0].side == "SELL"
@@ -87,8 +93,11 @@ def test_dollar_neutral_targets_produce_both_sides():
     filters, prices = _std_setup()
     plan = build_rebalance_plan(
         target_weights={"AAAUSDT": 0.5, "BBBUSDT": -0.5},
-        current_qty={}, prices=prices, filters=filters,
-        equity=100.0, leverage=1.0,
+        current_qty={},
+        prices=prices,
+        filters=filters,
+        equity=100.0,
+        leverage=1.0,
     )
     sides = {o.symbol: o.side for o in plan.orders}
     assert sides["AAAUSDT"] == "BUY"
@@ -103,20 +112,26 @@ def test_flipping_short_to_long_sizes_full_delta():
     plan = build_rebalance_plan(
         target_weights={"AAAUSDT": 1.0},
         current_qty={"AAAUSDT": -30.0},
-        prices=prices, filters=filters, equity=50.0, leverage=1.0,
+        prices=prices,
+        filters=filters,
+        equity=50.0,
+        leverage=1.0,
     )
     order = next(o for o in plan.orders if o.symbol == "AAAUSDT")
     assert order.side == "BUY"
-    assert order.qty == pytest.approx(80.0)   # đóng 30 short + mở 50 long
+    assert order.qty == pytest.approx(80.0)  # đóng 30 short + mở 50 long
 
 
 def test_weights_are_normalised_to_gross_budget():
     """Trọng số không chuẩn hoá sẵn vẫn phải quy về đúng gross = equity*leverage."""
     filters, prices = _std_setup()
     plan = build_rebalance_plan(
-        target_weights={"AAAUSDT": 5.0, "BBBUSDT": -5.0},   # tổng |w| = 10
-        current_qty={}, prices=prices, filters=filters,
-        equity=100.0, leverage=2.0,
+        target_weights={"AAAUSDT": 5.0, "BBBUSDT": -5.0},  # tổng |w| = 10
+        current_qty={},
+        prices=prices,
+        filters=filters,
+        equity=100.0,
+        leverage=2.0,
     )
     assert plan.gross_notional == pytest.approx(200.0, rel=1e-3)
 
@@ -127,8 +142,11 @@ def test_no_trade_band_suppresses_tiny_adjustments():
     filters, prices = _std_setup()
     plan = build_rebalance_plan(
         target_weights={"AAAUSDT": 1.0},
-        current_qty={"AAAUSDT": 95.0},        # mục tiêu 100, lệch 5%
-        prices=prices, filters=filters, equity=100.0, leverage=1.0,
+        current_qty={"AAAUSDT": 95.0},  # mục tiêu 100, lệch 5%
+        prices=prices,
+        filters=filters,
+        equity=100.0,
+        leverage=1.0,
         no_trade_band=0.20,
     )
     assert plan.orders == []
@@ -139,8 +157,11 @@ def test_large_deviation_does_trade():
     filters, prices = _std_setup()
     plan = build_rebalance_plan(
         target_weights={"AAAUSDT": 1.0},
-        current_qty={"AAAUSDT": 50.0},        # lệch 50% > dải 20%
-        prices=prices, filters=filters, equity=100.0, leverage=1.0,
+        current_qty={"AAAUSDT": 50.0},  # lệch 50% > dải 20%
+        prices=prices,
+        filters=filters,
+        equity=100.0,
+        leverage=1.0,
         no_trade_band=0.20,
     )
     assert len(plan.orders) == 1
@@ -154,8 +175,11 @@ def test_gross_notional_never_exceeds_equity_times_leverage():
     equity, lev = 38.0, 2.0
     plan = build_rebalance_plan(
         target_weights={"AAAUSDT": 0.4, "BBBUSDT": -0.4, "CCCUSDT": 0.2},
-        current_qty={}, prices=prices, filters=filters,
-        equity=equity, leverage=lev,
+        current_qty={},
+        prices=prices,
+        filters=filters,
+        equity=equity,
+        leverage=lev,
     )
     assert plan.gross_notional <= equity * lev + 1e-6
 
@@ -165,8 +189,11 @@ def test_missing_price_or_filter_is_skipped_not_guessed():
     del prices["BBBUSDT"]
     plan = build_rebalance_plan(
         target_weights={"AAAUSDT": 0.5, "BBBUSDT": 0.5},
-        current_qty={}, prices=prices, filters=filters,
-        equity=100.0, leverage=1.0,
+        current_qty={},
+        prices=prices,
+        filters=filters,
+        equity=100.0,
+        leverage=1.0,
     )
     assert "BBBUSDT" in plan.skipped
     assert all(o.symbol != "BBBUSDT" for o in plan.orders)
@@ -217,12 +244,12 @@ def test_rounding_produces_exchange_safe_decimals():
         price_dp = -decimal.Decimal(price_str).as_tuple().exponent
         qty_dp = -decimal.Decimal(qty_str).as_tuple().exponent
 
-        assert price_dp <= f._decimals(tick), (
-            f"chuỗi giá {price_str!r} có {price_dp} chữ số thập phân, tick {tick} chỉ cho {f._decimals(tick)}"
-        )
-        assert qty_dp <= f._decimals(step), (
-            f"chuỗi qty {qty_str!r} có {qty_dp} chữ số thập phân, step {step} chỉ cho {f._decimals(step)}"
-        )
+        assert price_dp <= f._decimals(
+            tick
+        ), f"chuỗi giá {price_str!r} có {price_dp} chữ số thập phân, tick {tick} chỉ cho {f._decimals(tick)}"
+        assert qty_dp <= f._decimals(
+            step
+        ), f"chuỗi qty {qty_str!r} có {qty_dp} chữ số thập phân, step {step} chỉ cho {f._decimals(step)}"
         assert float(price_str) == pytest.approx(price)
         assert float(qty_str) == pytest.approx(qty)
         # vẫn phải là bội số hợp lệ của bước nhảy

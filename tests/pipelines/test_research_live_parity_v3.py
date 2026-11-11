@@ -9,16 +9,16 @@ live tính một kiểu, cặp nào thiếu thì live âm thầm điền 0.0. Kh
 Test này so trực tiếp hai đầu ra trên cùng dữ liệu. Nếu ai đó sau này viết lại công
 thức ở tầng live "cho nhanh", test sẽ đỏ ngay.
 """
+
 import json
 import pathlib
 
 import numpy as np
-import pandas as pd
 import pytest
 
 from aegis.data.panel_v2 import load_funding_panel_v2, load_panel_v2
 from aegis.research.adaptive_combiner import CombinerSpec, combine_adaptive
-from aegis.research.signal_library import SIGNAL_REGISTRY, build_signal
+from aegis.research.signal_library import build_signal
 from aegis.research.strategy_v3 import V3_SIGNALS
 from aegis.risk.portfolio import PortfolioSpec, build_weights
 
@@ -39,7 +39,8 @@ def market():
     syms = json.load(open(UNIVERSE_FILE, encoding="utf-8"))
     panel = load_panel_v2(syms, "4h", source_interval="1h", min_coverage=0.15)
     funding = load_funding_panel_v2(syms, panel["close"].index).reindex(
-        columns=panel["close"].columns)
+        columns=panel["close"].columns
+    )
     return panel, funding
 
 
@@ -51,12 +52,21 @@ def _weights_research(panel, funding, tail_only: bool):
     sigs = {n: build_signal(n, panel, funding) for n in V3_SIGNALS}
     marks = close.index[::REBAL]
     combined = combine_adaptive(
-        {k: v.reindex(marks) for k, v in sigs.items()}, close.reindex(marks),
-        CombinerSpec(lookback=500, min_periods=120, t_threshold=2.0,
-                     max_abs_weight=0.20, max_step=0.05), top_frac=0.10)
-    spec = PortfolioSpec(mode="zscore_riskparity", n_positions=N_POS,
-                         max_weight=0.20, beta_neutral=False)
-    idx = marks[-(spec.vol_window + 5):] if tail_only else marks
+        {k: v.reindex(marks) for k, v in sigs.items()},
+        close.reindex(marks),
+        CombinerSpec(
+            lookback=500,
+            min_periods=120,
+            t_threshold=2.0,
+            max_abs_weight=0.20,
+            max_step=0.05,
+        ),
+        top_frac=0.10,
+    )
+    spec = PortfolioSpec(
+        mode="zscore_riskparity", n_positions=N_POS, max_weight=0.20, beta_neutral=False
+    )
+    idx = marks[-(spec.vol_window + 5) :] if tail_only else marks
     return build_weights(combined.reindex(idx), close.reindex(idx), spec)
 
 
@@ -88,18 +98,23 @@ def test_live_khop_research(market, monkeypatch):
     # Bỏ qua bước lọc universe theo sàn: test này chỉ kiểm chứng phép TÍNH.
     # `*_` nuốt tham số `equity` mà `resolve_universe` nhận từ [FIX F40]. Test này chỉ
     # kiểm chứng phép TÍNH nên bỏ qua cả lọc sàn lẫn lọc vốn.
-    monkeypatch.setattr(pipe, "resolve_universe",
-                        lambda *_, **__: list(json.load(open(UNIVERSE_FILE, encoding="utf-8"))),
-                        raising=False)
+    monkeypatch.setattr(
+        pipe,
+        "resolve_universe",
+        lambda *_, **__: list(json.load(open(UNIVERSE_FILE, encoding="utf-8"))),
+        raising=False,
+    )
 
     got, ts = pipe._compute_target_weights_v3()
 
     assert set(got) == set(expected), (
         f"tập cặp khác nhau: chỉ live {sorted(set(got)-set(expected))}, "
-        f"chỉ research {sorted(set(expected)-set(got))}")
+        f"chỉ research {sorted(set(expected)-set(got))}"
+    )
     for sym in expected:
-        assert abs(got[sym] - expected[sym]) < 1e-9, (
-            f"{sym}: live {got[sym]:.10f} != research {expected[sym]:.10f}")
+        assert (
+            abs(got[sym] - expected[sym]) < 1e-9
+        ), f"{sym}: live {got[sym]:.10f} != research {expected[sym]:.10f}"
     assert ts == int(panel["close"].index[-1])
 
 
@@ -112,15 +127,20 @@ def test_trong_so_trung_lap_va_dung_so_vi_the(market, monkeypatch):
     pipe.config = cfg
     # `*_` nuốt tham số `equity` mà `resolve_universe` nhận từ [FIX F40]. Test này chỉ
     # kiểm chứng phép TÍNH nên bỏ qua cả lọc sàn lẫn lọc vốn.
-    monkeypatch.setattr(pipe, "resolve_universe",
-                        lambda *_, **__: list(json.load(open(UNIVERSE_FILE, encoding="utf-8"))),
-                        raising=False)
+    monkeypatch.setattr(
+        pipe,
+        "resolve_universe",
+        lambda *_, **__: list(json.load(open(UNIVERSE_FILE, encoding="utf-8"))),
+        raising=False,
+    )
 
     w, _ = pipe._compute_target_weights_v3()
     vals = np.array(list(w.values()))
 
     assert abs(vals.sum()) < 1e-6, f"net exposure {vals.sum():.2e} != 0"
-    assert abs(np.abs(vals).sum() - 1.0) < 1e-6, f"gross {np.abs(vals).sum():.4f} != 1.0"
+    assert (
+        abs(np.abs(vals).sum() - 1.0) < 1e-6
+    ), f"gross {np.abs(vals).sum():.4f} != 1.0"
     assert (vals > 0).any() and (vals < 0).any(), "phải có cả long lẫn short"
     assert len(vals) <= cfg.n_positions, f"{len(vals)} vị thế > trần {cfg.n_positions}"
 
@@ -132,8 +152,9 @@ def test_trong_so_trung_lap_va_dung_so_vi_the(market, monkeypatch):
     # XẤP XỈ. Đây là đánh đổi đúng hướng — trần chỉ chống tập trung, còn trung lập
     # là toàn bộ lý do chiến lược này tồn tại.
     worst = float(np.abs(vals).max())
-    assert worst <= cfg.max_weight * 1.10, (
-        f"vượt trần {worst/cfg.max_weight - 1:.2%} — quá nhiều, không còn là sai số chiếu")
+    assert (
+        worst <= cfg.max_weight * 1.10
+    ), f"vượt trần {worst/cfg.max_weight - 1:.2%} — quá nhiều, không còn là sai số chiếu"
 
 
 # ---------------------------------------------------------------------------

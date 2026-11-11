@@ -2,7 +2,8 @@
 Dynamic HMM Triple-Barrier Labeling & compute_sl_initial đối xứng Long/Short.
 Module C.2 (Tầng 1 Dán nhãn thống kê cho Meta-Labeler).
 """
-from typing import Dict, Any, Tuple, Optional
+
+from typing import Dict, Any, Tuple
 import numpy as np
 import pandas as pd
 
@@ -21,7 +22,7 @@ def compute_dynamic_barriers(
     m_pt = p_chop * 1.5 + p_trend * 3.0
     m_sl = p_chop * 1.5 + p_trend * 2.0
     c_trade_adj = c_trade * (1 + 0.5 * is_toxic)
-    
+
     Trả về: (tp_price, sl_price)
     """
     p0 = float(entry_price)
@@ -63,7 +64,7 @@ def apply_triple_barrier_single_event(
     """
     n_lookahead = len(future_highs)
     p0 = float(entry_price)
-    
+
     if n_lookahead == 0:
         # Biên cắt ngay lập tức
         return {
@@ -197,7 +198,9 @@ def generate_meta_labels_triple_barrier(
         pc = float(p_chop[idx]) if not np.isnan(p_chop[idx]) else 0.5
         toxic = bool(is_toxic[idx])
 
-        tp, sl = compute_dynamic_barriers(p0, side, pt, pc, sig, is_toxic=toxic, c_trade=c_trade)
+        tp, sl = compute_dynamic_barriers(
+            p0, side, pt, pc, sig, is_toxic=toxic, c_trade=c_trade
+        )
 
         slice_end = min(idx + 1 + t_window, n_total)
         future_highs = highs[idx + 1 : slice_end]
@@ -215,14 +218,16 @@ def generate_meta_labels_triple_barrier(
             future_closes=future_closes,
         )
 
-        records.append({
-            "t0": int(res["entry_idx"]),
-            "t1": int(res["exit_idx"]),
-            "side": int(side),
-            "label": int(res["label"]),
-            "realized_return": float(res["realized_return"]),
-            "hit_barrier": str(res["hit_barrier"]),
-            "exit_price": float(res["exit_price"]),
-        })
+        records.append(
+            {
+                "t0": int(res["entry_idx"]),
+                "t1": int(res["exit_idx"]),
+                "side": int(side),
+                "label": int(res["label"]),
+                "realized_return": float(res["realized_return"]),
+                "hit_barrier": str(res["hit_barrier"]),
+                "exit_price": float(res["exit_price"]),
+            }
+        )
 
     return pd.DataFrame(records)

@@ -4,17 +4,25 @@ Test tầng dựng danh mục: bất biến trung lập, chia đều rủi ro, v
 Nguyên tắc viết test ở đây: mỗi test kiểm chứng một tính chất mà nếu sai thì tiền
 thật sẽ mất, chứ không kiểm chứng "hàm chạy không lỗi".
 """
+
 import numpy as np
 import pandas as pd
 import pytest
 
 from aegis.risk.covariance_shrinkage import (
-    ewma_covariance, ledoit_wolf_constant_correlation, nearest_positive_definite,
-    shrink_covariance, single_index_covariance,
+    ewma_covariance,
+    ledoit_wolf_constant_correlation,
+    nearest_positive_definite,
+    shrink_covariance,
 )
 from aegis.risk.portfolio import (
-    PortfolioSpec, apply_buffer, beta_neutralize, build_weights,
-    inverse_vol_weights, project_neutral, realized_vol, rolling_beta,
+    PortfolioSpec,
+    beta_neutralize,
+    build_weights,
+    inverse_vol_weights,
+    project_neutral,
+    realized_vol,
+    rolling_beta,
 )
 
 
@@ -29,9 +37,14 @@ def market():
     beta = np.linspace(0.4, 1.8, n_sym)
     factor = rng.normal(0, 0.02, n_bars)
     rets = np.outer(factor, beta) + rng.normal(0, 1, (n_bars, n_sym)) * vols
-    close = pd.DataFrame(100 * np.cumprod(1 + rets, axis=0),
-                         index=np.arange(n_bars) * 14_400_000, columns=syms)
-    signal = pd.DataFrame(rng.normal(0, 1, (n_bars, n_sym)), index=close.index, columns=syms)
+    close = pd.DataFrame(
+        100 * np.cumprod(1 + rets, axis=0),
+        index=np.arange(n_bars) * 14_400_000,
+        columns=syms,
+    )
+    signal = pd.DataFrame(
+        rng.normal(0, 1, (n_bars, n_sym)), index=close.index, columns=syms
+    )
     return close, signal
 
 
@@ -130,11 +143,14 @@ def test_build_weights_khong_nhin_truoc(market):
 # --------------------------------------------------------------------------
 # Bất biến danh mục
 # --------------------------------------------------------------------------
-@pytest.mark.parametrize("mode", ["rank_binary", "rank_riskparity", "zscore", "zscore_riskparity"])
+@pytest.mark.parametrize(
+    "mode", ["rank_binary", "rank_riskparity", "zscore", "zscore_riskparity"]
+)
 def test_bat_bien_trung_lap_va_gross(market, mode):
     close, signal = market
-    spec = PortfolioSpec(mode=mode, n_positions=10,
-                         max_weight=1.0 if mode == "rank_binary" else 0.25)
+    spec = PortfolioSpec(
+        mode=mode, n_positions=10, max_weight=1.0 if mode == "rank_binary" else 0.25
+    )
     W = build_weights(signal, close, spec)
     active = W[(W != 0).any(axis=1)]
     assert len(active) > 50, "gần như không mở vị thế nào — cấu hình sai"
@@ -150,12 +166,18 @@ def test_so_vi_the_tuyet_doi_duoc_ton_trong(market):
     """`n_positions` phải thắng `top_frac`, bất kể universe to nhỏ ra sao."""
     close, signal = market
     for n in (6, 8, 12):
-        W = build_weights(signal, close, PortfolioSpec(mode="rank_binary",
-                                                       n_positions=n, top_frac=0.40,
-                                                       max_weight=1.0))
+        W = build_weights(
+            signal,
+            close,
+            PortfolioSpec(
+                mode="rank_binary", n_positions=n, top_frac=0.40, max_weight=1.0
+            ),
+        )
         counts = (W != 0).sum(axis=1)
         counts = counts[counts > 0]
-        assert counts.max() <= n, f"n_positions={n} nhưng có lúc mở {counts.max()} vị thế"
+        assert (
+            counts.max() <= n
+        ), f"n_positions={n} nhưng có lúc mở {counts.max()} vị thế"
 
 
 def test_chia_deu_rui_ro_ha_ty_trong_cua_tai_san_bien_dong_manh(market):
@@ -165,10 +187,14 @@ def test_chia_deu_rui_ro_ha_ty_trong_cua_tai_san_bien_dong_manh(market):
     """
     close, signal = market
     vol = realized_vol(close, 60)
-    Wb = build_weights(signal, close, PortfolioSpec(mode="rank_binary", n_positions=10,
-                                                    max_weight=1.0))
-    Wr = build_weights(signal, close, PortfolioSpec(mode="rank_riskparity", n_positions=10,
-                                                    max_weight=1.0))
+    Wb = build_weights(
+        signal, close, PortfolioSpec(mode="rank_binary", n_positions=10, max_weight=1.0)
+    )
+    Wr = build_weights(
+        signal,
+        close,
+        PortfolioSpec(mode="rank_riskparity", n_positions=10, max_weight=1.0),
+    )
     ts = Wb.index[300]
     sel = Wb.loc[ts][Wb.loc[ts] != 0].index
     assert len(sel) >= 4
@@ -192,8 +218,11 @@ def test_tran_trong_so_duoc_ap_trong_dung_sai_da_cong_bo(market):
     """
     close, signal = market
     cap = 0.15
-    W = build_weights(signal, close, PortfolioSpec(mode="zscore_riskparity",
-                                                   n_positions=12, max_weight=cap))
+    W = build_weights(
+        signal,
+        close,
+        PortfolioSpec(mode="zscore_riskparity", n_positions=12, max_weight=cap),
+    )
     active = W[(W != 0).any(axis=1)]
     worst = float(active.abs().max().max())
     assert worst <= cap * 1.10, f"vượt trần {worst/cap-1:.1%} — quá nhiều"
@@ -236,18 +265,27 @@ def test_inverse_vol_ap_san_bien_dong():
     raw = pd.Series([1.0, 1.0], index=["a", "b"])
     vol = pd.Series([1e-12, 0.05], index=["a", "b"])
     out = inverse_vol_weights(raw, vol, vol_floor=0.01)
-    assert out["a"] == pytest.approx(100.0)   # bị kẹp về sàn 0.01
+    assert out["a"] == pytest.approx(100.0)  # bị kẹp về sàn 0.01
     assert out["b"] == pytest.approx(20.0)
 
 
 def test_vung_dem_giam_turnover(market):
     """Vùng đệm phải giảm turnover so với không đệm, cùng số vị thế."""
     close, signal = market
-    plain = build_weights(signal, close, PortfolioSpec(mode="rank_binary", n_positions=10,
-                                                       max_weight=1.0))
-    buffered = build_weights(signal, close, PortfolioSpec(
-        mode="rank_binary", n_positions=10, max_weight=1.0,
-        top_frac=0.10, exit_frac=0.20))
+    plain = build_weights(
+        signal, close, PortfolioSpec(mode="rank_binary", n_positions=10, max_weight=1.0)
+    )
+    buffered = build_weights(
+        signal,
+        close,
+        PortfolioSpec(
+            mode="rank_binary",
+            n_positions=10,
+            max_weight=1.0,
+            top_frac=0.10,
+            exit_frac=0.20,
+        ),
+    )
     t_plain = (plain - plain.shift(1)).abs().sum(axis=1).mean()
     t_buf = (buffered - buffered.shift(1)).abs().sum(axis=1).mean()
     assert t_buf < t_plain, f"đệm {t_buf:.3f} không thấp hơn không đệm {t_plain:.3f}"

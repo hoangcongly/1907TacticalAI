@@ -23,7 +23,7 @@ def test_cpcv_monotonic_t0():
 
     # Dùng event_times pd.Series thay cho pred_times / eval_times
     event_times = pd.Series(t1.values, index=t0_shuffled)
-    
+
     with pytest.raises(ValueError, match="monotonically increasing"):
         list(cv.split(X=np.zeros(n_samples), event_times=event_times))
 
@@ -52,4 +52,6 @@ def test_cpcv_embargo_bars():
             min_train_after = train_after_test.min()
             # test index t kết thúc ở t+2. Cộng thêm 5 bars embargo -> t+7.
             # Do đó min_train_after phải >= max_test + 2 + 5 = max_test + 7
-            assert min_train_after >= max_test + 7, "Embargo bars không được thực thi đúng kích thước!"
+            assert (
+                min_train_after >= max_test + 7
+            ), "Embargo bars không được thực thi đúng kích thước!"

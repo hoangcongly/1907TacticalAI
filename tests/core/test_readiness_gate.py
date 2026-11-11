@@ -7,6 +7,7 @@ vẫn là 10 lỗi trong 2 ngày. Mắt người nhìn nhật ký rồi kết lu
 kết luận là ổn — nhất là khi đang sốt ruột muốn vào tiền. Nên tiêu chí phải nhị phân
 và do máy chấm.
 """
+
 import sys
 
 import pytest
@@ -17,9 +18,17 @@ from aegis.core.execution_log import MAKER_FEE, TAKER_FEE, ExecutionRecord
 
 
 def _rec(**kw):
-    base = dict(timestamp_ms=1, equity=5000.0, n_targets=12, n_orders=12,
-                gross_notional=10000.0, planned_turnover=10000.0,
-                maker_notional=9000.0, taker_notional=1000.0, unfilled_count=0)
+    base = dict(
+        timestamp_ms=1,
+        equity=5000.0,
+        n_targets=12,
+        n_orders=12,
+        gross_notional=10000.0,
+        planned_turnover=10000.0,
+        maker_notional=9000.0,
+        taker_notional=1000.0,
+        unfilled_count=0,
+    )
     base.update(kw)
     return ExecutionRecord(**base)
 
@@ -34,14 +43,17 @@ def test_ban_ghi_cu_thieu_truong_van_duoc_coi_la_sach():
     assert _rec().clean is True
 
 
-@pytest.mark.parametrize("field,value", [
-    ("plan_failures", 1),        # F22 — lệnh không đặt được
-    ("uncancelled", 1),          # F21 — lệnh sống ngoài tầm kiểm soát
-    ("exec_error", "RuntimeError: x"),   # F24
-    ("manual_intervention", True),
-    ("net_ok", False),           # F25
-    ("gross_ok", False),         # F29
-])
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("plan_failures", 1),  # F22 — lệnh không đặt được
+        ("uncancelled", 1),  # F21 — lệnh sống ngoài tầm kiểm soát
+        ("exec_error", "RuntimeError: x"),  # F24
+        ("manual_intervention", True),
+        ("net_ok", False),  # F25
+        ("gross_ok", False),  # F29
+    ],
+)
 def test_moi_dieu_kien_deu_du_de_danh_truot(field, value):
     assert _rec(**{field: value}).clean is False
 
@@ -53,8 +65,16 @@ def test_su_co_thuc_te_1009_bi_danh_truot():
 
 def test_su_co_thuc_te_1109_bi_danh_truot():
     """Lượt 11/09: nhân đôi vị thế -> 3.69x, phải reduceOnly sửa tay."""
-    assert _rec(leverage=3.69, target_leverage=2.0, net_ok=False,
-                gross_ok=False, manual_intervention=True).clean is False
+    assert (
+        _rec(
+            leverage=3.69,
+            target_leverage=2.0,
+            net_ok=False,
+            gross_ok=False,
+            manual_intervention=True,
+        ).clean
+        is False
+    )
 
 
 # --------------------------------------------------------------- chuỗi liên tiếp
@@ -108,20 +128,26 @@ def test_khop_maker_cao_thi_chi_phi_thap_hon():
 # --------------------------------------------------------------- đọc nhật ký
 def test_load_records_bo_qua_dong_hong(tmp_path):
     from readiness_gate import load_records
+
     f = tmp_path / "log.jsonl"
-    f.write_text('{"timestamp_ms":1,"equity":1,"n_targets":1,"n_orders":1,'
-                 '"gross_notional":1,"planned_turnover":1,"maker_notional":1,'
-                 '"taker_notional":0,"unfilled_count":0}\n'
-                 'KHÔNG PHẢI JSON\n'
-                 '\n')
+    f.write_text(
+        '{"timestamp_ms":1,"equity":1,"n_targets":1,"n_orders":1,'
+        '"gross_notional":1,"planned_turnover":1,"maker_notional":1,'
+        '"taker_notional":0,"unfilled_count":0}\n'
+        "KHÔNG PHẢI JSON\n"
+        "\n"
+    )
     assert len(load_records(str(f))) == 1
 
 
 def test_load_records_bo_qua_truong_la(tmp_path):
     """Nhật ký cũ/mới lệch schema không được làm sập cổng."""
     from readiness_gate import load_records
+
     f = tmp_path / "log.jsonl"
-    f.write_text('{"timestamp_ms":1,"equity":1,"n_targets":1,"n_orders":1,'
-                 '"gross_notional":1,"planned_turnover":1,"maker_notional":1,'
-                 '"taker_notional":0,"unfilled_count":0,"truong_khong_ton_tai":9}\n')
+    f.write_text(
+        '{"timestamp_ms":1,"equity":1,"n_targets":1,"n_orders":1,'
+        '"gross_notional":1,"planned_turnover":1,"maker_notional":1,'
+        '"taker_notional":0,"unfilled_count":0,"truong_khong_ton_tai":9}\n'
+    )
     assert len(load_records(str(f))) == 1

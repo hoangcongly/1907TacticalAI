@@ -10,7 +10,6 @@ Tuân thủ tuyệt đối quy trình 3-Phase SOP:
 
 import time
 import numpy as np
-import pytest
 from aegis.data.cleaning.tick_kalman_replacer import (
     TickLevelKalmanReplacer,
     kalman_replacer_filter_series_numba,
@@ -40,13 +39,21 @@ def test_kalman_replacer_long_short_symmetric_trends():
     # Gợi ý đứt gãy quan sát (NaN gap) tại tick 15
     long_prices[15] = np.nan
 
-    replacer_long = TickLevelKalmanReplacer(Q_tick=np.array([[1e-2, 0.0], [0.0, 1e-3]]), R_tick=1e-3)
-    long_replaced, long_lvl, long_trnd = replacer_long.filter_series(long_prices, long_bad_ticks)
+    replacer_long = TickLevelKalmanReplacer(
+        Q_tick=np.array([[1e-2, 0.0], [0.0, 1e-3]]), R_tick=1e-3
+    )
+    long_replaced, long_lvl, long_trnd = replacer_long.filter_series(
+        long_prices, long_bad_ticks
+    )
 
     # Kiểm chứng tại Bad Tick (i=10), giá thay thế phải tuân theo mốc xu hướng (~110.0)
-    assert 109.0 <= long_replaced[10] <= 111.0, f"Long Bad Tick replacement sai lệch: {long_replaced[10]}"
+    assert (
+        109.0 <= long_replaced[10] <= 111.0
+    ), f"Long Bad Tick replacement sai lệch: {long_replaced[10]}"
     # Kiểm chứng tại NaN Gap (i=15), giá thay thế tiếp tục bám trend (~115.0)
-    assert 114.0 <= long_replaced[15] <= 116.0, f"Long NaN Gap replacement sai lệch: {long_replaced[15]}"
+    assert (
+        114.0 <= long_replaced[15] <= 116.0
+    ), f"Long NaN Gap replacement sai lệch: {long_replaced[15]}"
     # Trend estimate phải mang giá trị dương (> 0.5)
     assert long_trnd[-1] > 0.5, f"Động lượng Long không dương: {long_trnd[-1]}"
 
@@ -59,17 +66,27 @@ def test_kalman_replacer_long_short_symmetric_trends():
     # NaN gap tại tick 15
     short_prices[15] = np.nan
 
-    replacer_short = TickLevelKalmanReplacer(Q_tick=np.array([[1e-2, 0.0], [0.0, 1e-3]]), R_tick=1e-3)
-    short_replaced, short_lvl, short_trnd = replacer_short.filter_series(short_prices, short_bad_ticks)
+    replacer_short = TickLevelKalmanReplacer(
+        Q_tick=np.array([[1e-2, 0.0], [0.0, 1e-3]]), R_tick=1e-3
+    )
+    short_replaced, short_lvl, short_trnd = replacer_short.filter_series(
+        short_prices, short_bad_ticks
+    )
 
     # Kiểm chứng tại Bad Tick (i=10), giá thay thế phải bám sát xu hướng xuống (~90.0)
-    assert 89.0 <= short_replaced[10] <= 91.0, f"Short Bad Tick replacement sai lệch: {short_replaced[10]}"
+    assert (
+        89.0 <= short_replaced[10] <= 91.0
+    ), f"Short Bad Tick replacement sai lệch: {short_replaced[10]}"
     # Kiểm chứng tại NaN Gap (i=15), giá thay thế tiếp tục lao xuống (~85.0)
-    assert 84.0 <= short_replaced[15] <= 86.0, f"Short NaN Gap replacement sai lệch: {short_replaced[15]}"
+    assert (
+        84.0 <= short_replaced[15] <= 86.0
+    ), f"Short NaN Gap replacement sai lệch: {short_replaced[15]}"
     # Trend estimate phải mang giá trị âm (< -0.5)
     assert short_trnd[-1] < -0.5, f"Động lượng Short không âm: {short_trnd[-1]}"
 
-    print("[OK] [TASK A-1-4] Symmetric Long/Short momentum preservation verified successfully.")
+    print(
+        "[OK] [TASK A-1-4] Symmetric Long/Short momentum preservation verified successfully."
+    )
 
 
 def test_kalman_replacer_oop_vs_numba_parity():
@@ -98,14 +115,22 @@ def test_kalman_replacer_oop_vs_numba_parity():
 
     # 2. Chạy batch bằng Numba Engine
     replacer_numba = TickLevelKalmanReplacer(Q_tick=Q, R_tick=R)
-    numba_replaced, numba_lvl, numba_trnd = replacer_numba.filter_series(prices, is_bad_ticks)
+    numba_replaced, numba_lvl, numba_trnd = replacer_numba.filter_series(
+        prices, is_bad_ticks
+    )
 
     # Kiểm định khớp hoàn toàn sai số < 1e-12
     np.testing.assert_allclose(
-        oop_replaced, numba_replaced, rtol=1e-12, atol=1e-12, equal_nan=True,
-        err_msg="Sự bất đồng phương sai giữa luồng OOP và luồng Numba!"
+        oop_replaced,
+        numba_replaced,
+        rtol=1e-12,
+        atol=1e-12,
+        equal_nan=True,
+        err_msg="Sự bất đồng phương sai giữa luồng OOP và luồng Numba!",
     )
-    print("[OK] [TASK A-1-4] 100% Numerical Parity verified between Python OOP step and Numba engine.")
+    print(
+        "[OK] [TASK A-1-4] 100% Numerical Parity verified between Python OOP step and Numba engine."
+    )
 
 
 def test_kalman_replacer_edge_cases_and_armor_guards():
@@ -116,29 +141,38 @@ def test_kalman_replacer_edge_cases_and_armor_guards():
     """
     # 1. Mảng rỗng
     rep, lvl, trnd = kalman_replacer_filter_series_numba(
-        np.array([], dtype=np.float64),
-        np.array([], dtype=np.bool_),
-        np.eye(2), 1e-2
+        np.array([], dtype=np.float64), np.array([], dtype=np.bool_), np.eye(2), 1e-2
     )
     assert len(rep) == 0 and len(lvl) == 0 and len(trnd) == 0
 
     # 2. Chuỗi khởi đầu là NaN hoặc Bad Tick
     prices = np.array([np.nan, 100.0, 101.0, np.nan], dtype=np.float64)
     bad_ticks = np.array([False, True, False, False], dtype=np.bool_)
-    
+
     replacer = TickLevelKalmanReplacer()
     res, _, _ = replacer.filter_series(prices, bad_ticks)
-    assert np.isnan(res[0]), "Tick đầu tiên là NaN phải giữ nguyên NaN do chưa đủ dữ liệu khởi tạo"
-    assert np.isnan(res[1]), "Tick thứ 2 bị đánh dấu bad_tick khi chưa khởi tạo, không dùng làm anchor"
-    assert res[2] == 101.0, "Tick thứ 3 là good tick đầu tiên sẽ khởi tạo bộ lọc an toàn"
+    assert np.isnan(
+        res[0]
+    ), "Tick đầu tiên là NaN phải giữ nguyên NaN do chưa đủ dữ liệu khởi tạo"
+    assert np.isnan(
+        res[1]
+    ), "Tick thứ 2 bị đánh dấu bad_tick khi chưa khởi tạo, không dùng làm anchor"
+    assert (
+        res[2] == 101.0
+    ), "Tick thứ 3 là good tick đầu tiên sẽ khởi tạo bộ lọc an toàn"
 
     # 3. Ma trận hiệp phương sai bị suy biến / âm (Kiểm định Cholesky Armor Guard)
-    degenerate_Q = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.float64)  # Không phải PD (det = -1)
+    degenerate_Q = np.array(
+        [[0.0, 1.0], [1.0, 0.0]], dtype=np.float64
+    )  # Không phải PD (det = -1)
     pd_Q = ensure_pd_matrix_2x2_numba(degenerate_Q)
     # Kiểm định Cholesky thành công trên kết quả đầu ra
     L = np.linalg.cholesky(pd_Q)
-    assert L.shape == (2, 2), "Cholesky armor guard không tạo ra được ma trận PD hợp lệ!"
-    
+    assert L.shape == (
+        2,
+        2,
+    ), "Cholesky armor guard không tạo ra được ma trận PD hợp lệ!"
+
     # Khởi tạo bộ lọc với R_tick = 0.0 hoặc âm (phải được tự động cap > 1e-12)
     rep_safe = TickLevelKalmanReplacer(Q_tick=degenerate_Q, R_tick=-0.5)
     assert rep_safe.R >= 1e-12
@@ -176,10 +210,16 @@ def test_kalman_replacer_performance_and_experiment_tracking():
     est_t_oop_big = (t_oop_5k / n_small) * n_big
 
     speedup = est_t_oop_big / max(1e-6, t_numba)
-    print(f"\n[BENCHMARK] Numba Engine 200,000 ticks: {t_numba*1000:.2f} ms ({n_big/t_numba:,.0f} ticks/s)")
-    print(f"[BENCHMARK] Estimated OOP loop runtime: {est_t_oop_big*1000:.2f} ms (Speedup: {speedup:.1f}x)")
-    
-    assert speedup > 5.0, f"Numba acceleration chưa đạt kỳ vọng speedup > 5x (đạt {speedup:.1f}x)"
+    print(
+        f"\n[BENCHMARK] Numba Engine 200,000 ticks: {t_numba*1000:.2f} ms ({n_big/t_numba:,.0f} ticks/s)"
+    )
+    print(
+        f"[BENCHMARK] Estimated OOP loop runtime: {est_t_oop_big*1000:.2f} ms (Speedup: {speedup:.1f}x)"
+    )
+
+    assert (
+        speedup > 5.0
+    ), f"Numba acceleration chưa đạt kỳ vọng speedup > 5x (đạt {speedup:.1f}x)"
     assert len(rep_numba) == n_big
 
     # Ghi nhận vào ExperimentTracker (SOP Mandate)
@@ -191,13 +231,13 @@ def test_kalman_replacer_performance_and_experiment_tracking():
         "Q_tick": [[1e-4, 0.0], [0.0, 1e-5]],
         "R_tick": 1e-2,
         "n_ticks_test": n_big,
-        "protocol": "Predict-Only on Bad Ticks/NaN"
+        "protocol": "Predict-Only on Bad Ticks/NaN",
     }
     metrics = {
         "numba_runtime_ms": round(t_numba * 1000, 2),
         "throughput_ticks_sec": round(n_big / t_numba, 0),
         "speedup_vs_oop": round(speedup, 1),
-        "parity_verified": True
+        "parity_verified": True,
     }
     param_hash = tracker.log_trial(TrialClass.MODEL_FITTING, params, metrics)
     print(f"[AUDIT LOGGED] Trial Recorded! Param Hash: {param_hash}")

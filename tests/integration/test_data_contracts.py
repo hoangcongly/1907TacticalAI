@@ -11,7 +11,6 @@ from aegis.core.schemas import (
     assert_trade_records_match_bar_version,
     check_insufficient_history_nulls,
 )
-import inspect
 from aegis.execution.pnl import compute_realized_pnl
 
 
@@ -165,7 +164,7 @@ def test_trade_record_schema_timestamp_logic_violation():
             "fold_id": [None],
             "symbol": ["BTCUSDT"],
             "entry_idx": [100],
-            "entry_timestamp_ms": [1600003600000], # Vào lệnh sau
+            "entry_timestamp_ms": [1600003600000],  # Vào lệnh sau
             "entry_price": [50000.0],
             "p_i": [0.8],
             "p_chop_i": [0.2],
@@ -175,7 +174,7 @@ def test_trade_record_schema_timestamp_logic_violation():
             "size_notional": [1.0],
             "exit_idx_relative": [10],
             "exit_idx_absolute": [111],
-            "exit_timestamp_ms": [1600000000000], # Thoát lệnh trước -> VIOLATION
+            "exit_timestamp_ms": [1600000000000],  # Thoát lệnh trước -> VIOLATION
             "exit_reason": ["TRAIL"],
             "fill_price_exit": [51000.0],
             "boundary_truncated": [False],
@@ -191,7 +190,6 @@ def test_trade_record_schema_timestamp_logic_violation():
         TradeRecordSchema.validate(df)
 
 
-
 def test_lineage_and_versioning_assertion():
     expected_hash = "abcdef123456"
     trade_df = pd.DataFrame({"dataset_manifest_hash": ["wrong_hash_789"]})
@@ -205,31 +203,42 @@ def test_check_insufficient_history_nulls_mixed_true_false():
     Case trước đây KHÔNG được test: dữ liệu trộn lẫn cả True lẫn False trong
     insufficient_history — đây chính là case mà bug index-alignment lộ ra.
     """
-    df = pd.DataFrame({
-        "insufficient_history": [True, False, True, False, False],
-        "trend_score": [None, 0.5, None, 0.3, 0.1],
-        "p_trend": [None, 0.6, None, 0.4, 0.2],
-        "p_chop": [None, 0.4, None, 0.6, 0.8],
-        "atr_14": [None, 1.2, None, 1.5, 1.1],
-        "hurst_value": [None, 0.55, None, 0.45, 0.5],
-    })
+    df = pd.DataFrame(
+        {
+            "insufficient_history": [True, False, True, False, False],
+            "trend_score": [None, 0.5, None, 0.3, 0.1],
+            "p_trend": [None, 0.6, None, 0.4, 0.2],
+            "p_chop": [None, 0.4, None, 0.6, 0.8],
+            "atr_14": [None, 1.2, None, 1.5, 1.1],
+            "hurst_value": [None, 0.55, None, 0.45, 0.5],
+        }
+    )
     result = check_insufficient_history_nulls(df)
 
     assert len(result) == len(df), f"Độ dài lệch: result={len(result)}, df={len(df)}"
     assert list(result.index) == list(df.index), "Index không khớp df gốc"
-    assert result.tolist() == [True, True, True, True, True], (
-        f"Kỳ vọng toàn True (không dòng nào vi phạm), nhận {result.tolist()}"
-    )
+    assert result.tolist() == [
+        True,
+        True,
+        True,
+        True,
+        True,
+    ], f"Kỳ vọng toàn True (không dòng nào vi phạm), nhận {result.tolist()}"
 
     # Case vi phạm: dòng insufficient_history=True nhưng có giá trị không null
     df_bad = df.copy()
     df_bad.loc[0, "trend_score"] = 0.9  # vi phạm: insufficient_history=True nhưng có số
     result_bad = check_insufficient_history_nulls(df_bad)
-    assert result_bad.tolist() == [False, True, True, True, True], (
-        f"Kỳ vọng dòng 0 = False (vi phạm), nhận {result_bad.tolist()}"
-    )
+    assert result_bad.tolist() == [
+        False,
+        True,
+        True,
+        True,
+        True,
+    ], f"Kỳ vọng dòng 0 = False (vi phạm), nhận {result_bad.tolist()}"
 
     print("✅ test_check_insufficient_history_nulls_mixed_true_false PASSED")
+
 
 def test_schema_column_count_matches_typeddict():
     """
@@ -241,16 +250,18 @@ def test_schema_column_count_matches_typeddict():
     # Lấy các trường (keys) từ TradeRecord TypedDict
     # typing.get_type_hints hoặc __annotations__ đều được
     import typing
+
     typed_dict_keys = set(typing.get_type_hints(TradeRecord).keys())
-    
+
     missing_in_schema = typed_dict_keys - schema_cols
     missing_in_dict = schema_cols - typed_dict_keys
-    
+
     assert schema_cols == typed_dict_keys, (
         f"Lệch cột giữa Schema và TypedDict.\n"
         f"Thiếu trong Schema: {missing_in_schema}\n"
         f"Thiếu trong TypedDict: {missing_in_dict}"
     )
+
 
 def test_leverage_does_not_affect_pnl_for_non_liquidated_exits():
     """
@@ -259,19 +270,29 @@ def test_leverage_does_not_affect_pnl_for_non_liquidated_exits():
     Thay đổi đòn bẩy (leverage) sẽ KHÔNG làm thay đổi kết quả PnL.
     """
     res_lev_2 = compute_realized_pnl(
-        entry_price=100.0, exit_price=110.0, side=1, size_notional=1000.0,
-        leverage=2.0, exit_reason="TRAIL",
-        entry_fill_type="taker", exit_fill_type="taker"
+        entry_price=100.0,
+        exit_price=110.0,
+        side=1,
+        size_notional=1000.0,
+        leverage=2.0,
+        exit_reason="TRAIL",
+        entry_fill_type="taker",
+        exit_fill_type="taker",
     )
     res_lev_10 = compute_realized_pnl(
-        entry_price=100.0, exit_price=110.0, side=1, size_notional=1000.0,
-        leverage=10.0, exit_reason="TRAIL",
-        entry_fill_type="taker", exit_fill_type="taker"
+        entry_price=100.0,
+        exit_price=110.0,
+        side=1,
+        size_notional=1000.0,
+        leverage=10.0,
+        exit_reason="TRAIL",
+        entry_fill_type="taker",
+        exit_fill_type="taker",
     )
-    
-    assert res_lev_2["net_pnl"] == res_lev_10["net_pnl"], (
-        "Lỗi kiến trúc: Đòn bẩy đã làm rò rỉ và thay đổi PnL của một lệnh thoát bình thường!"
-    )
+
+    assert (
+        res_lev_2["net_pnl"] == res_lev_10["net_pnl"]
+    ), "Lỗi kiến trúc: Đòn bẩy đã làm rò rỉ và thay đổi PnL của một lệnh thoát bình thường!"
 
 
 def test_schemas_empty_dataframes_safe():
@@ -279,10 +300,8 @@ def test_schemas_empty_dataframes_safe():
     df_bar = pd.DataFrame(columns=["timestamp_ms", "open", "high", "low", "close"])
     h = compute_dataset_manifest_hash(df_bar, {})
     assert isinstance(h, str) and len(h) == 64
-    
+
     df_trade = pd.DataFrame(columns=["dataset_manifest_hash"])
     # Không được ném ngoại lệ khi bảng trade rỗng (0 giao dịch trong fold)
     assert_trade_records_match_bar_version(df_trade, h)
     print("✅ [SCHEMAS] Empty DataFrames handling PASSED!")
-
-

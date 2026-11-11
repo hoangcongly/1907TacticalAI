@@ -51,20 +51,20 @@ class PortfolioSpec:
     """Toàn bộ tham số dựng danh mục — khai báo một chỗ, dùng chung research và live."""
 
     mode: str = "zscore_riskparity"
-    top_frac: float = 0.10            # tỷ lệ tài sản mỗi bên khi `n_positions` không đặt
+    top_frac: float = 0.10  # tỷ lệ tài sản mỗi bên khi `n_positions` không đặt
     n_positions: Optional[int] = None  # TỔNG số vị thế cố định (long + short)
     exit_frac: Optional[float] = None  # vùng đệm thứ hạng; None = không đệm
-    gross: float = 1.0                # tổng |trọng số| mục tiêu
-    max_weight: float = 0.20          # trần trọng số một cặp (chống tập trung)
-    vol_window: int = 60              # cửa sổ ước lượng biến động (nến)
-    vol_floor_pct: float = 0.10       # sàn biến động = phân vị này của mặt cắt ngang
-    beta_neutral: bool = False        # khử beta thị trường ngoài dollar-neutral
+    gross: float = 1.0  # tổng |trọng số| mục tiêu
+    max_weight: float = 0.20  # trần trọng số một cặp (chống tập trung)
+    vol_window: int = 60  # cửa sổ ước lượng biến động (nến)
+    vol_floor_pct: float = 0.10  # sàn biến động = phân vị này của mặt cắt ngang
+    beta_neutral: bool = False  # khử beta thị trường ngoài dollar-neutral
     beta_window: int = 120
-    z_clip: float = 2.5               # kẹp z-score trước khi biến thành trọng số
-    min_names: int = 6                # số tài sản tối thiểu để mở danh mục
+    z_clip: float = 2.5  # kẹp z-score trước khi biến thành trọng số
+    min_names: int = 6  # số tài sản tối thiểu để mở danh mục
     cov_method: str = "constant_correlation"
-    cov_window: int = 250             # chỉ dùng cho mode="mvo"
-    risk_aversion: float = 5.0        # chỉ dùng cho mode="mvo"
+    cov_window: int = 250  # chỉ dùng cho mode="mvo"
+    risk_aversion: float = 5.0  # chỉ dùng cho mode="mvo"
     meta: Dict = field(default_factory=dict)
 
     def __post_init__(self):
@@ -107,7 +107,9 @@ class PortfolioSpec:
 # ---------------------------------------------------------------------------
 # Ước lượng rủi ro (nhân quả)
 # ---------------------------------------------------------------------------
-def realized_vol(close: pd.DataFrame, window: int = 60, min_periods: Optional[int] = None) -> pd.DataFrame:
+def realized_vol(
+    close: pd.DataFrame, window: int = 60, min_periods: Optional[int] = None
+) -> pd.DataFrame:
     """
     Biến động thực hiện theo nến, tính tới t-1.
 
@@ -209,7 +211,11 @@ def project_neutral(w: pd.Series, beta: Optional[pd.Series] = None) -> pd.Series
     else:
         b = beta.reindex(idx).to_numpy(dtype=np.float64)
         if not np.isfinite(b).all():
-            b = np.where(np.isfinite(b), b, np.nanmedian(b[np.isfinite(b)]) if np.isfinite(b).any() else 1.0)
+            b = np.where(
+                np.isfinite(b),
+                b,
+                np.nanmedian(b[np.isfinite(b)]) if np.isfinite(b).any() else 1.0,
+            )
         A = np.vstack([ones, b])
 
     G = A @ A.T
@@ -327,10 +333,16 @@ def apply_buffer(
         room_long = max(0, k_in - len(surv_long))
         room_short = max(0, k_in - len(surv_short))
 
-        cand_long = [x for x in reversed(ordered.index)
-                     if x in enter_long and x not in surv_long and x not in surv_short]
-        cand_short = [x for x in ordered.index
-                      if x in enter_short and x not in surv_short and x not in surv_long]
+        cand_long = [
+            x
+            for x in reversed(ordered.index)
+            if x in enter_long and x not in surv_long and x not in surv_short
+        ]
+        cand_short = [
+            x
+            for x in ordered.index
+            if x in enter_short and x not in surv_short and x not in surv_long
+        ]
 
         held_long = surv_long | set(cand_long[:room_long])
         held_short = surv_short | set(cand_short[:room_short])
@@ -352,8 +364,13 @@ def _selection_mask(signal: pd.DataFrame, spec: PortfolioSpec) -> pd.DataFrame:
     """Chọn tài sản vào danh mục: top/bottom `top_frac`, có hoặc không có vùng đệm."""
     if spec.exit_frac is not None:
         ratio = spec.exit_frac / spec.top_frac
-        return apply_buffer(signal, spec.top_frac, spec.exit_frac,
-                            n_positions=spec.n_positions, exit_ratio=ratio)
+        return apply_buffer(
+            signal,
+            spec.top_frac,
+            spec.exit_frac,
+            n_positions=spec.n_positions,
+            exit_ratio=ratio,
+        )
 
     mask = pd.DataFrame(0.0, index=signal.index, columns=signal.columns)
     for ts, row in signal.iterrows():
@@ -505,7 +522,10 @@ def _build_weights_mvo(
         window = ret.iloc[lo:i][names].dropna(axis=1, how="all")
         names = [c for c in names if c in window.columns]
         window = window[names].dropna()
-        if len(window) < max(30, 3 * len(names)) or len(names) < spec.effective_min_names():
+        if (
+            len(window) < max(30, 3 * len(names))
+            or len(names) < spec.effective_min_names()
+        ):
             continue
 
         try:

@@ -20,7 +20,7 @@ Giá trị trả về khớp trực tiếp với tham số `funding_accrued_usd`
 """
 
 import math
-from typing import Dict, List, Optional, Sequence, Union
+from typing import Dict, List, Sequence, Union
 
 # Chu kỳ funding chuẩn của Binance USDⓈ-M: 8 giờ, neo vào 00:00 UTC.
 DEFAULT_FUNDING_INTERVAL_HOURS = 8
@@ -49,7 +49,9 @@ def funding_timestamps_between(
     nhưng vị thế đóng đúng tại mốc quyết toán thì phải trả (vẫn đang nắm giữ).
     """
     if not isinstance(interval_hours, int) or interval_hours <= 0:
-        raise ValueError(f"interval_hours phải là số nguyên dương, nhận {interval_hours}")
+        raise ValueError(
+            f"interval_hours phải là số nguyên dương, nhận {interval_hours}"
+        )
 
     start = int(start_ts_ms)
     end = int(end_ts_ms)

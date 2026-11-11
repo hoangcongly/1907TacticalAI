@@ -57,6 +57,7 @@ def test_concurrent_events_performance():
     FIX #2: 10,000 events phải chạy dưới 2 giây (sweep-line).
     """
     import time
+
     t1 = pd.Series(index=range(10000), data=range(5, 10005))
     start = time.time()
     c_t = compute_num_concurrent_events(t1)

@@ -51,18 +51,22 @@ __all__ = [
 class LeverageSpec:
     """Tham số tầng đòn bẩy."""
 
-    target_ann_vol: float = 0.30     # biến động mục tiêu của VỐN
-    max_leverage: float = 3.0        # trần đòn bẩy gộp
-    vol_window: int = 60             # cửa sổ ước lượng biến động thực hiện
+    target_ann_vol: float = 0.30  # biến động mục tiêu của VỐN
+    max_leverage: float = 3.0  # trần đòn bẩy gộp
+    vol_window: int = 60  # cửa sổ ước lượng biến động thực hiện
     vol_min_periods: int = 20
-    kelly_fraction: float = 0.5      # phần Kelly được dùng (0.5 = "nửa Kelly")
+    kelly_fraction: float = 0.5  # phần Kelly được dùng (0.5 = "nửa Kelly")
     dd_throttle_start: float = 0.10  # bắt đầu giảm đòn bẩy khi drawdown vượt mức này
-    dd_throttle_stop: float = 0.25   # về 0 khi drawdown chạm mức này
+    dd_throttle_stop: float = 0.25  # về 0 khi drawdown chạm mức này
     periods_per_year: float = 365.0
 
 
-def kelly_leverage(mu_per_period: float, sigma_per_period: float,
-                   fraction: float = 0.5, cap: float = 5.0) -> float:
+def kelly_leverage(
+    mu_per_period: float,
+    sigma_per_period: float,
+    fraction: float = 0.5,
+    cap: float = 5.0,
+) -> float:
     """
     Đòn bẩy tối ưu tăng trưởng (Kelly), nhân với `fraction`.
 
@@ -73,7 +77,7 @@ def kelly_leverage(mu_per_period: float, sigma_per_period: float,
     """
     if sigma_per_period <= 1e-15:
         return 0.0
-    return float(np.clip(fraction * mu_per_period / sigma_per_period ** 2, 0.0, cap))
+    return float(np.clip(fraction * mu_per_period / sigma_per_period**2, 0.0, cap))
 
 
 def volatility_target_series(
@@ -88,13 +92,19 @@ def volatility_target_series(
     báo được. Ước lượng dùng dữ liệu tới t-1 (`shift(1)`), nên nhân quả.
     """
     spec = spec or LeverageSpec()
-    realized = returns.rolling(spec.vol_window, min_periods=spec.vol_min_periods).std().shift(1)
+    realized = (
+        returns.rolling(spec.vol_window, min_periods=spec.vol_min_periods)
+        .std()
+        .shift(1)
+    )
     ann = realized * np.sqrt(spec.periods_per_year)
-    lev = (spec.target_ann_vol / ann.replace(0.0, np.nan))
+    lev = spec.target_ann_vol / ann.replace(0.0, np.nan)
     return lev.clip(upper=spec.max_leverage).fillna(0.0)
 
 
-def drawdown_throttle(equity_curve: pd.Series, spec: Optional[LeverageSpec] = None) -> pd.Series:
+def drawdown_throttle(
+    equity_curve: pd.Series, spec: Optional[LeverageSpec] = None
+) -> pd.Series:
     """
     Hệ số giảm đòn bẩy khi đang trong drawdown, giảm tuyến tính về 0.
 
@@ -129,7 +139,11 @@ def apply_leverage(
     spec = spec or LeverageSpec()
     r = returns.dropna()
 
-    lev = volatility_target_series(r, spec) if use_vol_target else pd.Series(1.0, index=r.index)
+    lev = (
+        volatility_target_series(r, spec)
+        if use_vol_target
+        else pd.Series(1.0, index=r.index)
+    )
     lev = lev.reindex(r.index).fillna(0.0).clip(upper=spec.max_leverage)
 
     out_r = np.zeros(len(r))
@@ -144,11 +158,13 @@ def apply_leverage(
         if use_dd_throttle and peak > 0:
             dd = 1.0 - equity / peak
             if dd > spec.dd_throttle_start:
-                L *= float(np.clip(1.0 - (dd - spec.dd_throttle_start) / span, 0.0, 1.0))
+                L *= float(
+                    np.clip(1.0 - (dd - spec.dd_throttle_start) / span, 0.0, 1.0)
+                )
         step = L * rv[i]
         # Sàn -100%: tài khoản không âm được; chạm sàn là kết thúc.
         step = max(step, -0.999)
-        equity *= (1.0 + step)
+        equity *= 1.0 + step
         peak = max(peak, equity)
         out_r[i], out_l[i] = step, L
 
@@ -192,7 +208,9 @@ def simulate_paths(
     n_blocks = int(np.ceil(n_periods / block))
     starts = rng.integers(0, n - block, size=(n_paths, n_blocks))
 
-    idx = (starts[:, :, None] + np.arange(block)[None, None, :]).reshape(n_paths, -1)[:, :n_periods]
+    idx = (starts[:, :, None] + np.arange(block)[None, None, :]).reshape(n_paths, -1)[
+        :, :n_periods
+    ]
     sample = r[idx] * leverage
     sample = np.maximum(sample, -0.999)
 
@@ -238,21 +256,24 @@ def target_probability_table(
 
     rows = []
     for L in leverages:
-        sim = simulate_paths(r, L, n_periods, n_paths=n_paths, block=block,
-                             ruin_threshold=ruin_threshold)
+        sim = simulate_paths(
+            r, L, n_periods, n_paths=n_paths, block=block, ruin_threshold=ruin_threshold
+        )
         final = sim["final"]
-        rows.append({
-            "leverage": float(L),
-            "kelly_multiple": float(L / kelly) if kelly > 1e-9 else np.inf,
-            "p_target": float((final >= 1.0 + target_return).mean()),
-            "p_ruin": float(sim["ruined"].mean()),
-            "p_loss": float((final < 1.0).mean()),
-            "median": float(np.median(final) - 1.0),
-            "mean": float(final.mean() - 1.0),
-            "p05": float(np.percentile(final, 5) - 1.0),
-            "p95": float(np.percentile(final, 95) - 1.0),
-            "ann_vol_implied": float(L * sd * np.sqrt(periods_per_year)),
-        })
+        rows.append(
+            {
+                "leverage": float(L),
+                "kelly_multiple": float(L / kelly) if kelly > 1e-9 else np.inf,
+                "p_target": float((final >= 1.0 + target_return).mean()),
+                "p_ruin": float(sim["ruined"].mean()),
+                "p_loss": float((final < 1.0).mean()),
+                "median": float(np.median(final) - 1.0),
+                "mean": float(final.mean() - 1.0),
+                "p05": float(np.percentile(final, 5) - 1.0),
+                "p95": float(np.percentile(final, 95) - 1.0),
+                "ann_vol_implied": float(L * sd * np.sqrt(periods_per_year)),
+            }
+        )
 
     df = pd.DataFrame(rows)
     df.attrs["sharpe"] = sharpe
@@ -299,5 +320,5 @@ def required_sharpe_for_target(
         "required_ann_sharpe": float(sharpe_needed),
         "required_ann_return": float(mu_needed * periods_per_year),
         "note": "Sharpe > 5 duy trì được là ngoài phạm vi mọi quỹ công khai; "
-                "Sharpe > 10 chỉ tồn tại ở market-making tần suất cao với hạ tầng riêng.",
+        "Sharpe > 10 chỉ tồn tại ở market-making tần suất cao với hạ tầng riêng.",
     }

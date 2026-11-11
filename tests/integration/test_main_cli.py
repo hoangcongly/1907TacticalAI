@@ -24,7 +24,19 @@ def test_research_and_cpcv_modes_run_on_sample_data():
     """
     temp_dir = tempfile.mkdtemp()
     try:
-        assert main(["--mode", "research", "--artifacts-dir", temp_dir, "--bars-count", "100"]) == 0
+        assert (
+            main(
+                [
+                    "--mode",
+                    "research",
+                    "--artifacts-dir",
+                    temp_dir,
+                    "--bars-count",
+                    "100",
+                ]
+            )
+            == 0
+        )
         assert os.path.exists(os.path.join(temp_dir, "model.pkl"))
         assert os.path.exists(os.path.join(temp_dir, "metadata.json"))
 
@@ -43,11 +55,18 @@ def test_paper_mode_refuses_to_run_without_artifacts():
     temp_dir = tempfile.mkdtemp()
     try:
         with pytest.raises(SystemExit) as exc_info:
-            main(["--mode", "paper", "--artifacts-dir", os.path.join(temp_dir, "trong_rong")])
+            main(
+                [
+                    "--mode",
+                    "paper",
+                    "--artifacts-dir",
+                    os.path.join(temp_dir, "trong_rong"),
+                ]
+            )
         assert "TỪ CHỐI CHẠY" in str(exc_info.value)
-        assert not os.path.exists(os.path.join(temp_dir, "trong_rong", "model.pkl")), (
-            "Không được sinh model khi bị từ chối chạy"
-        )
+        assert not os.path.exists(
+            os.path.join(temp_dir, "trong_rong", "model.pkl")
+        ), "Không được sinh model khi bị từ chối chạy"
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
@@ -56,7 +75,19 @@ def test_paper_mode_refuses_synthetic_market_data():
     """[FIX F2] Có artifacts nhưng KHÔNG có dữ liệu thật -> vẫn phải từ chối."""
     temp_dir = tempfile.mkdtemp()
     try:
-        assert main(["--mode", "research", "--artifacts-dir", temp_dir, "--bars-count", "100"]) == 0
+        assert (
+            main(
+                [
+                    "--mode",
+                    "research",
+                    "--artifacts-dir",
+                    temp_dir,
+                    "--bars-count",
+                    "100",
+                ]
+            )
+            == 0
+        )
 
         with pytest.raises(SystemExit) as exc_info:
             main(["--mode", "paper", "--artifacts-dir", temp_dir, "--bars-count", "20"])

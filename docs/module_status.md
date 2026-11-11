@@ -26,6 +26,7 @@
 | `src/aegis/data/cleaning/tick_kalman_replacer.py` | IMPLEMENTED |
 | `src/aegis/data/ingestion/binance_history.py` | IMPLEMENTED |
 | `src/aegis/data/ingestion/binance_rest.py` | IMPLEMENTED |
+| `src/aegis/data/ingestion/binance_vision.py` | IMPLEMENTED |
 | `src/aegis/data/ingestion/cross_venue_feed.py` | NOT_IMPLEMENTED |
 | `src/aegis/data/ingestion/l2_orderbook_feed.py` | NOT_IMPLEMENTED |
 | `src/aegis/data/ingestion/tick_stream.py` | NOT_IMPLEMENTED |
@@ -88,6 +89,7 @@
 | `src/aegis/research/signal_library.py` | IMPLEMENTED |
 | `src/aegis/research/strategy_v2.py` | IMPLEMENTED |
 | `src/aegis/research/strategy_v3.py` | IMPLEMENTED |
+| `src/aegis/research/survivorship.py` | IMPLEMENTED |
 | `src/aegis/research/xs_regression.py` | IMPLEMENTED |
 | `src/aegis/risk/circuit_breaker.py` | IMPLEMENTED |
 | `src/aegis/risk/covariance_shrinkage.py` | IMPLEMENTED |

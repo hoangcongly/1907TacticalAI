@@ -23,7 +23,8 @@ def main():
     src_dir = os.path.join(os.path.dirname(__file__), "..", "src")
     report_lines = ["# Bảng Kiểm Kê Trạng Thái Module\n\n| Module | Trạng Thái |\n|---|---|"]
     
-    for root, _, files in os.walk(src_dir):
+    for root, dirs, files in os.walk(src_dir):
+        dirs.sort()  # os.walk order differs between filesystems
         for file in sorted(files):
             if file.endswith(".py") and file != "__init__.py":
                 path = os.path.join(root, file)
